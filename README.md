@@ -1,6 +1,6 @@
 ## Devneya Playground
 
-Non-commercial playground build of the Devneya frontend, deployed to `playground.devneya.com` via GitHub Pages.
+Non-commercial playground build of the Devneya frontend, deployed to https://devneya.github.io/playground/ via GitHub Pages.
 
 License: [Business Source License 1.1](./LICENSE) — free for non-commercial use, converts to Apache License 2.0 on 2030-07-09.
 
@@ -43,6 +43,6 @@ Open http://localhost:3001
 - `VITE_SENTRY_URL`
 - `VITE_TEMPLATES_INDEX_URL`
 
-Custom domain is set via `public/CNAME` (`playground.devneya.com`) — requires a DNS CNAME record pointing to `devneya.github.io`, and GitHub Pages enabled on this repo with source set to "GitHub Actions".
+Served at the default GitHub Pages project URL (no custom domain), GitHub Pages enabled on this repo with source set to "GitHub Actions".
 
 This build points at the same production backend (`back.devneya.com`, `litellm.devneya.com`) as `devneya-space`, so it uses the same Supabase project — there is no separate playground-only backend.
