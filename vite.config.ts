@@ -4,7 +4,6 @@ import svgrPlugin from "vite-plugin-svgr";
 import tsconfigPaths from "vite-tsconfig-paths";
 
 export default defineConfig({
-  base: "/playground/",
   plugins: [react(), tsconfigPaths(), svgrPlugin()],
 
   build: {
