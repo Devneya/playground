@@ -1,6 +1,6 @@
 import {FlowSnapshot, parseFlow} from "./flowSnapshot";
-import {SNAPSHOTS_BUCKET_NAME} from "../config/constants";
 import {supabase} from "../supabase";
+import {presignDownload, presignUpload} from "../storage";
 import {initialFlow} from "../config/initialFlow";
 import {Canvas} from "./flowStore/interfaces";
 
@@ -24,41 +24,34 @@ export async function loadFlow(canvasId?: string): Promise<FlowSnapshot> {
     throw new Error("Error on loading flow from user storage: not authorized.");
   }
 
-  let filePath: string;
+  let filename: string;
   if (!canvasId || (canvasId && canvasId.trim().length === 0)) {
-    filePath = `${user.id}/flow.json`;
+    filename = "flow.json";
   } else {
-    filePath = `${user.id}/flow-${canvasId}.json`;
+    filename = `flow-${canvasId}.json`;
   }
+  const key = `${user.id}/${filename}`;
 
-  let result;
+  let text: string;
   try {
-    result = await supabase.storage
-      .from(SNAPSHOTS_BUCKET_NAME)
-      .download(filePath);
+    const url = await presignDownload(key);
+    const resp = await fetch(url);
 
-    if (result.error || !result.data) {
-      const errorMessage = result.error?.message || "Unknown error";
-      const isNotFound =
-        errorMessage.includes("404") ||
-        errorMessage.includes("not found") ||
-        errorMessage.includes("NotFound") ||
-        errorMessage.includes("The resource was not found");
-
-      if (isNotFound) {
+    if (!resp.ok) {
+      if (resp.status === 404) {
         throw new Error("FILE_NOT_FOUND");
       }
-
-      console.error(`Error on loading flow from user storage: ${errorMessage}.`);
+      console.error(`Error on loading flow from user storage: ${resp.statusText}.`);
       return initialFlow;
     }
+    text = await resp.text();
   } catch (e: any) {
     console.error(`Unexpected error while loading flow: ${e.toString()}`);
     return initialFlow;
   }
 
   try {
-    return parseFlow(JSON.parse(await result.data.text()));
+    return parseFlow(JSON.parse(text));
   } catch (e: any) {
     throw new Error(`Error parsing flow data: ${e.toString()}`);
   }
@@ -76,10 +69,10 @@ export async function saveFlowInUserStorage(
   canvasId?: string,
 ): Promise<boolean> {
   const {
-    data: {user},
-  } = await supabase.auth.getUser();
+    data: {session},
+  } = await supabase.auth.getSession();
 
-  if (!user) {
+  if (!session?.user) {
     console.error("Error on saving flow in user storage: not authorized.");
     return false;
   }
@@ -93,15 +86,17 @@ export async function saveFlowInUserStorage(
   }
 
   try {
-    const result = await supabase.storage.from(SNAPSHOTS_BUCKET_NAME).upload(
-      `${user.id}/flow-${canvasId}.json`,
-      new Blob([JSON.stringify(snapshot)], {
-        type: "application/json",
-      }),
-      {upsert: true}
-    );
-    if (result.error) {
-      console.error(`Error on saving flow in user storage: ${result.error.message}.`);
+    const blob = new Blob([JSON.stringify(snapshot)], {
+      type: "application/json",
+    });
+    const {url} = await presignUpload(`flow-${canvasId}.json`, session.access_token);
+    const uploadResp = await fetch(url, {
+      method: "PUT",
+      headers: {"Content-Type": "application/json"},
+      body: blob,
+    });
+    if (!uploadResp.ok) {
+      console.error(`Error on saving flow in user storage: ${uploadResp.statusText}.`);
       return false;
     }
     await setLastOpenedCanvasId(canvasId);
@@ -149,23 +144,26 @@ export async function setLastOpenedCanvasId(canvasId: string): Promise<boolean> 
  */
 export async function deleteFlowFromStorage(canvasId: string): Promise<boolean> {
   const {
-    data: {user},
-  } = await supabase.auth.getUser();
+    data: {session},
+  } = await supabase.auth.getSession();
 
-  if (!user || !canvasId) {
+  if (!session?.user || !canvasId) {
     return false;
   }
 
   try {
-    const filePath = `${user.id}/flow-${canvasId}.json`;
-    const {error} = await supabase.storage
-      .from(SNAPSHOTS_BUCKET_NAME)
-      .remove([filePath]);
-
-    if (error) {
-      return error.message.includes("not found") || error.message.includes("NotFound");
-    }
-    return true;
+    const key = `${session.user.id}/flow-${canvasId}.json`;
+    // Idempotent server-side (missing key is still a 200), so no separate
+    // "was it already gone" handling needed here, unlike the old Supabase
+    // Storage error-message-sniffing this replaced.
+    const resp = await fetch(
+      `${import.meta.env.VITE_PROXY_URL}/storage/${key}`,
+      {
+        method: "DELETE",
+        headers: {Authorization: "Bearer " + session.access_token},
+      }
+    );
+    return resp.ok;
   } catch (e: any) {
     console.error(`Error while deleting flow: ${e.toString()}`);
     return false;

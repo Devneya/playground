@@ -39,23 +39,81 @@ export function mimeFromType(
 }
 
 /**
+ * Asks devneya-api to presign an upload for {verified JWT sub}/{filename}
+ * and returns the URL to PUT the actual bytes to directly (Garage, not
+ * devneya-api — files never pass through our own server). Shared by
+ * uploadFile below and flowSaveAndLoad.ts, which has the same two-hop
+ * shape for its own snapshot/index files.
+ */
+export async function presignUpload(
+  filename: string,
+  access_token: string
+): Promise<{ url: string; key: string }> {
+  const resp = await fetch(
+    `${import.meta.env.VITE_PROXY_URL}/storage/presign-upload`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer " + access_token,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ filename }),
+    }
+  );
+  if (!resp.ok) {
+    throw new Error(`Failed to presign upload: ${resp.statusText}`);
+  }
+  return resp.json();
+}
+
+/**
+ * Asks devneya-api to presign a download for an arbitrary key (no auth —
+ * see the /storage/presign-download handler's own doc comment for why) and
+ * returns the URL to GET the actual bytes from directly.
+ */
+export async function presignDownload(
+  key: string,
+  useCacheBusting: boolean = false
+): Promise<string> {
+  let presignUrl = `${import.meta.env.VITE_PROXY_URL}/storage/presign-download?key=${encodeURIComponent(key)}`;
+  const headers: HeadersInit = {};
+
+  if (useCacheBusting) {
+    presignUrl = `${presignUrl}&t=${Date.now()}`;
+    headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
+    headers["Pragma"] = "no-cache";
+    headers["Expires"] = "0";
+  }
+
+  const resp = await fetch(presignUrl, {
+    method: "GET",
+    headers: Object.keys(headers).length > 0 ? headers : undefined,
+  });
+  if (!resp.ok) {
+    throw new Error(`Failed to presign download: ${resp.statusText}`);
+  }
+  const { url } = await resp.json();
+  return url;
+}
+
+/**
  * Uploads a file (image, audio, or pdf) to the server.
  * @param input - The file input, either an OpenAI Image object or a Blob.
  * @param filename - The name of the file to be uploaded.
- * @param id - A unique identifier for the file.
+ * @param id - Unused: the storage key's user prefix is always derived
+ * server-side from the caller's verified JWT, never from this value. Kept
+ * as a parameter so every existing call site (which already only ever
+ * passes its own session.user.id) doesn't need to change.
  * @param access_token - The access token for authorization.
  * @returns A promise that resolves to null on success or an Error object on failure.
  */
 export async function uploadFile(
   input: Image | Blob,
   filename: string,
-  id: string,
+  _id: string,
   access_token: string
 ) {
   try {
-    const form = new FormData();
-    form.append("id", id);
-
     let file: File;
     if (
       typeof input === "object" &&
@@ -78,17 +136,16 @@ export async function uploadFile(
     } else {
       throw new Error("Unsupported input type");
     }
-    form.append("file", file);
 
-    const response = await fetch(`${import.meta.env.VITE_PROXY_URL}/upload_file`, {
-      method: "POST",
-      headers: {
-        Authorization: "Bearer " + access_token,
-      },
-      body: form,
+    const { url } = await presignUpload(file.name, access_token);
+
+    const uploadResp = await fetch(url, {
+      method: "PUT",
+      headers: { "Content-Type": file.type || "application/octet-stream" },
+      body: file,
     });
-    if (!response.ok) {
-      return new Error(`Failed to upload file: ${response.statusText}`);
+    if (!uploadResp.ok) {
+      return new Error(`Failed to upload file: ${uploadResp.statusText}`);
     }
     return null;
   } catch (error) {
@@ -105,24 +162,9 @@ export async function uploadFile(
  */
 export async function downloadFile(filename: string, useCacheBusting: boolean = false): Promise<Blob | Error> {
   try {
-    let url = `${import.meta.env.VITE_STORAGE_URL}/${filename}`;
-    const headers: HeadersInit = {};
+    const url = await presignDownload(filename, useCacheBusting);
 
-    if (useCacheBusting) {
-      const timestamp = Date.now();
-      url = `${url}?t=${timestamp}`;
-      headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
-      headers["Pragma"] = "no-cache";
-      headers["Expires"] = "0";
-    }
-    const response = await fetch(
-      url,
-      {
-        method: "GET",
-        headers: Object.keys(headers).length > 0 ? headers : undefined,
-      }
-    );
-
+    const response = await fetch(url);
     if (!response.ok) {
       throw new Error(`Failed to download file: ${response.statusText}`);
     }
@@ -146,14 +188,12 @@ export async function deleteFile(
 ): Promise<Response | Error> {
   try {
     const response = await fetch(
-      `${import.meta.env.VITE_PROXY_URL}/delete_file`,
+      `${import.meta.env.VITE_PROXY_URL}/storage/${path}`,
       {
-        method: "POST",
+        method: "DELETE",
         headers: {
-          "Content-Type": "application/json",
           Authorization: "Bearer " + access_token,
         },
-        body: JSON.stringify({path: path}),
       }
     );
 
