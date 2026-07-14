@@ -16,4 +16,20 @@ const supabase: SupabaseClient = createClient(supabaseUrl, supabaseKey, {
   global: { fetch: gotrueFetch },
 });
 
+// signInWithOAuth's redirect is a real browser navigation (window.location),
+// not a fetch call, so gotrueFetch above never sees or rewrites it — it
+// would otherwise send the browser straight to the broken /auth/v1/authorize
+// path. skipBrowserRedirect defers the navigation to us so we can apply the
+// same /v1 rewrite by hand before sending the user on their way.
+export async function signInWithOAuthRedirect(provider: "google" | "github") {
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider,
+    options: { skipBrowserRedirect: true },
+  });
+  if (error || !data?.url) {
+    throw error ?? new Error(`no OAuth URL returned for provider ${provider}`);
+  }
+  window.location.href = data.url.replace("/auth/v1/", "/auth/");
+}
+
 export { supabase };
