@@ -400,7 +400,7 @@ export default function AccountMenuModal(props: AccountMenuModalProps) {
   const reloadBalance = useCallback(async () => {
     try {
       const resp = await fetch(
-        `${import.meta.env.VITE_PROXY_URL}/check_balance`,
+        `${import.meta.env.VITE_PROXY_URL}/account/usage`,
         {
           method: "GET",
           headers: {
@@ -414,8 +414,8 @@ export default function AccountMenuModal(props: AccountMenuModalProps) {
       }
 
       const respData = await resp.json();
-      const spend = Number(respData["data"]["spend"]).toFixed(3);
-      const max_budget = respData["data"]["max_budget"];
+      const spend = Number(respData["used"]).toFixed(3);
+      const max_budget = respData["limit"];
 
       setBalanceValue({spend, max_budget});
     } catch (err) {

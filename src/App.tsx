@@ -91,7 +91,7 @@ export default function App() {
     if (session !== null && import.meta.env.VITE_PROXY_URL !== undefined) {
       try {
         const resp = await fetch(
-          `${import.meta.env.VITE_PROXY_URL}/virtual_key`,
+          `${import.meta.env.VITE_PROXY_URL}/account/key`,
           {
             method: "GET",
             headers: {
@@ -102,7 +102,7 @@ export default function App() {
         );
 
         const respData = await resp.json();
-        const virtualKey = respData["data"]["virtual_key"];
+        const virtualKey = respData["key"];
         if (typeof virtualKey === "string" && virtualKey.startsWith("sk-")) {
           setVirtualKey(virtualKey);
 
