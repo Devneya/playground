@@ -34,6 +34,12 @@ import {deleteFile, uploadFile} from "../storage";
 import {useAvatar} from "../logic/utils";
 import {VisuallyHiddenInput} from "../themes/componentStyles";
 import {useSnackbar} from "notistack";
+import {
+  cancelSubscription,
+  fetchUsage,
+  startSubscription,
+  type UsageResponse,
+} from "../logic/subscription";
 
 function getFirstLetters(str: string) {
   return str.slice(0, 2).toUpperCase();
@@ -250,9 +256,17 @@ const AccountMenu = memo((props: AccountMenuProps) => {
 });
 
 const BalanceMenu = memo((props: {
-  balance: { spend: string; max_budget: string } | null;
-  reloadBalance: () => Promise<void>;
+  session: Session | null;
+  usage: UsageResponse | null;
+  subscriptionBusy: boolean;
+  reloadUsage: () => Promise<void>;
+  onSubscribe: () => Promise<void>;
+  onCancel: () => Promise<void>;
 }) => {
+  const status = props.usage?.subscription_status ?? "none";
+  const isActive = status === "active";
+  const needsSubscribe = !isActive;
+
   return (
     <Stack gap={"24px"}>
       <Stack padding={"0px 48px 0px 48px"} gap={"8px"}>
@@ -264,8 +278,8 @@ const BalanceMenu = memo((props: {
           alignItems={"center"}
         >
           <Typography color={"text.primary"} variant="subtitle2">
-            {props.balance ? (
-              `${props.balance.spend}/${props.balance.max_budget} $`
+            {props.usage ? (
+              `${Number(props.usage.used).toFixed(3)}/${props.usage.limit} $`
             ) : (
               <CircularProgress size={20}/>
             )}
@@ -273,9 +287,33 @@ const BalanceMenu = memo((props: {
 
           <SystemIconButton
             icon={Refresh}
-            func={props.reloadBalance}
+            func={props.reloadUsage}
             toolTipValue={"Update balance value"}
           />
+        </Stack>
+        <Stack gap={"8px"} paddingTop={"8px"}>
+          <Typography variant="body2" color="text.secondary">
+            Subscription: {status}
+          </Typography>
+          {needsSubscribe && (
+            <Button
+              variant="contained"
+              disabled={props.subscriptionBusy || !props.session}
+              onClick={props.onSubscribe}
+            >
+              Subscribe — $5/month
+            </Button>
+          )}
+          {isActive && (
+            <Button
+              variant="outlined"
+              color="inherit"
+              disabled={props.subscriptionBusy || !props.session}
+              onClick={props.onCancel}
+            >
+              Cancel subscription
+            </Button>
+          )}
         </Stack>
       </Stack>
     </Stack>
@@ -344,10 +382,8 @@ export default function AccountMenuModal(props: AccountMenuModalProps) {
   const {enqueueSnackbar} = useSnackbar();
 
   const [activeMenu, setActiveMenu] = useState<MenuTypes>("account");
-  const [balanceValue, setBalanceValue] = useState<{
-    spend: string;
-    max_budget: string;
-  } | null>(null);
+  const [usage, setUsage] = useState<UsageResponse | null>(null);
+  const [subscriptionBusy, setSubscriptionBusy] = useState(false);
 
   const [preferredName, setPreferredName] = useState<string>("");
   const [changeNameStatus, setChangeNameStatus] = useState(false);
@@ -397,34 +433,70 @@ export default function AccountMenuModal(props: AccountMenuModalProps) {
 
   const avatarUrl = useAvatar(props.avatarPath);
 
-  const reloadBalance = useCallback(async () => {
+  const reloadUsage = useCallback(async () => {
+    if (!session?.access_token || !import.meta.env.VITE_PROXY_URL) {
+      return;
+    }
     try {
-      const resp = await fetch(
-        `${import.meta.env.VITE_PROXY_URL}/account/usage`,
-        {
-          method: "GET",
-          headers: {
-            Authorization: "Bearer " + session?.access_token,
-            "Content-Type": "application/json",
-          },
-        }
+      const data = await fetchUsage(
+        import.meta.env.VITE_PROXY_URL,
+        session.access_token
       );
-      if (!resp.ok) {
-        throw new Error(`Balance request failed (${resp.status})`);
-      }
-
-      const respData = await resp.json();
-      const spend = Number(respData["used"]).toFixed(3);
-      const max_budget = respData["limit"];
-
-      setBalanceValue({spend, max_budget});
+      setUsage(data);
     } catch (err) {
       console.log(err);
-      setBalanceValue(null);
-      enqueueSnackbar(err as string, {variant: "error"});
+      setUsage(null);
+      enqueueSnackbar(String(err), {variant: "error"});
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.access_token]);
+
+  const handleSubscribe = useCallback(async () => {
+    if (!session?.access_token || !import.meta.env.VITE_PROXY_URL) {
+      return;
+    }
+    setSubscriptionBusy(true);
+    try {
+      const data = await startSubscription(
+        import.meta.env.VITE_PROXY_URL,
+        session.access_token
+      );
+      if (data.status === "checkout" && data.checkout_url) {
+        window.location.href = data.checkout_url;
+        return;
+      }
+      enqueueSnackbar("Subscription active", {variant: "success"});
+      await reloadUsage();
+    } catch (err) {
+      enqueueSnackbar(String(err), {variant: "error"});
+    } finally {
+      setSubscriptionBusy(false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.access_token, reloadUsage]);
+
+  const handleCancel = useCallback(async () => {
+    if (!session?.access_token || !import.meta.env.VITE_PROXY_URL) {
+      return;
+    }
+    setSubscriptionBusy(true);
+    try {
+      const data = await cancelSubscription(
+        import.meta.env.VITE_PROXY_URL,
+        session.access_token
+      );
+      const msg = data.access_until
+        ? `Cancelled — access until ${data.access_until}`
+        : "Subscription cancelled";
+      enqueueSnackbar(msg, {variant: "info"});
+      await reloadUsage();
+    } catch (err) {
+      enqueueSnackbar(String(err), {variant: "error"});
+    } finally {
+      setSubscriptionBusy(false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.access_token, reloadUsage]);
 
   const [anchorEl, setAnchorEl] = useState<HTMLButtonElement | null>(null);
 
@@ -452,11 +524,18 @@ export default function AccountMenuModal(props: AccountMenuModalProps) {
         />
       ),
       balance: (
-        <BalanceMenu balance={balanceValue} reloadBalance={reloadBalance}/>
+        <BalanceMenu
+          session={session}
+          usage={usage}
+          subscriptionBusy={subscriptionBusy}
+          reloadUsage={reloadUsage}
+          onSubscribe={handleSubscribe}
+          onCancel={handleCancel}
+        />
       ),
       about: <AboutMenu/>,
     }),
-    [session, virtualKey, preferredName, changeNameStatus, balanceValue, reloadBalance, props.avatarPath, props.setAvatarPath]
+    [session, virtualKey, preferredName, changeNameStatus, usage, subscriptionBusy, reloadUsage, handleSubscribe, handleCancel, props.avatarPath, props.setAvatarPath]
   );
 
   return (
@@ -549,7 +628,7 @@ export default function AccountMenuModal(props: AccountMenuModalProps) {
               </MenuItem>
               <MenuItem
                 onClick={() => {
-                  reloadBalance();
+                  reloadUsage();
                   setActiveMenu("balance");
                 }}
                 sx={{
