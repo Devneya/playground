@@ -1,48 +1,50 @@
 ## Devneya Playground
 
-Non-commercial playground build of the Devneya frontend, deployed to `playground.devneya.com` via GitHub Pages.
+The clean-cutover flow playground for `playground.devneya.com`. It is a React + TypeScript + Vite static site deployed to GitHub Pages; runtime workspace data stays in the signed-in user’s browser.
 
-License: [Business Source License 1.1](./LICENSE) — free for non-commercial use, converts to Apache License 2.0 on 2030-07-09.
+### Local development
 
-## Installation
+Node.js 18+ and npm are required.
 
 ```bash
-git clone https://github.com/Devneya/playground.git
-npm install
+npm ci
+npm run dev
 ```
 
-## Local development
-
-Create `.env.local`:
+Optional `.env.local` values:
 
 ```env
-VITE_SUPABASE_URL="..."
-VITE_SUPABASE_PUBLIC_KEY="..."
-VITE_PROXY_URL="..."
-VITE_LITELLM_URL="..."
-VITE_STORAGE_URL="..."
-VITE_SENTRY_URL="..."
-VITE_TEMPLATES_INDEX_URL="..."
+VITE_API_BASE_URL=https://api.devneya.com
+VITE_GOTRUE_ANON_KEY=...
 ```
+
+The app discovers models from `GET /llm/v1/models`, obtains a Bifrost virtual key from `/account/key` using the GoTrue JWT, and sends completions to `/llm/v1/chat/completions` with only the Bifrost key.
+
+### Product boundaries
+
+- Nodes are Text and Generation only. Text may be manual or a read-only generated result.
+- Inputs are ordered, graph cycles are rejected, and only successful results can be reused.
+- A run snapshots its inputs and instruction, creates one result per selected model, runs models concurrently, and records failures without retrying or overwriting results.
+- Named flows are persisted in IndexedDB (`devneya-playground`, `workspaces`) under the authenticated user ID.
+- Workspace export/import uses the versioned `devneya-flow-v1` JSON format.
+- Supabase is used only for GoTrue auth; no Supabase database, storage, or realtime client is used.
+
+### Verification
 
 ```bash
-npm run start-linux   # or start-windows
+npm run typecheck
+npm run lint
+npm test
+npm run test:coverage
+npm run test:e2e
 ```
 
-Open http://localhost:3001
+Vitest covers completion formatting, graph invariants, reducer transitions, execution settlement/cancellation, API credential boundaries, MSW-backed HTTP adapters, IndexedDB persistence/corruption handling, and auth UI states. Playwright is configured for Chromium smoke and browser workflow coverage.
 
-## Deployment
+### Deployment
 
-`.github/workflows/deploy.yml` builds on every push to `main` and publishes to GitHub Pages. Required repo secrets (Settings → Secrets and variables → Actions):
+`.github/workflows/deploy.yml` validates every pull request and deploys only after validation on `main`. The build publishes the `dist/` artifact through GitHub Pages. `public/CNAME` keeps the custom domain `playground.devneya.com`.
 
-- `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_PUBLIC_KEY`
-- `VITE_PROXY_URL` — `https://back.devneya.com`
-- `VITE_LITELLM_URL` — `https://litellm.devneya.com`
-- `VITE_STORAGE_URL`
-- `VITE_SENTRY_URL`
-- `VITE_TEMPLATES_INDEX_URL`
+Required Actions secret:
 
-Custom domain is set via `public/CNAME` (`playground.devneya.com`), GitHub Pages enabled on this repo with source set to "GitHub Actions". DNS for `playground.devneya.com` is on a wildcard record pointed at the FreeBSD/HAProxy host, so HAProxy reverse-proxies it to GitHub Pages rather than a direct CNAME to `devneya.github.io`.
-
-This build points at the same production backend (`back.devneya.com`, `litellm.devneya.com`) as `devneya-space`, so it uses the same Supabase project — there is no separate playground-only backend.
+- `VITE_GOTRUE_ANON_KEY`
