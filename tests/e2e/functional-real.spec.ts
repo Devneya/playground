@@ -12,7 +12,7 @@ import {
 } from "./real-accounts";
 
 const baseUrl = process.env.PLAYGROUND_E2E_BASE_URL ?? "";
-const configuredModel = process.env.E2E_TEST_MODEL;
+const configuredModel = process.env.E2E_TEST_MODEL?.trim() || undefined;
 const evidenceDir = process.env.EVIDENCE_DIR;
 const pageErrors = new WeakMap<Page, string[]>();
 const networkFailures = new WeakMap<Page, string[]>();
