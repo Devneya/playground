@@ -1,12 +1,13 @@
 import { randomBytes } from "node:crypto";
 import { expect, type Page } from "@playwright/test";
 
-const mailApi = "https://api.mail.tm";
+const mailApis = ["https://api.mail.gw", "https://api.mail.tm"] as const;
 const apiOrigin = "https://api.devneya.com";
 const mailTimeoutMs = 120_000;
 const activationTimeoutMs = 180_000;
 
 type MailAccount = {
+  mailApi: string;
   id: string;
   address: string;
   password: string;
@@ -18,31 +19,53 @@ export type RealTestAccount = MailAccount & {
   subscriptionActive: boolean;
 };
 
-const jsonRequest = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), mailTimeoutMs);
-  try {
-    const response = await fetch(`${mailApi}${path}`, {
-      ...init,
-      signal: controller.signal,
-      headers: { Accept: "application/json", ...(init.headers ?? {}) },
-    });
-    if (!response.ok) throw new Error(`Disposable-mail request failed (${response.status}).`);
-    const body = await response.text();
-    return (body ? JSON.parse(body) : undefined) as T;
-  } finally {
-    clearTimeout(timeout);
+class DisposableMailError extends Error {
+  public constructor(public readonly status: number, message: string) {
+    super(message);
   }
+}
+
+const wait = (durationMs: number) => new Promise((resolve) => setTimeout(resolve, durationMs));
+
+const retryDelay = (response: Response, attempt: number) => {
+  const retryAfter = response.headers.get("retry-after");
+  const seconds = retryAfter ? Number(retryAfter) : NaN;
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.min(30_000, Math.max(1_000, seconds * 1_000));
+  return Math.min(30_000, 2_000 * (2 ** attempt));
+};
+
+const jsonRequest = async <T>(mailApi: string, path: string, init: RequestInit = {}): Promise<T> => {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), mailTimeoutMs);
+    try {
+      const response = await fetch(`${mailApi}${path}`, {
+        ...init,
+        signal: controller.signal,
+        headers: { Accept: "application/json", ...(init.headers ?? {}) },
+      });
+      if (response.status === 429 && attempt < 4) {
+        await wait(retryDelay(response, attempt));
+        continue;
+      }
+      if (!response.ok) throw new DisposableMailError(response.status, `Disposable-mail request failed (${response.status}).`);
+      const body = await response.text();
+      return (body ? JSON.parse(body) : undefined) as T;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+  throw new DisposableMailError(429, "Disposable-mail request remained rate-limited after bounded retries.");
 };
 
 const randomPassword = () => `Dvn!${randomBytes(18).toString("base64url")}9a`;
 
-const activeMailDomain = async () => {
+const activeMailDomain = async (mailApi: string) => {
   const deadline = Date.now() + mailTimeoutMs;
-  let lastError = "no active domain returned";
+  let lastError: unknown = "no active domain returned";
   while (Date.now() < deadline) {
     try {
-      const domains = await jsonRequest<Array<{ domain?: string; isActive?: boolean }> | { "hydra:member"?: Array<{ domain?: string; isActive?: boolean }> }>("/domains?page=1");
+      const domains = await jsonRequest<Array<{ domain?: string; isActive?: boolean }> | { "hydra:member"?: Array<{ domain?: string; isActive?: boolean }> }>(mailApi, "/domains?page=1");
       const members = Array.isArray(domains) ? domains : domains["hydra:member"] ?? [];
       const domain = members.find((candidate) => candidate.isActive !== false && candidate.domain)?.domain;
       if (domain) return domain;
@@ -52,30 +75,41 @@ const activeMailDomain = async () => {
     }
     await new Promise((resolve) => setTimeout(resolve, 2_000));
   }
-  throw new Error("Disposable-mail service returned no active domain within " + (mailTimeoutMs / 1000) + "s (" + lastError + ").");
+  if (lastError instanceof DisposableMailError && lastError.status === 429) throw lastError;
+  const message = lastError instanceof Error ? lastError.message : String(lastError);
+  throw new Error("Disposable-mail service returned no active domain within " + (mailTimeoutMs / 1000) + "s (" + message + ").");
 };
 
 export const createDisposableMailbox = async (): Promise<RealTestAccount> => {
-  const domain = await activeMailDomain();
-  const address = `devneya-release-${randomBytes(10).toString("hex")}@${domain}`;
-  const password = randomPassword();
-  const created = await jsonRequest<{ id?: string }>("/accounts", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ address, password }),
-  });
-  if (!created.id) throw new Error("Disposable-mail service returned no account id.");
-  const session = await jsonRequest<{ token?: string }>("/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ address, password }),
-  });
-  if (!session.token) throw new Error("Disposable-mail service returned no mailbox token.");
-  return { id: created.id, address, password, token: session.token, subscriptionActive: false };
+  let lastError: unknown;
+  for (const mailApi of mailApis) {
+    try {
+      const domain = await activeMailDomain(mailApi);
+      const address = `devneya-release-${randomBytes(10).toString("hex")}@${domain}`;
+      const password = randomPassword();
+      const created = await jsonRequest<{ id?: string }>(mailApi, "/accounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address, password }),
+      });
+      if (!created.id) throw new Error("Disposable-mail service returned no account id.");
+      const session = await jsonRequest<{ token?: string }>(mailApi, "/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address, password }),
+      });
+      if (!session.token) throw new Error("Disposable-mail service returned no mailbox token.");
+      return { mailApi, id: created.id, address, password, token: session.token, subscriptionActive: false };
+    } catch (error) {
+      lastError = error;
+      if (!(error instanceof DisposableMailError) || error.status !== 429) throw error;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("No disposable-mail service was available.");
 };
 
 export const deleteDisposableMailbox = async (account: RealTestAccount) => {
-  await jsonRequest<unknown>(`/accounts/${encodeURIComponent(account.id)}`, {
+  await jsonRequest<unknown>(account.mailApi, `/accounts/${encodeURIComponent(account.id)}`, {
     method: "DELETE",
     headers: { Authorization: `Bearer ${account.token}` },
   }).catch((error: unknown) => {
@@ -109,16 +143,16 @@ export const waitForSignupConfirmation = async (account: RealTestAccount, expect
   const deadline = Date.now() + mailTimeoutMs;
   let lastMessageCount = 0;
   while (Date.now() < deadline) {
-    const messages = await jsonRequest<MailMessage[] | { "hydra:member"?: MailMessage[] }>("/messages?page=1", { headers: { Authorization: `Bearer ${account.token}` } });
+    const messages = await jsonRequest<MailMessage[] | { "hydra:member"?: MailMessage[] }>(account.mailApi, "/messages?page=1", { headers: { Authorization: `Bearer ${account.token}` } });
     const members = Array.isArray(messages) ? messages : messages["hydra:member"] ?? [];
     lastMessageCount = members.length;
     for (const summary of members) {
       if (!summary.id) continue;
-      const message = await jsonRequest<MailMessage>(`/messages/${encodeURIComponent(summary.id)}`, { headers: { Authorization: `Bearer ${account.token}` } });
+      const message = await jsonRequest<MailMessage>(account.mailApi, `/messages/${encodeURIComponent(summary.id)}`, { headers: { Authorization: `Bearer ${account.token}` } });
       const link = confirmationUrlFrom(message, account.address, expectedOrigin);
       if (link) return link;
     }
-    await new Promise((resolve) => setTimeout(resolve, 2_000));
+    await new Promise((resolve) => setTimeout(resolve, 5_000));
   }
   throw new Error(`Timed out waiting for the signup confirmation email (${lastMessageCount} mailbox messages observed).`);
 };
