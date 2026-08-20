@@ -68,8 +68,6 @@ jobs:
     needs: validate
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    environment:
-      name: github-pages
     permissions:
       contents: read
     steps:
@@ -82,7 +80,7 @@ jobs:
       - run: npm run build:prod
         env:
           VITE_API_BASE_URL: https://api.devneya.com
-          VITE_GOTRUE_ANON_KEY: ${{ secrets.VITE_GOTRUE_ANON_KEY }}
+          VITE_GOTRUE_ANON_KEY: ${{ secrets.VITE_SUPABASE_PUBLIC_KEY }}
       - run: npm run verify:artifact
       - run: npm run verify:bundle
       - uses: actions/upload-pages-artifact@v3
