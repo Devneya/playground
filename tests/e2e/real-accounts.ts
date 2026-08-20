@@ -28,7 +28,8 @@ const jsonRequest = async <T>(path: string, init: RequestInit = {}): Promise<T> 
       headers: { Accept: "application/json", ...(init.headers ?? {}) },
     });
     if (!response.ok) throw new Error(`Disposable-mail request failed (${response.status}).`);
-    return await response.json() as T;
+    const body = await response.text();
+    return (body ? JSON.parse(body) : undefined) as T;
   } finally {
     clearTimeout(timeout);
   }
@@ -41,8 +42,9 @@ const activeMailDomain = async () => {
   let lastError = "no active domain returned";
   while (Date.now() < deadline) {
     try {
-      const domains = await jsonRequest<{ "hydra:member"?: Array<{ domain?: string; isActive?: boolean }> }>("/domains?page=1");
-      const domain = domains["hydra:member"]?.find((candidate) => candidate.isActive !== false && candidate.domain)?.domain;
+      const domains = await jsonRequest<Array<{ domain?: string; isActive?: boolean }> | { "hydra:member"?: Array<{ domain?: string; isActive?: boolean }> }>("/domains?page=1");
+      const members = Array.isArray(domains) ? domains : domains["hydra:member"] ?? [];
+      const domain = members.find((candidate) => candidate.isActive !== false && candidate.domain)?.domain;
       if (domain) return domain;
       lastError = "no active domain returned";
     } catch (error) {
@@ -107,8 +109,8 @@ export const waitForSignupConfirmation = async (account: RealTestAccount, expect
   const deadline = Date.now() + mailTimeoutMs;
   let lastMessageCount = 0;
   while (Date.now() < deadline) {
-    const messages = await jsonRequest<{ "hydra:member"?: MailMessage[] }>("/messages?page=1", { headers: { Authorization: `Bearer ${account.token}` } });
-    const members = messages["hydra:member"] ?? [];
+    const messages = await jsonRequest<MailMessage[] | { "hydra:member"?: MailMessage[] }>("/messages?page=1", { headers: { Authorization: `Bearer ${account.token}` } });
+    const members = Array.isArray(messages) ? messages : messages["hydra:member"] ?? [];
     lastMessageCount = members.length;
     for (const summary of members) {
       if (!summary.id) continue;

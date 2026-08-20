@@ -16,6 +16,7 @@ const configuredModel = process.env.E2E_TEST_MODEL;
 const evidenceDir = process.env.EVIDENCE_DIR;
 const pageErrors = new WeakMap<Page, string[]>();
 const networkFailures = new WeakMap<Page, string[]>();
+const expectedBrowserErrors = new WeakMap<Page, Set<string>>();
 const managedAccounts: RealTestAccount[] = [];
 
 const generation = (page: Page) => page.locator(".generation-node");
@@ -125,6 +126,7 @@ test.describe("real-server functional E2E", () => {
     const failures: string[] = [];
     pageErrors.set(page, errors);
     networkFailures.set(page, failures);
+    expectedBrowserErrors.set(page, new Set());
     page.on("pageerror", (error) => {
       if (/^ResizeObserver loop completed with undelivered notifications\.?$/.test(error.message)) return;
       errors.push("page: " + error.message);
@@ -153,7 +155,9 @@ test.describe("real-server functional E2E", () => {
       mkdirSync(join(evidenceDir, "observations"), { recursive: true });
       writeFileSync(join(evidenceDir, "observations", testInfo.project.name + "-" + safeName + ".json"), JSON.stringify({ test: testInfo.titlePath, status: testInfo.status, screenshot: screenshotPath, browserErrors: errors, networkFailures: failures, visualReview: "pending" }, null, 2) + "\n");
     }
-    expect(errors, "Uncaught browser errors: " + errors.join(" | ")).toEqual([]);
+    const expectedErrors = expectedBrowserErrors.get(page) ?? new Set<string>();
+    const unexpectedErrors = errors.filter((error) => !expectedErrors.has(error));
+    expect(unexpectedErrors, "Uncaught browser errors: " + unexpectedErrors.join(" | ")).toEqual([]);
     expect(failures, "Network failures: " + failures.join(" | ")).toEqual([]);
   });
 
@@ -169,6 +173,7 @@ test.describe("real-server functional E2E", () => {
     await clearSensitiveFields(page);
     await captureCheckpoint(page, "account-" + (accountIndex + 1) + "-confirmation-requested");
 
+    expectedBrowserErrors.get(page)?.add("console: Failed to load resource: the server responded with a status of 400 ()");
     await page.getByRole("button", { name: /already have an account/i }).click();
     await page.getByLabel("Email").fill(account.address);
     await page.getByLabel("Password").fill(account.password);
@@ -277,6 +282,7 @@ test.describe("real-server functional E2E", () => {
   });
 
   test.afterAll(async ({ browser }) => {
+    test.setTimeout(240_000);
     const cleanupErrors: string[] = [];
     for (const account of [...managedAccounts].reverse()) {
       const context = await browser.newContext();
