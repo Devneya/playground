@@ -1,8 +1,14 @@
 import { expect, test, type Page } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 
 const evidenceDir = process.env.EVIDENCE_DIR;
+const browserErrors = new WeakMap<Page, string[]>();
+const assertAccessible = async (page: Page) => {
+  const results = await new AxeBuilder({ page }).analyze();
+  expect(results.violations.filter((violation) => violation.impact === "serious" || violation.impact === "critical")).toEqual([]);
+};
 const waitForMockWorker = async (page: Page) => page.evaluate(async () => {
   if (!navigator.serviceWorker) return;
   await Promise.race([navigator.serviceWorker.ready, new Promise<void>((resolve) => window.setTimeout(resolve, 2_000))]);
@@ -39,6 +45,25 @@ const signIn = async (page: Page, email = "user-a@example.test") => {
 
 const generation = (page: Page) => page.locator(".generation-node");
 const fitCanvas = async (page: Page) => page.getByRole("button", { name: "fit view" }).click();
+const waitForSave = async (page: Page) => {
+  await expect(page.getByText("Saved locally")).toBeVisible({ timeout: 15_000 });
+};
+const storedWorkspaceJson = async (page: Page) => page.evaluate(() => new Promise<string>((resolve) => {
+  const request = indexedDB.open("devneya-playground");
+  request.onerror = () => resolve("");
+  request.onsuccess = () => {
+    const db = request.result;
+    const get = db.transaction("workspaces", "readonly").objectStore("workspaces").getAll();
+    get.onsuccess = () => { resolve(JSON.stringify(get.result)); db.close(); };
+    get.onerror = () => { resolve(""); db.close(); };
+  };
+}));
+const waitForStoredText = async (page: Page, text: string) => {
+  await expect.poll(async () => (await storedWorkspaceJson(page)).includes(`"text":"${text}"`), { timeout: 15_000 }).toBe(true);
+};
+const waitForStoredInputCount = async (page: Page, count: number) => {
+  await expect.poll(async () => ((await storedWorkspaceJson(page)).match(/"kind":"input"/g) ?? []).length, { timeout: 15_000 }).toBe(count);
+};
 
 const selectModels = async (page: Page, modelIds: string[]) => {
   const node = generation(page);
@@ -52,20 +77,41 @@ const selectModels = async (page: Page, modelIds: string[]) => {
 const runAndWaitForOutputs = async (page: Page, expectedCount: number) => {
   await fitCanvas(page);
   await generation(page).getByRole("button", { name: "Run generation" }).click();
+  await expect(page.locator(".generated-node")).toHaveCount(expectedCount, { timeout: 15_000 });
   await expect(page.locator(".generated-content").filter({ hasText: "Mock result" }).first()).toHaveCount(1, { timeout: 15_000 });
   await fitCanvas(page);
-  await expect(page.locator(".generated-content").filter({ hasText: "Mock result" }).first()).toBeVisible({ timeout: 15_000 });
-  await expect(page.locator(".generated-node")).toHaveCount(expectedCount);
 };
 
+test.beforeEach(async ({ page }) => {
+  const errors: string[] = [];
+  browserErrors.set(page, errors);
+  page.on("pageerror", (error) => {
+    if (/^ResizeObserver loop completed with undelivered notifications\.?$/.test(error.message)) return;
+    errors.push(`pageerror: ${error.message}`);
+  });
+  page.on("console", (message) => {
+    if (message.type() !== "error") return;
+    if (/^Failed to load resource: the server responded with a status of (401|402|403|502|503)/.test(message.text())) return;
+    errors.push(`console: ${message.text()}`);
+  });
+});
+
 test.afterEach(async ({ page }, testInfo) => {
-  if (!evidenceDir) return;
-  mkdirSync(evidenceDir, { recursive: true });
-  const safeName = testInfo.titlePath.join("-").replace(/[^a-z0-9-]+/gi, "-").replace(/^-|-$/g, "").toLowerCase();
-  await page.screenshot({ path: join(evidenceDir, `${testInfo.project.name}-${safeName}.png`), fullPage: true });
+  if (evidenceDir) {
+    mkdirSync(evidenceDir, { recursive: true });
+    const safeName = testInfo.titlePath.join("-").replace(/[^a-z0-9-]+/gi, "-").replace(/^-|-$/g, "").toLowerCase();
+    await page.screenshot({ path: join(evidenceDir, `${testInfo.project.name}-${safeName}.png`), fullPage: true });
+  }
+  expect(browserErrors.get(page) ?? [], `Unexpected browser errors: ${(browserErrors.get(page) ?? []).join(" | ")}`).toEqual([]);
 });
 
 test.describe("mocked workspace flows", () => {
+  test("has no serious or critical accessibility violations in the starter workspace", async ({ page }) => {
+    await prepare(page, "default");
+    await signIn(page);
+    await assertAccessible(page);
+  });
+
   test("edits a text input, selects a model, and runs one completion", async ({ page }) => {
     await prepare(page, "default");
     await signIn(page);
@@ -73,6 +119,7 @@ test.describe("mocked workspace flows", () => {
     await selectModels(page, ["model-a"]);
     await expect(page.getByText("Saved locally")).toBeVisible();
     await runAndWaitForOutputs(page, 1);
+    await assertAccessible(page);
     await expect(page.locator(".generated-node")).toContainText("Mock result");
     await expect(page.locator(".generated-node")).toContainText("model-a");
   });
@@ -143,6 +190,11 @@ test.describe("mocked workspace flows", () => {
     await signIn(page, "user-a@example.test");
     await page.getByLabel("Text 1 text").fill("USER_A_PRIVATE_TEXT");
     await expect(page.getByText("Saved locally")).toBeVisible();
+    await expect(page.getByLabel("Text 1 text")).toHaveValue("USER_A_PRIVATE_TEXT");
+    await waitForStoredText(page, "USER_A_PRIVATE_TEXT");
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(page.getByText("Live model catalog")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByLabel("Text 1 text")).toHaveValue("USER_A_PRIVATE_TEXT", { timeout: 15_000 });
     await page.getByRole("button", { name: "Sign out" }).click();
     await expect(page.getByLabel("Email")).toBeVisible();
 
@@ -207,10 +259,11 @@ test.describe("mocked workspace flows", () => {
     await signIn(page);
     await page.getByLabel("Text 1 text").fill("PERSISTED_AFTER_RELOAD");
     await expect(page.getByText("Saved locally")).toBeVisible();
-    await page.reload();
+    await waitForStoredText(page, "PERSISTED_AFTER_RELOAD");
+    await page.reload({ waitUntil: "domcontentloaded" });
     await expect(page.getByRole("heading", { name: "Compose a flow" })).toBeVisible();
-    await expect(page.getByLabel("Text 1 text")).toHaveValue("PERSISTED_AFTER_RELOAD");
-    await expect(page.getByText("Live model catalog")).toBeVisible();
+    await expect(page.getByText("Live model catalog")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByLabel("Text 1 text")).toHaveValue("PERSISTED_AFTER_RELOAD", { timeout: 15_000 });
   });
 
   test("renders the offline completion recovery state", async ({ page }) => {
@@ -241,4 +294,120 @@ test("renders an invalid completion payload as a failed result", async ({ page }
   await fitCanvas(page);
   await generation(page).getByRole("button", { name: "Run generation" }).click();
   await expect(page.locator(".generated-node")).toContainText("Failed: The completion did not contain usable text.");
+});
+
+
+test("connects a new Text node with the pointer and restores the edge after reload", async ({ page }) => {
+  await prepare(page, "default");
+  await signIn(page);
+  await page.getByRole("button", { name: "+ Text" }).click();
+  await fitCanvas(page);
+  const source = page.locator(".react-flow__node-text").filter({ hasText: "Text 3" }).locator(".react-flow__handle.source");
+  const target = generation(page).locator(".react-flow__handle.target");
+  await source.dragTo(target);
+  await expect(generation(page)).toContainText("Inputs (2)");
+  await expect(page.locator(".react-flow__edge")).toHaveCount(2);
+  await waitForSave(page);
+  await waitForStoredInputCount(page, 2);
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect(page.getByText("Live model catalog")).toBeVisible({ timeout: 15_000 });
+  await expect(generation(page)).toContainText("Inputs (2)", { timeout: 15_000 });
+});
+
+test("rejects an accessible cycle attempt with a visible reason", async ({ page }) => {
+  await prepare(page, "default");
+  await signIn(page);
+  await selectModels(page, ["model-a"]);
+  await runAndWaitForOutputs(page, 1);
+  await page.getByRole("button", { name: "+ Generation" }).click();
+  await fitCanvas(page);
+  const second = page.locator(".generation-node").nth(1);
+  const secondTitle = (await second.locator(".node-header strong").textContent())!;
+  await second.getByRole("button", { name: "Add input" }).click();
+  await fitCanvas(page);
+  await second.getByRole("combobox", { name: `${secondTitle} input source` }).selectOption({ label: "model-a" });
+  await second.getByRole("button", { name: "Add input" }).click();
+  await second.getByRole("checkbox", { name: `${secondTitle} model model-a` }).check();
+  await second.getByRole("button", { name: "Run generation" }).click();
+  await expect(page.locator(".generated-node")).toHaveCount(2, { timeout: 15_000 });
+  const firstInput = generation(page).first().getByLabel("Reconnect input 1");
+  const outputOption = firstInput.locator("option").nth(2);
+  const outputId = await outputOption.getAttribute("value");
+  expect(outputId).toBeTruthy();
+  await firstInput.selectOption(outputId!);
+  await expect(page.getByRole("status")).toContainText("cycle");
+  await expect(firstInput).not.toHaveValue(outputId!);
+});
+
+test("merges two upstream paths into a second generation", async ({ page }) => {
+  await prepare(page, "default");
+  await signIn(page);
+  await page.getByLabel("Text 1 text").fill("BRANCH_ALPHA");
+  await page.getByRole("button", { name: "+ Text" }).click();
+  await fitCanvas(page);
+  await page.getByLabel("Text 3 text").fill("BRANCH_BETA");
+  await page.getByRole("button", { name: "+ Generation" }).click();
+  await fitCanvas(page);
+  const second = page.locator(".generation-node").nth(1);
+  const secondTitle = (await second.locator(".node-header strong").textContent())!;
+  await second.getByRole("button", { name: "Add input" }).click();
+  await fitCanvas(page);
+  await second.getByRole("combobox", { name: `${secondTitle} input source` }).selectOption({ label: "Text 3" });
+  await second.getByRole("button", { name: "Add input" }).click();
+  await second.getByRole("checkbox", { name: `${secondTitle} model model-a` }).check();
+  await second.getByLabel(`${secondTitle} instruction`).fill("Repeat both branch labels.");
+  await second.getByRole("button", { name: "Run generation" }).click();
+  await expect(page.locator(".generated-node")).toHaveCount(1, { timeout: 15_000 });
+  await expect(page.locator(".generated-content")).toContainText("Mock result");
+  await expect(second).toContainText("Inputs (2)");
+});
+
+test("supports flow creation, rename, duplication, activation, deletion, undo, and redo", async ({ page }) => {
+  await prepare(page, "default");
+  await signIn(page);
+  await page.getByLabel("Text 1 text").fill("UNDO_ME");
+  const undoButton = page.getByRole("button", { name: "Undo last change" });
+  await expect(undoButton).toBeEnabled();
+  await undoButton.click();
+  await expect(page.getByLabel("Text 1 text")).toHaveValue("");
+  await page.getByRole("button", { name: "Redo last change" }).click();
+  await expect(page.getByLabel("Text 1 text")).toHaveValue("UNDO_ME");
+  await page.getByRole("button", { name: "New flow" }).click();
+  await expect(page.getByRole("button", { name: "Rename Untitled flow 2" })).toBeVisible();
+  await page.getByRole("button", { name: "Rename Untitled flow 2" }).click();
+  const rename = page.locator(".flow-list-item input");
+  await rename.fill("Release flow");
+  await rename.press("Enter");
+  await expect(page.getByRole("button", { name: "Rename Release flow" })).toBeVisible();
+  await page.getByRole("button", { name: "Duplicate Release flow" }).click();
+  await expect(page.getByRole("button", { name: "Rename Release flow 2" })).toBeVisible();
+  await page.getByRole("button", { name: "Delete Release flow 2" }).click();
+  await expect(page.getByRole("button", { name: "Rename Release flow 2" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Untitled flow" }).click();
+  await expect(page.locator(".canvas-toolbar .eyebrow")).toHaveText("Untitled flow");
+});
+
+test("recovers from one catalog and account-key failure", async ({ page }) => {
+  await prepare(page, "catalog-recover");
+  await signIn(page);
+  await expect(page.getByText("Model catalog unavailable")).toBeVisible();
+  await generation(page).getByRole("button", { name: "Retry" }).click();
+  await expect(page.getByText("Live model catalog")).toBeVisible();
+
+  await page.getByRole("button", { name: "Sign out" }).click();
+  await expect(page.getByLabel("Email")).toBeVisible();
+  await prepare(page, "key-recover");
+  await signIn(page);
+  await expect(page.getByRole("button", { name: "Retry account key" })).toBeVisible();
+  await page.getByRole("button", { name: "Retry account key" }).click();
+  await expect(generation(page).getByRole("button", { name: "Run generation" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Retry account key" })).toHaveCount(0);
+});
+
+test("keeps the editor within a mobile viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await prepare(page, "default");
+  await signIn(page);
+  const dimensions = await page.evaluate(() => ({ body: document.body.scrollWidth, viewport: document.documentElement.clientWidth }));
+  expect(dimensions.body).toBeLessThanOrEqual(dimensions.viewport + 1);
 });

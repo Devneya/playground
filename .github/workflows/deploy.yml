@@ -37,7 +37,11 @@ jobs:
         env:
           VITE_API_BASE_URL: https://api.devneya.com
           VITE_GOTRUE_ANON_KEY: validation-public-anon-key
+      - name: Check validation bundle budget
+        run: npm run verify:bundle
       - run: npm run build:mock
+      - run: npm run verify:mock-artifact
+      - run: npm run verify:bundle
       - run: npx playwright install --with-deps chromium
       - run: npm run test:browser-integration
 
@@ -54,6 +58,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build:mock
+      - run: npm run verify:mock-artifact
+      - run: npm run verify:bundle
       - run: npx playwright install --with-deps chromium firefox webkit
       - run: npm run test:browser-integration:matrix
 
@@ -76,6 +82,7 @@ jobs:
           VITE_API_BASE_URL: https://api.devneya.com
           VITE_GOTRUE_ANON_KEY: ${{ secrets.VITE_GOTRUE_ANON_KEY }}
       - run: npm run verify:artifact
+      - run: npm run verify:bundle
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

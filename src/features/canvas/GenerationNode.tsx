@@ -8,10 +8,11 @@ import { useWorkspace } from "../workspace/useWorkspace";
 type GenerationFlowNode = Node<GenerationData, "generation">;
 
 export const GenerationNode = ({ id, data }: NodeProps<GenerationFlowNode>) => {
-  const { activeFlow, activeRunIds, models, modelsStatus, modelsError, reloadModels, dispatch, runGeneration, cancelRun, virtualKey } = useWorkspace();
+  const { activeFlow, activeRunIds, models, modelsStatus, modelsError, reloadModels, reloadKey, dispatch, runGeneration, cancelRun, virtualKey, keyStatus, keyError } = useWorkspace();
   const [runError, setRunError] = useState<string | null>(null);
   const [selectedInputId, setSelectedInputId] = useState("");
   const [localRunId, setLocalRunId] = useState<string | null>(null);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
   const inputs = getOrderedInputEdges(activeFlow, id);
   const addableInputs = activeFlow.nodes
     .filter(isTextNode)
@@ -22,6 +23,16 @@ export const GenerationNode = ({ id, data }: NodeProps<GenerationFlowNode>) => {
     const edge: InputEdge = { id: randomIdFactory(), kind: "input", source: source.id, target: id, order: inputs.length };
     dispatch({ type: "input/add", flowId: activeFlow.id, edge });
     setSelectedInputId("");
+    setConnectionError(null);
+  };
+  const reconnectInput = (edgeId: string, source: string) => {
+    const check = canAddInputConnection(activeFlow, source, id, edgeId);
+    if (!check.allowed) {
+      setConnectionError(check.reason);
+      return;
+    }
+    dispatch({ type: "input/reconnect", flowId: activeFlow.id, edgeId, source, target: id });
+    setConnectionError(null);
   };
   const runningBatch = useMemo(() => activeFlow.batches.find((batch) => batch.generationNodeId === id && batch.executions.some((execution) => execution.status === "pending")), [activeFlow.batches, id]);
   const runningBatchId = runningBatch?.id ?? activeRunIds[id] ?? localRunId;
@@ -48,6 +59,7 @@ export const GenerationNode = ({ id, data }: NodeProps<GenerationFlowNode>) => {
     </header>
     <label className="node-field">Instruction<textarea className="node-textarea instruction-textarea" aria-label={`${data.title} instruction`} value={data.instruction} onChange={(event) => dispatch({ type: "node/edit-instruction", flowId: activeFlow.id, nodeId: id, instruction: event.target.value })} placeholder="Optional instruction for the model…" /></label>
     <div className="input-order" aria-label="Generation inputs">
+      {connectionError && <div className="canvas-notice" role="status">{connectionError}<button type="button" onClick={() => setConnectionError(null)} aria-label="Dismiss connection notice">×</button></div>}
       <div className="field-label">Inputs <span className="muted">({inputs.length})</span></div>
       {addableInputs.length > 0 && <div className="input-adder">
         <select aria-label={`${data.title} input source`} value={selectedInputId || addableInputs[0]?.id || ""} onChange={(event) => setSelectedInputId(event.target.value)}>
@@ -56,7 +68,7 @@ export const GenerationNode = ({ id, data }: NodeProps<GenerationFlowNode>) => {
         <button type="button" className="small-button" onClick={addInput}>Add input</button>
       </div>}
       {inputs.length === 0 ? <span className="muted">Connect Text nodes here or use Add input.</span> : inputs.map((edge, index) => <div className="input-row" key={edge.id}>
-        <select aria-label={`Reconnect input ${index + 1}`} value={edge.source} onChange={(event) => dispatch({ type: "input/reconnect", flowId: activeFlow.id, edgeId: edge.id, source: event.target.value, target: id })}>
+        <select aria-label={`Reconnect input ${index + 1}`} value={edge.source} onChange={(event) => reconnectInput(edge.id, event.target.value)}>
           {activeFlow.nodes.filter(isTextNode).map((node) => <option key={node.id} value={node.id}>{node.data.title}</option>)}
         </select>
         <span>
@@ -74,7 +86,7 @@ export const GenerationNode = ({ id, data }: NodeProps<GenerationFlowNode>) => {
       {data.modelIds.filter((modelId) => !models.some((model) => model.id === modelId)).map((modelId) => <span className="model-option stale-model" key={modelId}><span>✓ {modelId}</span><button type="button" className="icon-button" onClick={() => toggleModel(modelId)} aria-label={`Remove ${modelId}`}>×</button></span>)}
       {modelsStatus === "ready" && models.length === 0 && <span className="muted">No models are currently available.</span>}
     </div>
-    {(runError || !virtualKey) && <p className="form-error node-error">{runError || "Account key is loading; sign in to run."}</p>}
+    {(runError || !virtualKey) && <p className="form-error node-error">{runError || keyError || (keyStatus === "loading" ? "Account key is loading; sign in to run." : "Account key is not ready yet.")} {keyStatus === "error" && <button type="button" className="small-button" onClick={reloadKey}>Retry account key</button>}</p>}
     <button type="button" className="primary-button run-button" onClick={runningBatchId ? () => cancelRun(runningBatchId) : run} disabled={!runningBatchId && (!virtualKey || data.modelIds.length === 0)}>{runningBatchId ? "Cancel run" : "Run generation"}</button>
   </article>;
 };

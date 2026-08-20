@@ -1,6 +1,12 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
+
+const assertAccessible = async (page: Page) => {
+  const results = await new AxeBuilder({ page }).analyze();
+  expect(results.violations.filter((violation) => violation.impact === "serious" || violation.impact === "critical")).toEqual([]);
+};
 
 test.describe("Playground browser shell", () => {
   test.beforeEach(async ({ page }) => {
@@ -27,6 +33,15 @@ test.describe("Playground browser shell", () => {
     await expect(page.getByLabel("Password")).toBeVisible();
   });
 
+  test("has no serious or critical sign-in accessibility violations", async ({ page }) => {
+    await assertAccessible(page);
+  });
+
+  test("has no serious or critical recovery accessibility violations", async ({ page }) => {
+    await page.getByRole("button", { name: /forgot password/i }).click();
+    await assertAccessible(page);
+  });
+
   test("shows Google OAuth", async ({ page }) => {
     await expect(page.getByRole("button", { name: /continue with google/i })).toBeVisible();
   });
@@ -44,6 +59,21 @@ test.describe("Playground browser shell", () => {
     await page.getByRole("button", { name: /forgot password/i }).click();
     await expect(page.getByRole("button", { name: /send recovery link/i })).toBeVisible();
     await expect(page.getByLabel("Password")).toHaveCount(0);
+  });
+
+  test("shows the signup confirmation state", async ({ page }) => {
+    await page.getByRole("button", { name: /create an account/i }).click();
+    await page.getByLabel("Email").fill("new-user@example.test");
+    await page.getByLabel("Password").fill("password123");
+    await page.getByRole("button", { name: /create account/i }).click();
+    await expect(page.getByRole("status")).toContainText("Check your email to confirm your account.");
+  });
+
+  test("shows the recovery request state", async ({ page }) => {
+    await page.getByRole("button", { name: /forgot password/i }).click();
+    await page.getByLabel("Email").fill("person@example.test");
+    await page.getByRole("button", { name: /send recovery link/i }).click();
+    await expect(page.getByRole("status")).toContainText("If an account exists");
   });
 
   test("requires an email", async ({ page }) => {

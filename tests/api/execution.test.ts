@@ -68,6 +68,29 @@ describe("generation execution", () => {
     if (started?.type === "batch/started") expect(started.batch.executions).toHaveLength(2);
   });
 
+
+  it("normalizes a network failure without misclassifying it as HTTP", async () => {
+    server.use(http.post("https://api.devneya.com/llm/v1/chat/completions", () => HttpResponse.error()));
+    const actions: WorkspaceAction[] = [];
+    const options = makeRunOptions(["model-network"]);
+    const run = startGenerationRun({ ...options, generationNodeId: options.generation.id, dispatch: (action) => actions.push(action) });
+    await run.completed;
+    const failed = actions.find((action) => action.type === "execution/failed");
+    expect(failed?.type).toBe("execution/failed");
+    if (failed?.type === "execution/failed") expect(failed.error.kind).toBe("network");
+  });
+
+  it("preserves HTTP status while allowing an absent provider code", async () => {
+    server.use(http.post("https://api.devneya.com/llm/v1/chat/completions", () => HttpResponse.json({ error: "plain failure" }, { status: 500 })));
+    const actions: WorkspaceAction[] = [];
+    const options = makeRunOptions(["model-http"]);
+    const run = startGenerationRun({ ...options, generationNodeId: options.generation.id, dispatch: (action) => actions.push(action) });
+    await run.completed;
+    const failed = actions.find((action) => action.type === "execution/failed");
+    expect(failed?.type).toBe("execution/failed");
+    if (failed?.type === "execution/failed") expect(failed.error).toMatchObject({ kind: "http", status: 500 });
+  });
+
   it("cancels in-flight requests without retrying", async () => {
     server.use(http.post("https://api.devneya.com/llm/v1/chat/completions", async () => {
       await new Promise((resolve) => setTimeout(resolve, 30));

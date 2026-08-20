@@ -22,6 +22,16 @@ describe("IndexedDbWorkspaceRepository", () => {
     database.close();
     await expect(repository.load("user-1")).rejects.toBeInstanceOf(CorruptWorkspaceError);
   });
+
+  it("distinguishes a schema-valid but invariant-corrupt record", async () => {
+    const workspace = createStarterWorkspace(() => crypto.randomUUID());
+    await repository.save("user-corrupt", workspace);
+    const database = await (await import("idb")).openDB("devneya-playground");
+    await database.put("workspaces", { userId: "user-corrupt", document: { ...workspace, activeFlowId: "missing" }, savedAt: new Date().toISOString() });
+    database.close();
+    await expect(repository.load("user-corrupt")).rejects.toBeInstanceOf(CorruptWorkspaceError);
+  });
+
   it("keeps user records isolated and deletes only the requested record", async () => {
     const first = createStarterWorkspace(() => crypto.randomUUID());
     const second = createStarterWorkspace(() => crypto.randomUUID());

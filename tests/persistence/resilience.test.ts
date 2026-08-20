@@ -53,6 +53,19 @@ describe("resilient local persistence", () => {
     expect(fallback.load).toHaveBeenCalledWith("user-a");
   });
 
+
+  it("does not fall back when a primary save rejects corrupt data", async () => {
+    const primary: WorkspaceRepository = {
+      load: vi.fn(),
+      save: vi.fn().mockRejectedValue(new CorruptWorkspaceError("corrupt")),
+      delete: vi.fn(),
+    };
+    const onFallback = vi.fn();
+    const repository = new ResilientWorkspaceRepository(primary, { repository: new InMemoryWorkspaceRepository(), onFallback });
+    await expect(repository.save("user-a", createStarterWorkspace(() => crypto.randomUUID()))).rejects.toThrow("corrupt");
+    expect(onFallback).not.toHaveBeenCalled();
+  });
+
   it("propagates failures after the fallback has already been activated", async () => {
     const primary: WorkspaceRepository = {
       load: vi.fn().mockRejectedValue(new Error("primary load")),
@@ -69,6 +82,17 @@ describe("resilient local persistence", () => {
     await expect(repository.save("user-a", workspace)).rejects.toThrow("fallback save");
     await expect(repository.load("user-a")).rejects.toThrow("fallback load");
     await expect(repository.delete("user-a")).rejects.toThrow("fallback delete");
+  });
+
+
+  it("falls back when the primary delete operation fails", async () => {
+    const primary: WorkspaceRepository = { load: vi.fn(), save: vi.fn(), delete: vi.fn().mockRejectedValue(new Error("delete quota")) };
+    const fallback: WorkspaceRepository = { load: vi.fn(), save: vi.fn(), delete: vi.fn().mockResolvedValue(undefined) };
+    const onFallback = vi.fn();
+    const repository = new ResilientWorkspaceRepository(primary, { repository: fallback, onFallback });
+    await repository.delete("user-a");
+    expect(fallback.delete).toHaveBeenCalledWith("user-a");
+    expect(onFallback).toHaveBeenCalledWith(expect.any(Error));
   });
 
   it("does not hide corrupt primary data behind the fallback", async () => {

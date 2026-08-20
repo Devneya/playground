@@ -4,7 +4,10 @@ export type MockScenarioName =
   | "partial-failure"
   | "slow"
   | "catalog-error"
+  | "catalog-recover"
+  | "catalog-invalid"
   | "key-error"
+  | "key-recover"
   | "completion-401"
   | "completion-402"
   | "completion-403"
@@ -15,7 +18,10 @@ export type MockScenario = {
   name: MockScenarioName;
   models: string[];
   catalogStatus?: number;
+  catalogFailuresRemaining?: number;
+  invalidCatalog?: boolean;
   keyStatus?: number;
+  keyFailuresRemaining?: number;
   completionStatus?: number;
   invalidCompletion?: boolean;
   delayMs: number;
@@ -36,7 +42,10 @@ const createScenario = (name: MockScenarioName): MockScenario => {
   if (name === "partial-failure") return { ...base(name), models: ["model-a", "model-b", "model-c", "model-d"], failModels: ["model-b"], delays: { "model-a": 30, "model-b": 80, "model-c": 10, "model-d": 50 } };
   if (name === "slow") return { ...base(name), delayMs: 4_000 };
   if (name === "catalog-error") return { ...base(name), catalogStatus: 503 };
+  if (name === "catalog-recover") return { ...base(name), catalogFailuresRemaining: 1 };
+  if (name === "catalog-invalid") return { ...base(name), invalidCatalog: true };
   if (name === "key-error") return { ...base(name), keyStatus: 403 };
+  if (name === "key-recover") return { ...base(name), keyFailuresRemaining: 1 };
   if (name === "completion-401") return { ...base(name), completionStatus: 401 };
   if (name === "completion-402") return { ...base(name), completionStatus: 402 };
   if (name === "completion-403") return { ...base(name), completionStatus: 403 };
@@ -65,6 +74,18 @@ export const setMockScenario = (value: MockScenarioName | Partial<MockScenario>)
     activeScenario = { ...activeScenario, ...value };
   }
   completionCount = 0;
+};
+
+export const consumeCatalogFailure = (): boolean => {
+  if (!activeScenario.catalogFailuresRemaining || activeScenario.catalogFailuresRemaining <= 0) return false;
+  activeScenario = { ...activeScenario, catalogFailuresRemaining: activeScenario.catalogFailuresRemaining - 1 };
+  return true;
+};
+
+export const consumeKeyFailure = (): boolean => {
+  if (!activeScenario.keyFailuresRemaining || activeScenario.keyFailuresRemaining <= 0) return false;
+  activeScenario = { ...activeScenario, keyFailuresRemaining: activeScenario.keyFailuresRemaining - 1 };
+  return true;
 };
 
 export const nextCompletionNumber = (): number => {

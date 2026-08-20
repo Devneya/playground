@@ -55,7 +55,7 @@ export const AuthScreen = () => {
         {mode !== "recovery" && <label>Password<input value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} minLength={8} required /></label>}
         {error && <p className="form-error" role="alert">{error}</p>}
         {message && <p className="form-message" role="status">{message}</p>}
-        <button className="primary-button" type="submit" disabled={busy}>{busy ? "Working…" : mode === "login" ? "Sign in" : mode === "signup" ? "Create account" : "Send recovery link"}</button>
+        <button className="primary-button" type="submit" disabled={busy}>{busy ? "Working…" : mode === "login" ? "Sign in" : mode === "signup" ? "Create account" : mode === "recovery" ? "Send recovery link" : "Update password"}</button>
       </form>
       <div className="auth-links">
         <button type="button" onClick={() => setMode(mode === "login" ? "signup" : "login")}>{mode === "login" ? "Create an account" : "Already have an account? Sign in"}</button>

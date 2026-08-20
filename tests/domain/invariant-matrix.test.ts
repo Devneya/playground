@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { canAddInputConnection, hasDirectedPath, normalizeInputOrder, validateWorkspaceInvariants } from "../../src/domain/graph";
+import { canAddInputConnection, getInputSnapshots, hasDirectedPath, normalizeInputOrder, validateWorkspaceInvariants } from "../../src/domain/graph";
 import { createStarterWorkspace } from "../../src/domain/workspaceFactory";
 import { createWorkspaceExport, parseWorkspaceExport } from "../../src/domain/exportFormat";
 import { duplicateFlowWithFreshIds } from "../../src/domain/duplicateFlow";
 import { emptyHistory, pushHistory, redoHistory, undoHistory } from "../../src/domain/workspaceHistory";
 import { LIMITS } from "../../src/domain/limits";
 import type { Clock, ExecutionBatch, PlaygroundEdge, PlaygroundNode } from "../../src/domain/types";
+import { activeFlow, reduceWorkspace } from "../../src/domain/workspaceReducer";
 
 const clock: Clock = { now: () => new Date("2026-08-19T00:00:00.000Z") };
 const id = (() => { let next = 0; return () => `matrix-${next++}`; })();
@@ -86,6 +87,8 @@ describe("workspace invariant branch matrix", () => {
     const full = { ...withSecond, edges: Array.from({ length: LIMITS.maxInputsPerGeneration }, (_, index) => ({ id: `edge-${index}`, kind: "input" as const, source: index === 0 ? text.id : `source-${index}`, target: generation.id, order: index })) };
     const withNodes = { ...full, nodes: [...full.nodes, ...Array.from({ length: LIMITS.maxInputsPerGeneration }, (_, index) => manual(`source-${index}`)), manual("source-extra")] };
     expect(canAddInputConnection(withNodes, "source-extra", generation.id)).toMatchObject({ allowed: false, reason: "A Generation node can have at most 32 inputs." });
+    const cycleSource = manual("cycle-source");
+    expect(canAddInputConnection({ ...flow, nodes: [...flow.nodes, cycleSource], edges: [{ id: "cycle-result", kind: "result" as const, source: generation.id, target: cycleSource.id }] }, cycleSource.id, generation.id)).toMatchObject({ allowed: false, reason: "That connection would create a cycle." });
   });
 
   it("covers export size failures, history empty paths, and duplication without a requested name", () => {
@@ -99,4 +102,95 @@ describe("workspace invariant branch matrix", () => {
     const large = { ...workspace, flows: [{ ...workspace.flows[0]!, nodes: [...workspace.flows[0]!.nodes, ...Array.from({ length: 248 }, (_, index) => manual(`large-${index}`, "x".repeat(64 * 1024)))] }] };
     expect(() => createWorkspaceExport(large, clock)).toThrow("too large");
   });
+  it("covers malformed duplication references and optional provenance fields", () => {
+    const workspace = starter();
+    const flow = workspace.flows[0]!;
+    const generated: PlaygroundNode = {
+      id: "generated-unmapped",
+      position: { x: 900, y: 120 },
+      data: { kind: "text", origin: "generated", title: "model", text: "", batchId: "missing-batch", executionId: "missing-execution" },
+      createdAt: clock.now().toISOString(),
+      updatedAt: clock.now().toISOString(),
+    };
+    const malformed = {
+      ...flow,
+      nodes: [...flow.nodes, generated],
+      edges: [...flow.edges, { id: "unmapped-edge", kind: "result" as const, source: "missing-source", target: "missing-target" }],
+      batches: [{
+        id: "batch",
+        generationNodeId: "missing-generation",
+        startedAt: clock.now().toISOString(),
+        promptFormatVersion: 1 as const,
+        instruction: "",
+        inputs: [{ nodeId: "missing-input", title: "missing", text: "" }],
+        executions: [
+          { id: "execution", modelId: "model", status: "success" as const, startedAt: clock.now().toISOString(), outputNodeId: "missing-output" },
+          { id: "execution-without-output", modelId: "other", status: "failed" as const, startedAt: clock.now().toISOString() },
+        ],
+      }],
+    };
+    const duplicate = duplicateFlowWithFreshIds(malformed, id, clock);
+    expect(duplicate.nodes.find((node) => node.data.kind === "text" && node.data.origin === "generated")?.data).toMatchObject({ batchId: "missing-batch", executionId: "missing-execution" });
+    expect(duplicate.edges.find((edge) => edge.source === "missing-source")).toMatchObject({ source: "missing-source", target: "missing-target" });
+    expect(duplicate.batches[0]).toMatchObject({ generationNodeId: "missing-generation", inputs: [{ nodeId: "missing-input" }] });
+    expect(duplicate.batches[0]?.executions[0]).toMatchObject({ outputNodeId: "missing-output" });
+    expect(duplicate.batches[0]?.executions[1]).not.toHaveProperty("outputNodeId");
+  });
+
+  it("covers graph traversal, non-text snapshots, and structural capacity errors", () => {
+    const workspace = starter();
+    const flow = workspace.flows[0]!;
+    const text = flow.nodes[0]!;
+    const generation = flow.nodes[1]!;
+    const graph = {
+      ...flow,
+      nodes: [...flow.nodes, manual("branch-a"), manual("branch-b"), manual("branch-c")],
+      edges: [
+        { id: "branch-1", kind: "result" as const, source: text.id, target: "branch-a" },
+        { id: "branch-2", kind: "result" as const, source: text.id, target: "branch-b" },
+        { id: "branch-3", kind: "result" as const, source: "branch-a", target: "branch-c" },
+        { id: "branch-4", kind: "result" as const, source: "branch-b", target: "branch-c" },
+      ],
+    };
+    expect(hasDirectedPath(graph, text.id, "missing", "branch-1")).toBe(false);
+    expect(hasDirectedPath(graph, text.id, "branch-c")).toBe(true);
+    expect(normalizeInputOrder([{ id: "wrong-source", kind: "input", source: generation.id, target: generation.id, order: 3 }])).toEqual([{ id: "wrong-source", kind: "input", source: generation.id, target: generation.id, order: 0 }]);
+    expect(getInputSnapshots({ ...flow, edges: [{ id: "snapshot-non-text", kind: "input", source: generation.id, target: generation.id, order: 0 }, ...flow.edges] }, generation.id)).toEqual([{ nodeId: text.id, title: "Text 1", text: "" }]);
+
+    const oversizedFlow = {
+      ...flow,
+      nodes: Array.from({ length: LIMITS.maxNodesPerFlow + 1 }, (_, index) => manual(`capacity-node-${index}`)),
+      edges: Array.from({ length: LIMITS.maxEdgesPerFlow + 1 }, (_, index) => ({ id: `capacity-edge-${index}`, kind: "result" as const, source: `capacity-node-${index % 251}`, target: `capacity-node-${(index + 1) % 251}` })),
+    };
+    const errors = validateWorkspaceInvariants({ ...workspace, flows: [{ ...oversizedFlow, edges: [...oversizedFlow.edges, { ...oversizedFlow.edges[0]! }] }] });
+    expect(errors).toEqual(expect.arrayContaining([expect.stringContaining("too many nodes"), expect.stringContaining("too many edges"), expect.stringContaining("duplicate edge IDs") ]));
+    const generated = { ...manual("generated-success"), data: { kind: "text" as const, origin: "generated" as const, title: "model", text: "", batchId: "batch-success", executionId: "execution-success" } };
+    const generatedFlow = { ...flow, nodes: [...flow.nodes, generated], edges: [...flow.edges, { id: "generated-success-input", kind: "input" as const, source: generated.id, target: generation.id, order: 1 }, { id: "wrong-result", kind: "result" as const, source: generation.id, target: text.id }], batches: [{ id: "batch-success", generationNodeId: generation.id, startedAt: clock.now().toISOString(), promptFormatVersion: 1 as const, instruction: "", inputs: [], executions: [{ id: "execution-success", modelId: "model", status: "success" as const, startedAt: clock.now().toISOString() }] }] };
+    const provenanceErrors = validateWorkspaceInvariants({ ...workspace, flows: [generatedFlow] });
+    expect(provenanceErrors).toEqual(expect.arrayContaining([expect.stringContaining("invalid provenance"), expect.stringContaining("invalid endpoints")]));
+    const cyclic = { nodes: [manual("cycle-a"), manual("cycle-b")], edges: [{ id: "a-b", kind: "result" as const, source: "cycle-a", target: "cycle-b" }, { id: "b-a", kind: "result" as const, source: "cycle-b", target: "cycle-a" }], batches: [], id: "cycle-flow", name: "cycle", viewport: { x: 0, y: 0, zoom: 1 }, createdAt: clock.now().toISOString(), updatedAt: clock.now().toISOString() };
+    expect(hasDirectedPath(cyclic, "cycle-a", "missing")).toBe(false);
+  });
+
+  it("covers reducer no-op paths, single-flow reset, and history bounds", () => {
+    const workspace = starter();
+    const flow = workspace.flows[0]!;
+    const generation = flow.nodes[1]!;
+    const reducerContext = { idFactory: id, clock };
+    expect(activeFlow({ ...workspace, activeFlowId: "missing" })?.id).toBe(flow.id);
+    expect(reduceWorkspace(workspace, { type: "flow/activate", flowId: "missing" }, reducerContext)).toBe(workspace);
+    const reset = reduceWorkspace(workspace, { type: "flow/delete", flowId: flow.id }, reducerContext);
+    expect(reset.flows).toHaveLength(1);
+    expect(reduceWorkspace(workspace, { type: "node/delete", flowId: flow.id, nodeId: "missing" }, reducerContext)).toEqual(expect.objectContaining({ flows: expect.any(Array) }));
+    expect(reduceWorkspace(workspace, { type: "input/add", flowId: flow.id, edge: { id: "result", kind: "result", source: generation.id, target: flow.nodes[0]!.id } }, reducerContext)).toEqual(expect.objectContaining({ flows: expect.any(Array) }));
+    expect(reduceWorkspace(workspace, { type: "input/reconnect", flowId: flow.id, edgeId: "missing", source: flow.nodes[0]!.id, target: generation.id }, reducerContext)).toEqual(expect.objectContaining({ flows: expect.any(Array) }));
+    expect(reduceWorkspace(workspace, { type: "input/move", flowId: flow.id, edgeId: "missing", direction: "up" }, reducerContext)).toEqual(expect.objectContaining({ flows: expect.any(Array) }));
+    let history = emptyHistory();
+    for (let index = 0; index < LIMITS.maxHistoryEntries + 1; index += 1) history = pushHistory(history, { ...workspace, updatedAt: `${index}` });
+    expect(history.past).toHaveLength(LIMITS.maxHistoryEntries);
+    expect(pushHistory(emptyHistory(), { ...workspace, updatedAt: "x".repeat(LIMITS.maxHistoryBytes + 1) })).toEqual(emptyHistory());
+    const large = { ...workspace, flows: [{ ...flow, nodes: [...flow.nodes, ...Array.from({ length: 248 }, (_, index) => manual(`parse-large-${index}`, "x".repeat(64 * 1024)))] }] };
+    expect(() => parseWorkspaceExport({ format: "devneya-flow-v1", exportedAt: clock.now().toISOString(), workspace: large })).toThrow("too large");
+  });
+
 });

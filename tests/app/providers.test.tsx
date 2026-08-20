@@ -96,6 +96,15 @@ const WorkspaceProbe = () => {
     createdAt: new Date(0).toISOString(),
     updatedAt: new Date(0).toISOString(),
   };
+  const invoke = (action: () => unknown) => {
+    try {
+      const result = action();
+      if (result instanceof Promise) void result.catch((error: unknown) => setActionError(error instanceof Error ? error.message : "unknown"));
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "unknown");
+    }
+  };
+  const [actionError, setActionError] = useState("");
   return <>
     <output data-testid="workspace-status">{workspace.loading ? "loading" : "ready"}</output>
     <output data-testid="models-status">{workspace.modelsStatus}</output>
@@ -115,6 +124,17 @@ const WorkspaceProbe = () => {
     <button type="button" onClick={() => workspace.duplicateFlow(flow.id)}>duplicate-flow</button>
     <button type="button" onClick={() => workspace.renameFlow(flow.id, "Renamed flow")}>rename-flow</button>
     <button type="button" onClick={() => void workspace.clearLocalWorkspace()}>clear</button>
+    <button type="button" onClick={() => workspace.reloadModels()}>reload-models</button>
+    <button type="button" onClick={() => workspace.reloadKey()}>reload-key</button>
+    <button type="button" onClick={() => workspace.duplicateFlow("missing-flow")}>duplicate-missing</button>
+    <button type="button" onClick={() => workspace.activateFlow("missing-flow")}>activate-missing</button>
+    <button type="button" onClick={() => workspace.deleteFlow("missing-flow")}>delete-missing</button>
+    <button type="button" onClick={() => invoke(() => workspace.runGeneration("missing-generation"))}>run-invalid</button>
+    <button type="button" onClick={() => workspace.cancelRun("missing-run")}>cancel-missing</button>
+    <button type="button" onClick={() => invoke(() => workspace.exportWorkspace())}>export</button>
+    <button type="button" onClick={() => invoke(() => workspace.importWorkspace(new File(["not-json"], "bad.json", { type: "application/json" })))}>import-invalid</button>
+    <button type="button" onClick={() => invoke(() => workspace.importWorkspace(new File(["x".repeat(10 * 1024 * 1024 + 1)], "large.json")))}>import-large</button>
+    <output data-testid="action-error">{actionError}</output>
   </>;
 };
 
@@ -234,6 +254,49 @@ describe("WorkspaceProvider", () => {
     render(<AuthContext.Provider value={{ session: null, user: null, initializing: false, recovery: false, ...staticAuthActions }}><WorkspaceProvider repository={new InMemoryWorkspaceRepository()}><WorkspaceProbe /></WorkspaceProvider></AuthContext.Provider>);
     await waitFor(() => expect(screen.getByTestId("workspace-status")).toHaveTextContent("ready"));
     expect(screen.getByTestId("key-status")).toHaveTextContent("idle");
+  });
+
+
+  it("covers signed-out command guards and workspace action no-ops", async () => {
+    const user = userEvent.setup();
+    render(<AuthContext.Provider value={{ session: null, user: null, initializing: false, recovery: false, ...staticAuthActions }}><WorkspaceProvider repository={new InMemoryWorkspaceRepository()}><WorkspaceProbe /></WorkspaceProvider></AuthContext.Provider>);
+    await waitFor(() => expect(screen.getByTestId("workspace-status")).toHaveTextContent("ready"));
+    await user.click(screen.getByRole("button", { name: "reload-key" }));
+    await user.click(screen.getByRole("button", { name: "duplicate-missing" }));
+    await user.click(screen.getByRole("button", { name: "activate-missing" }));
+    await user.click(screen.getByRole("button", { name: "delete-missing" }));
+    await user.click(screen.getByRole("button", { name: "run-invalid" }));
+    await user.click(screen.getByRole("button", { name: "cancel-missing" }));
+    await user.click(screen.getByRole("button", { name: "clear" }));
+    await user.click(screen.getByRole("button", { name: "undo" }));
+    await user.click(screen.getByRole("button", { name: "redo" }));
+    expect(screen.getByTestId("key-status")).toHaveTextContent("idle");
+    expect(screen.getByTestId("action-error")).toHaveTextContent(/account key is not ready/i);
+  });
+
+  it("covers reload, export, import errors, and guarded invalid runs", async () => {
+    const createObjectUrl = vi.fn(() => "blob:test");
+    const revokeObjectUrl = vi.fn();
+    Object.defineProperty(URL, "createObjectURL", { configurable: true, value: createObjectUrl });
+    Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: revokeObjectUrl });
+    const user = userEvent.setup();
+    render(<AuthContext.Provider value={signedInValue(makeSession("user-controls"))}><WorkspaceProvider repository={new InMemoryWorkspaceRepository()}><WorkspaceProbe /></WorkspaceProvider></AuthContext.Provider>);
+    await waitFor(() => expect(screen.getByTestId("workspace-status")).toHaveTextContent("ready"));
+    await waitFor(() => expect(screen.getByTestId("models-status")).toHaveTextContent("ready"));
+    await waitFor(() => expect(screen.getByTestId("key-status")).toHaveTextContent("ready"));
+    await user.click(screen.getByRole("button", { name: "reload-models" }));
+    await user.click(screen.getByRole("button", { name: "reload-key" }));
+    await waitFor(() => expect(screen.getByTestId("models-status")).toHaveTextContent("ready"));
+    await waitFor(() => expect(screen.getByTestId("key-status")).toHaveTextContent("ready"));
+    await user.click(screen.getByRole("button", { name: "export" }));
+    expect(createObjectUrl).toHaveBeenCalled();
+    expect(revokeObjectUrl).toHaveBeenCalledWith("blob:test");
+    await user.click(screen.getByRole("button", { name: "import-invalid" }));
+    await waitFor(() => expect(screen.getByTestId("action-error")).toHaveTextContent(/invalid|workspace|unexpected token/i));
+    await user.click(screen.getByRole("button", { name: "import-large" }));
+    await waitFor(() => expect(screen.getByTestId("action-error")).toHaveTextContent(/too large/i));
+    await user.click(screen.getByRole("button", { name: "run-invalid" }));
+    await waitFor(() => expect(screen.getByTestId("action-error")).toHaveTextContent(/Generation node/i));
   });
 
   it("restores an existing workspace and reports a failed save", async () => {

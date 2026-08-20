@@ -41,12 +41,18 @@ export const WorkspaceCanvas = () => {
   };
   const onReconnect: OnReconnect = (oldEdge, connection) => {
     if (!connection.source || !connection.target) return;
+    const check = canAddInputConnection(activeFlow, connection.source, connection.target, oldEdge.id);
+    if (!check.allowed) {
+      setNotice(check.reason);
+      return;
+    }
     dispatch({ type: "input/reconnect", flowId: activeFlow.id, edgeId: oldEdge.id, source: connection.source, target: connection.target });
+    setNotice(null);
   };
   const onNodeDragStop = (_event: MouseEvent, node: Node) => dispatch({ type: "node/move", flowId: activeFlow.id, nodeId: node.id, position: node.position });
 
   return <section className="canvas-shell" aria-label="Flow canvas">
-    <ReactFlow<Node<NodeData>, Edge> nodes={nodes} edges={edges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onReconnect={onReconnect} onNodeDragStop={onNodeDragStop} fitView minZoom={0.2} maxZoom={2} deleteKeyCode={["Backspace", "Delete"]} onlyRenderVisibleElements={false}>
+    <ReactFlow<Node<NodeData>, Edge> nodes={nodes} edges={edges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onReconnect={onReconnect} onNodeDragStop={onNodeDragStop} fitView nodesFocusable={false} edgesFocusable={false} minZoom={0.2} maxZoom={2} deleteKeyCode={["Backspace", "Delete"]} onlyRenderVisibleElements={false}>
       <Background gap={24} size={1} color="#d9e0ea" />
       <Controls />
       <MiniMap pannable zoomable nodeColor={(node) => node.type === "generation" ? "#7c3aed" : "#0f766e"} />

@@ -38,7 +38,10 @@ npm run lint
 npm test
 npm run test:coverage
 npm run build:validation
+npm run verify:bundle
 npm run build:mock
+npm run verify:mock-artifact
+npm run verify:bundle
 npm run test:browser-integration
 ```
 
@@ -46,9 +49,11 @@ Vitest covers domain transitions, execution lifecycle invalidation, API boundari
 
 For deterministic browser integration without production credentials, use the mock build. It is test-only and is never deployed to GitHub Pages. These tests are not functional E2E.
 
-For real-server functional E2E, set `PLAYGROUND_E2E_BASE_URL`, `E2E_TEST_EMAIL`, `E2E_TEST_PASSWORD`, and optionally `E2E_TEST_MODEL`, then run `npm run test:e2e:real`. Add `EVIDENCE_DIR=real-functional-evidence` to save unaltered screenshots locally during each real test. The command refuses local/mock URLs and fails on missing credentials or any test failure.
+For real-server functional E2E, set `PLAYGROUND_E2E_BASE_URL`, `E2E_TEST_EMAIL`, `E2E_TEST_PASSWORD`, and optionally `E2E_TEST_MODEL`, then run `npm run test:e2e:real`. This is the mandatory real pre-production/production functional gate: it never uses mocks, refuses local/mock URLs, fails on missing credentials or any test failure, and captures screenshots only when `EVIDENCE_DIR` is set.
 
-For a protected production build, provide the real public GoTrue anonymous key, then run `npm run build:prod` followed by `npm run verify:artifact`.
+Use `npm run test:browser-integration:evidence` for local mock-browser evidence, or `npm run test:e2e:real:evidence` for real-server evidence. Each command creates an ignored `release-evidence/<commit>/<timestamp>/` directory containing unaltered screenshots, copied Playwright report/trace data when present, test metadata, and `SHA256SUMS`; evidence is local-only and must never be committed or uploaded. Mock browser integration is regression evidence, not functional E2E.
+
+For a protected production build, provide the real public GoTrue anonymous key, then run `npm run build:prod`, `npm run verify:artifact`, and `npm run verify:bundle`. The production bundle budget is 350 KB gzip JavaScript; the mock bundle has a separately reported 400 KB gzip allowance for its intentional MSW browser runtime.
 
 ### Deployment
 

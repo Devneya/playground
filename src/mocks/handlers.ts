@@ -1,12 +1,13 @@
 import { delay, http, HttpResponse } from "msw";
-import { getMockScenario, nextCompletionNumber } from "./scenario";
+import { consumeCatalogFailure, consumeKeyFailure, getMockScenario, nextCompletionNumber } from "./scenario";
 
 const errorResponse = (status: number, code: string, error: string) => HttpResponse.json({ code, error }, { status });
 
 export const handlers = [
   http.get("*/llm/v1/models", () => {
     const scenario = getMockScenario();
-    if (scenario.catalogStatus) return errorResponse(scenario.catalogStatus, "catalog_unavailable", "The model catalog is unavailable.");
+    if (scenario.catalogStatus || consumeCatalogFailure()) return errorResponse(scenario.catalogStatus ?? 503, "catalog_unavailable", "The model catalog is unavailable.");
+    if (scenario.invalidCatalog) return HttpResponse.json({ object: "list", data: [{ id: 42 }] });
     return HttpResponse.json({
       object: "list",
       data: scenario.models.map((id, index) => ({ id, object: "model", created: 1_700_000_000 + index, owned_by: "devneya" })),
@@ -14,7 +15,7 @@ export const handlers = [
   }),
   http.get("*/account/key", () => {
     const scenario = getMockScenario();
-    if (scenario.keyStatus) return errorResponse(scenario.keyStatus, "virtual_key_blocked", "The account key is unavailable.");
+    if (scenario.keyStatus || consumeKeyFailure()) return errorResponse(scenario.keyStatus ?? 403, "virtual_key_blocked", "The account key is unavailable.");
     return HttpResponse.json({ key: "sk-bf-mock-key-for-tests-only" });
   }),
   http.post("*/llm/v1/chat/completions", async ({ request }) => {

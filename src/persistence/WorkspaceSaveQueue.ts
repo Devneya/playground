@@ -27,11 +27,14 @@ export class WorkspaceSaveQueue {
     }, delayMs);
   }
 
-  public invalidate(): void {
+  public invalidate(): Promise<void> {
     this.queueVersion += 1;
     this.pending = null;
     if (this.timer !== null) clearTimeout(this.timer);
     this.timer = null;
+    // A write already inside the repository cannot be cancelled safely.
+    // Return its chain so destructive operations (clear) can happen after it.
+    return this.chain;
   }
 
   public async flush(): Promise<void> {
