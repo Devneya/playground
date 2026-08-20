@@ -275,7 +275,7 @@ test.describe("real-server functional E2E", () => {
     await page.reload({ waitUntil: "domcontentloaded" });
     await waitForWorkspaceLoaded(page);
     await expect(page.locator(".generated-node")).toHaveCount(2);
-    await expect(page.locator(".generated-content")).toContainText("DEVNEYA_SMOKE_RERUN");
+    await expect(page.locator(".generated-content").filter({ hasText: "DEVNEYA_SMOKE_RERUN" }).first()).toBeVisible();
   });
 
   test("real server: clears the workspace and logs out", async ({ page }) => {
