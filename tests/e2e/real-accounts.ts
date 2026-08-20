@@ -36,10 +36,25 @@ const jsonRequest = async <T>(path: string, init: RequestInit = {}): Promise<T> 
 
 const randomPassword = () => `Dvn!${randomBytes(18).toString("base64url")}9a`;
 
+const activeMailDomain = async () => {
+  const deadline = Date.now() + mailTimeoutMs;
+  let lastError = "no active domain returned";
+  while (Date.now() < deadline) {
+    try {
+      const domains = await jsonRequest<{ "hydra:member"?: Array<{ domain?: string; isActive?: boolean }> }>("/domains?page=1");
+      const domain = domains["hydra:member"]?.find((candidate) => candidate.isActive !== false && candidate.domain)?.domain;
+      if (domain) return domain;
+      lastError = "no active domain returned";
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : "unknown domain request error";
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+  }
+  throw new Error("Disposable-mail service returned no active domain within " + (mailTimeoutMs / 1000) + "s (" + lastError + ").");
+};
+
 export const createDisposableMailbox = async (): Promise<RealTestAccount> => {
-  const domains = await jsonRequest<{ "hydra:member"?: Array<{ domain?: string; isActive?: boolean }> }>("/domains?page=1");
-  const domain = domains["hydra:member"]?.find((candidate) => candidate.isActive !== false && candidate.domain)?.domain;
-  if (!domain) throw new Error("Disposable-mail service returned no active domain.");
+  const domain = await activeMailDomain();
   const address = `devneya-release-${randomBytes(10).toString("hex")}@${domain}`;
   const password = randomPassword();
   const created = await jsonRequest<{ id?: string }>("/accounts", {
