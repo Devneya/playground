@@ -11,7 +11,7 @@ const server = setupServer(
   http.post("https://api.devneya.com/llm/v1/chat/completions", async ({ request }) => {
     const body = await request.json() as { model?: string };
     if (body.model === "model-fails") return HttpResponse.json({ error: "Provider unavailable", code: "provider_down" }, { status: 503 });
-    return HttpResponse.json({ choices: [{ message: { content: `output-${body.model}` } }], usage: { totalTokens: 2 } });
+    return HttpResponse.json({ choices: [{ message: { content: `output-${body.model}` } }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, provider_specific: "ignored" } });
   }),
 );
 
@@ -65,6 +65,8 @@ describe("generation execution", () => {
     expect(actions.filter((action) => action.type === "execution/succeeded")).toHaveLength(1);
     expect(actions.filter((action) => action.type === "execution/failed")).toHaveLength(1);
     expect(actions.at(-1)?.type).toBe("batch/completed");
+    const succeeded = actions.find((action) => action.type === "execution/succeeded");
+    expect(succeeded).toMatchObject({ usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 } });
     if (started?.type === "batch/started") expect(started.batch.executions).toHaveLength(2);
   });
 

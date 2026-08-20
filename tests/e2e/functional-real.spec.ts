@@ -17,6 +17,7 @@ const evidenceDir = process.env.EVIDENCE_DIR;
 const pageErrors = new WeakMap<Page, string[]>();
 const networkFailures = new WeakMap<Page, string[]>();
 const expectedBrowserErrors = new WeakMap<Page, Set<string>>();
+const expectedNetworkFailures = new WeakMap<Page, Set<string>>();
 const managedAccounts: RealTestAccount[] = [];
 
 const generation = (page: Page) => page.locator(".generation-node");
@@ -75,10 +76,17 @@ const signIn = async (page: Page, email?: string, password?: string, accountInde
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page.getByRole("heading", { name: "Compose a flow" })).toBeVisible({ timeout: 60_000 });
   await expect(page.getByText("Live model catalog")).toBeVisible({ timeout: 60_000 });
-  await expect(generation(page).getByRole("button", { name: "Run generation" })).toBeEnabled({ timeout: 60_000 });
+  await expect(page.getByText("Loading this browser's workspace…")).toBeHidden({ timeout: 60_000 });
+  await expect(generation(page).getByRole("button", { name: "Run generation" })).toBeVisible({ timeout: 60_000 });
+};
+
+const waitForWorkspaceLoaded = async (page: Page) => {
+  await expect(page.getByText("Loading this browser's workspace…")).toBeHidden({ timeout: 60_000 });
+  await expect(generation(page).getByRole("button", { name: "Run generation" })).toBeVisible({ timeout: 60_000 });
 };
 
 const signOut = async (page: Page) => {
+  expectedNetworkFailures.get(page)?.add("POST https://api.devneya.com/auth/logout: net::ERR_ABORTED");
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page.getByLabel("Email")).toBeVisible({ timeout: 60_000 });
 };
@@ -100,6 +108,8 @@ const runAndExpect = async (page: Page, token: string, expectedCount: number) =>
   await expect(result).toBeVisible({ timeout: 120_000 });
   await expect(page.locator(".generated-node")).toHaveCount(expectedCount);
   await expect(page.getByText("Saved locally")).toBeVisible({ timeout: 30_000 });
+  await waitForStoredText(page, token);
+  await expect.poll(async () => (await storedWorkspaceJson(page)).includes("\"status\":\"success\""), { timeout: 30_000 }).toBe(true);
   return result;
 };
 
@@ -127,6 +137,7 @@ test.describe("real-server functional E2E", () => {
     pageErrors.set(page, errors);
     networkFailures.set(page, failures);
     expectedBrowserErrors.set(page, new Set());
+    expectedNetworkFailures.set(page, new Set());
     page.on("pageerror", (error) => {
       if (/^ResizeObserver loop completed with undelivered notifications\.?$/.test(error.message)) return;
       errors.push("page: " + error.message);
@@ -145,6 +156,10 @@ test.describe("real-server functional E2E", () => {
   test.afterEach(async ({ page }, testInfo) => {
     const errors = pageErrors.get(page) ?? [];
     const failures = networkFailures.get(page) ?? [];
+    const expectedErrors = expectedBrowserErrors.get(page) ?? new Set<string>();
+    const expectedFailures = expectedNetworkFailures.get(page) ?? new Set<string>();
+    const unexpectedErrors = errors.filter((error) => !expectedErrors.has(error));
+    const unexpectedFailures = failures.filter((failure) => !expectedFailures.has(failure));
     const safeName = testInfo.titlePath.join("-").replace(/[^a-z0-9-]+/gi, "-").replace(/^-|-$/g, "").toLowerCase();
     let screenshotPath: string | null = null;
     if (evidenceDir) {
@@ -153,12 +168,10 @@ test.describe("real-server functional E2E", () => {
       screenshotPath = join(evidenceDir, testInfo.project.name + "-" + safeName + ".png");
       await page.screenshot({ path: screenshotPath, fullPage: true });
       mkdirSync(join(evidenceDir, "observations"), { recursive: true });
-      writeFileSync(join(evidenceDir, "observations", testInfo.project.name + "-" + safeName + ".json"), JSON.stringify({ test: testInfo.titlePath, status: testInfo.status, screenshot: screenshotPath, browserErrors: errors, networkFailures: failures, visualReview: "pending" }, null, 2) + "\n");
+      writeFileSync(join(evidenceDir, "observations", testInfo.project.name + "-" + safeName + ".json"), JSON.stringify({ test: testInfo.titlePath, status: testInfo.status, screenshot: screenshotPath, browserErrors: unexpectedErrors, networkFailures: unexpectedFailures, visualReview: "pending" }, null, 2) + "\n");
     }
-    const expectedErrors = expectedBrowserErrors.get(page) ?? new Set<string>();
-    const unexpectedErrors = errors.filter((error) => !expectedErrors.has(error));
     expect(unexpectedErrors, "Uncaught browser errors: " + unexpectedErrors.join(" | ")).toEqual([]);
-    expect(failures, "Network failures: " + failures.join(" | ")).toEqual([]);
+    expect(unexpectedFailures, "Network failures: " + unexpectedFailures.join(" | ")).toEqual([]);
   });
 
   const registerConfirmActivate = async (page: Page, accountIndex: number) => {
@@ -183,14 +196,22 @@ test.describe("real-server functional E2E", () => {
     await clearSensitiveFields(page);
 
     const confirmationUrl = await waitForSignupConfirmation(account, baseUrl);
+    expectedBrowserErrors.get(page)?.add("console: Failed to load resource: the server responded with a status of 404 ()");
     await page.goto(confirmationUrl, { waitUntil: "domcontentloaded" });
     await expect.poll(() => new URL(page.url()).origin, { timeout: 60_000 }).toBe(new URL(baseUrl).origin);
-    if (await page.getByRole("heading", { name: "Compose a flow" }).isVisible().catch(() => false)) await signOut(page);
-    await signIn(page, account.address, account.password);
+    await expect.poll(async () => {
+      if (await page.getByRole("heading", { name: "Compose a flow" }).isVisible().catch(() => false)) return "confirmed";
+      if (await page.getByLabel("Email").isVisible().catch(() => false)) return "login";
+      return "loading";
+    }, { timeout: 60_000 }).toMatch(/confirmed|login/);
+    const confirmedSession = await page.getByRole("heading", { name: "Compose a flow" }).isVisible();
+    if (!confirmedSession) await signIn(page, account.address, account.password, accountIndex);
     account.accessToken = await sessionAccessToken(page);
     await captureCheckpoint(page, "account-" + (accountIndex + 1) + "-confirmed-login");
     await activateWithTestCheckout(page, account, (name, checkoutPage) => captureCheckpoint(checkoutPage, name));
     await captureCheckpoint(page, "account-" + (accountIndex + 1) + "-activated");
+    await expect(page.getByText("Live model catalog")).toBeVisible({ timeout: 60_000 });
+    await page.evaluate(() => history.replaceState({}, "", "/"));
     await signOut(page);
   };
 
@@ -222,6 +243,8 @@ test.describe("real-server functional E2E", () => {
     await expect(node.getByLabel("Reconnect input 2")).toHaveCount(1);
     await node.getByLabel("Generation 1 instruction").fill("Repeat the labels exactly in received order: ALPHA then BETA.");
     await selectRealModel(page);
+    await waitForStoredText(page, "ALPHA");
+    await waitForStoredText(page, "BETA");
     const result = await runAndExpect(page, "ALPHA", 1);
     const output = await result.textContent();
     expect(output).toContain("ALPHA");
@@ -229,6 +252,7 @@ test.describe("real-server functional E2E", () => {
     expect(output!.indexOf("ALPHA")).toBeLessThan(output!.indexOf("BETA"));
     await page.reload({ waitUntil: "domcontentloaded" });
     await expect(page.getByRole("heading", { name: "Compose a flow" })).toBeVisible({ timeout: 60_000 });
+    await waitForWorkspaceLoaded(page);
     await expect(page.getByLabel("Text 1 text")).toHaveValue("ALPHA");
     await expect(page.getByLabel("Text 3 text")).toHaveValue("BETA");
     await expect(page.locator(".generated-content")).toContainText("ALPHA");
@@ -249,6 +273,7 @@ test.describe("real-server functional E2E", () => {
     expect(exported).not.toContain("sk-bf-");
     expect(exported).not.toContain("Authorization");
     await page.reload({ waitUntil: "domcontentloaded" });
+    await waitForWorkspaceLoaded(page);
     await expect(page.locator(".generated-node")).toHaveCount(2);
     await expect(page.locator(".generated-content")).toContainText("DEVNEYA_SMOKE_RERUN");
   });
@@ -262,6 +287,7 @@ test.describe("real-server functional E2E", () => {
     await expect(page.getByLabel("Text 1 text")).toHaveValue("");
     await expect.poll(async () => (await storedWorkspaceJson(page)).includes("REAL_CLEAR_MARKER"), { timeout: 30_000 }).toBe(false);
     await page.reload({ waitUntil: "domcontentloaded" });
+    await waitForWorkspaceLoaded(page);
     await expect(page.getByLabel("Text 1 text")).toHaveValue("");
     await signOut(page);
   });
@@ -289,7 +315,7 @@ test.describe("real-server functional E2E", () => {
       const page = await context.newPage();
       try {
         await page.goto(baseUrl, { waitUntil: "domcontentloaded" });
-        await signIn(page, account.address, account.password);
+        await signIn(page, account.address, account.password, 0);
         account.accessToken = await sessionAccessToken(page);
         await cancelAndDeleteAccount(account);
       } catch (error) {

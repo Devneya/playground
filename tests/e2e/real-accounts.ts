@@ -162,8 +162,8 @@ const locatorInFrames = async (page: Page, selectors: string[]) => {
 
 const fillCheckoutField = async (page: Page, selectors: string[], value: string, required = true) => {
   const locator = await locatorInFrames(page, selectors);
-  if (!locator) {
-    if (required) throw new Error(`Dodo checkout field was not found: ${selectors[0]}`);
+  if (!locator || !(await locator.isEditable().catch(() => false))) {
+    if (required) throw new Error("Dodo checkout field was not found or editable: " + selectors[0]);
     return;
   }
   await locator.fill(value);
@@ -186,6 +186,15 @@ const expectTestCheckout = async (page: Page) => {
   await page.locator("input,button").first().waitFor({ state: "visible", timeout: 30_000 });
 };
 
+const clearCheckoutCardFields = async (page: Page) => {
+  for (const frame of page.frames()) {
+    await frame.locator("input[autocomplete^='cc-']").evaluateAll((inputs) => inputs.forEach((input) => {
+      (input as HTMLInputElement).value = "";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    })).catch(() => undefined);
+  }
+};
+
 export const activateWithTestCheckout = async (page: Page, account: RealTestAccount, screenshot: (name: string, page: Page) => Promise<void>) => {
   if (!account.accessToken) throw new Error("Cannot activate an account before UI login.");
   const subscription = await publicAccountRequest<{ status?: string; checkout_url?: string }>("/account/subscribe", account.accessToken, { method: "POST" });
@@ -200,16 +209,24 @@ export const activateWithTestCheckout = async (page: Page, account: RealTestAcco
   try {
     await checkout.goto(checkoutUrl.toString(), { waitUntil: "domcontentloaded" });
     await expectTestCheckout(checkout);
+    const manualAddress = checkout.getByRole("button", { name: "Enter address manually" });
+    if (await manualAddress.isVisible().catch(() => false)) await manualAddress.click();
+    await fillCheckoutField(checkout, ["input[autocomplete='name']", "input[name='fullName']", "input[placeholder*='John Doe' i]"], "Devneya Release Test");
+    await fillCheckoutField(checkout, ["input[name='email']", "input[autocomplete='email']"], account.address, false);
+    await fillCheckoutField(checkout, ["input[name='addressLine']", "input[autocomplete='address-line1']"], "1 Market Street");
+    await fillCheckoutField(checkout, ["input[name='city']", "input[autocomplete='address-level2']"], "San Francisco");
+    await fillCheckoutField(checkout, ["input[name='zipCode']", "input[autocomplete='postal-code']"], "94105");
+    await fillCheckoutField(checkout, ["input[name='state']", "input[autocomplete='address-level1']"], "CA");
+    await checkout.getByRole("button", { name: "Continue to Payment" }).click();
+    await expect.poll(async () => Boolean(await locatorInFrames(checkout, ["input[autocomplete='cc-number']", "input[name*='cardNumber' i]", "input[placeholder*='card number' i]"])), { timeout: 30_000 }).toBe(true);
     await fillCheckoutField(checkout, ["input[autocomplete='cc-number']", "input[name*='cardNumber' i]", "input[placeholder*='card number' i]"], "4242424242424242");
     await fillCheckoutField(checkout, ["input[autocomplete='cc-exp']", "input[name*='exp' i]", "input[placeholder*='MM' i]"], "06/32");
     await fillCheckoutField(checkout, ["input[autocomplete='cc-csc']", "input[name*='cvc' i]", "input[name*='cvv' i]", "input[placeholder*='CVC' i]"], "123");
-    await fillCheckoutField(checkout, ["input[autocomplete='cc-name']", "input[name*='name' i]", "input[placeholder*='name' i]"], "Devneya Release Test");
-    await fillCheckoutField(checkout, ["input[type='email']", "input[autocomplete='email']"], account.address, false);
-    await fillCheckoutField(checkout, ["input[autocomplete='postal-code']", "input[name*='postal' i]", "input[placeholder*='postal' i]"], "94105", false);
     await clickCheckoutSubmit(checkout);
     await expect.poll(async () => (await publicAccountRequest<{ subscription_status?: string }>("/account/usage", account.accessToken!)).subscription_status, { timeout: activationTimeoutMs }).toBe("active");
     account.subscriptionActive = true;
-    await screenshot(`dodo-test-checkout-${account.address.split("@")[0]}`, checkout);
+    await clearCheckoutCardFields(checkout);
+    await screenshot("dodo-test-checkout-" + account.address.split("@")[0], checkout);
   } finally {
     await checkout.close();
   }
