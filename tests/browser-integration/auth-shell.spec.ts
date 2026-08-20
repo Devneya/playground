@@ -1,4 +1,6 @@
 import { expect, test } from "@playwright/test";
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
 
 test.describe("Playground browser shell", () => {
   test.beforeEach(async ({ page }) => {
@@ -8,6 +10,12 @@ test.describe("Playground browser shell", () => {
 
   test.afterEach(async ({ page }, testInfo) => {
     await page.screenshot({ path: testInfo.outputPath("shell.png"), fullPage: true });
+    const evidenceDir = process.env.EVIDENCE_DIR;
+    if (evidenceDir) {
+      mkdirSync(evidenceDir, { recursive: true });
+      const safeName = testInfo.titlePath.join("-").replace(/[^a-z0-9-]+/gi, "-").replace(/^-|-$/g, "").toLowerCase();
+      await page.screenshot({ path: join(evidenceDir, `${testInfo.project.name}-${safeName}.png`), fullPage: true });
+    }
   });
 
   test("shows the product heading", async ({ page }) => {

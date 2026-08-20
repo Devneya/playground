@@ -11,12 +11,15 @@ import { normalizeInterruptedBatches, reduceWorkspace, type WorkspaceAction } fr
 import { duplicateFlowWithFreshIds } from "../../domain/duplicateFlow";
 import type { FlowDocument, Model, PlaygroundNode, WorkspaceDocument } from "../../domain/types";
 import { IndexedDbWorkspaceRepository } from "../../persistence/IndexedDbWorkspaceRepository";
+import { InMemoryWorkspaceRepository } from "../../persistence/InMemoryWorkspaceRepository";
+import { ResilientWorkspaceRepository } from "../../persistence/ResilientWorkspaceRepository";
+import { WorkspaceSaveQueue } from "../../persistence/WorkspaceSaveQueue";
+import type { WorkspaceRepository } from "../../persistence/WorkspaceRepository";
 import { startGenerationRun, type GenerationRun } from "../execution/executeGeneration";
 import { emptyHistory, pushHistory, redoHistory, undoHistory, type HistoryState } from "../../domain/workspaceHistory";
 
-const repository = new IndexedDbWorkspaceRepository();
-
 type AsyncStatus = "idle" | "loading" | "ready" | "error";
+type WorkspaceProviderProps = PropsWithChildren<{ repository?: WorkspaceRepository }>;
 
 export type WorkspaceContextValue = {
   workspace: WorkspaceDocument;
@@ -25,6 +28,7 @@ export type WorkspaceContextValue = {
   saving: boolean;
   lastSavedAt: string | null;
   error: string | null;
+  storageWarning: string | null;
   models: Model[];
   modelsStatus: AsyncStatus;
   modelsError: string | null;
@@ -48,12 +52,18 @@ export type WorkspaceContextValue = {
   undo(): void;
   redo(): void;
   cancelRun(batchId: string): void;
+  activeRunIds: Readonly<Record<string, string>>;
 };
 
 export const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
 
-export const WorkspaceProvider = ({ children }: PropsWithChildren) => {
+export const WorkspaceProvider = ({ children, repository: injectedRepository }: WorkspaceProviderProps) => {
   const { user, session } = useAuth();
+  const [storageWarning, setStorageWarning] = useState<string | null>(null);
+  const repository = useMemo<WorkspaceRepository>(() => injectedRepository ?? new ResilientWorkspaceRepository(new IndexedDbWorkspaceRepository(), {
+    repository: new InMemoryWorkspaceRepository(),
+    onFallback: () => setStorageWarning("Browser storage is unavailable. Changes will last only for this page session."),
+  }), [injectedRepository]);
   const reducerContext = useMemo(() => ({ idFactory: randomIdFactory, clock: systemClock }), []);
   const [workspace, reduceWorkspaceDispatch] = useReducer(
     (document: WorkspaceDocument, action: WorkspaceAction) => reduceWorkspace(document, action, reducerContext),
@@ -87,8 +97,29 @@ export const WorkspaceProvider = ({ children }: PropsWithChildren) => {
   const [keyStatus, setKeyStatus] = useState<AsyncStatus>("idle");
   const [keyError, setKeyError] = useState<string | null>(null);
   const loadedUserRef = useRef<string | null>(null);
-  const saveVersionRef = useRef(0);
   const activeRunsRef = useRef(new Map<string, GenerationRun>());
+  const [activeRunIds, setActiveRunIds] = useState<Record<string, string>>({});
+  const lifecycleAbortRef = useRef<AbortController | null>(null);
+  const lifecycleEpochRef = useRef(0);
+  const saveQueueRef = useRef(new WorkspaceSaveQueue());
+  const saveGenerationRef = useRef(0);
+
+  useEffect(() => {
+    lifecycleEpochRef.current += 1;
+    const controller = new AbortController();
+    lifecycleAbortRef.current = controller;
+    const runs = activeRunsRef.current;
+    const saveQueue = saveQueueRef.current;
+    return () => {
+      lifecycleEpochRef.current += 1;
+      saveGenerationRef.current += 1;
+      controller.abort();
+      runs.forEach((run) => run.cancel());
+      runs.clear();
+      setActiveRunIds({});
+      saveQueue.invalidate();
+    };
+  }, [user?.id, session?.access_token]);
 
   useEffect(() => {
     let alive = true;
@@ -99,49 +130,53 @@ export const WorkspaceProvider = ({ children }: PropsWithChildren) => {
       setLoadStatus("ready");
       return () => { alive = false; };
     }
+    const epoch = lifecycleEpochRef.current;
     void repository.load(user.id).then((saved) => {
-      if (!alive) return;
+      if (!alive || epoch !== lifecycleEpochRef.current) return;
       const next = saved ? normalizeInterruptedBatches(saved, systemClock) : createStarterWorkspace(reducerContext.idFactory, reducerContext.clock);
       dispatch({ type: "workspace/reset", workspace: next });
       loadedUserRef.current = user.id;
       setLoadStatus("ready");
       setLastSavedAt(saved ? new Date().toISOString() : null);
     }).catch((loadError: unknown) => {
-      if (!alive) return;
+      if (!alive || epoch !== lifecycleEpochRef.current) return;
       setError(loadError instanceof Error ? loadError.message : "Unable to load the local workspace.");
       dispatch({ type: "workspace/reset", workspace: createStarterWorkspace(reducerContext.idFactory, reducerContext.clock) });
       loadedUserRef.current = user.id;
       setLoadStatus("error");
     });
     return () => { alive = false; };
-  }, [dispatch, reducerContext, user]);
+  }, [dispatch, reducerContext, repository, user]);
 
   useEffect(() => {
     if (!user || loadedUserRef.current !== user.id || loadStatus !== "ready") return;
-    const version = ++saveVersionRef.current;
-    setSaving(true);
-    const timer = window.setTimeout(() => {
-      void repository.save(user.id, workspace).then(() => {
-        if (version !== saveVersionRef.current) return;
+    const epoch = lifecycleEpochRef.current;
+    const generation = ++saveGenerationRef.current;
+    saveQueueRef.current.schedule({
+      userId: user.id,
+      workspace,
+      save: (userId, document) => repository.save(userId, document),
+      isCurrent: (_queueVersion, userId) => generation === saveGenerationRef.current && userId === user.id && epoch === lifecycleEpochRef.current,
+      onStart: () => setSaving(true),
+      onSettled: (_queueVersion, userId, saveError) => {
+        if (generation !== saveGenerationRef.current || userId !== user.id || epoch !== lifecycleEpochRef.current) return;
         setSaving(false);
-        setLastSavedAt(new Date().toISOString());
-      }).catch((saveError: unknown) => {
-        if (version !== saveVersionRef.current) return;
-        setSaving(false);
-        setError(saveError instanceof Error ? saveError.message : "Unable to save the local workspace.");
-      });
-    }, 350);
-    return () => window.clearTimeout(timer);
-  }, [loadStatus, user, workspace]);
+        if (saveError) setError(saveError instanceof Error ? saveError.message : "Unable to save the local workspace.");
+        else setLastSavedAt(new Date().toISOString());
+      },
+    });
+  }, [loadStatus, user, workspace, repository]);
   const reloadModels = useCallback(() => {
+    const epoch = lifecycleEpochRef.current;
     const controller = new AbortController();
     setModelsStatus("loading");
     setModelsError(null);
     void listModels(controller.signal).then((catalog) => {
+      if (epoch !== lifecycleEpochRef.current) return;
       setModels(catalog);
       setModelsStatus("ready");
     }).catch((modelsError: unknown) => {
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted || epoch !== lifecycleEpochRef.current) return;
       setModelsStatus("error");
       setModelsError(normalizeApiError(modelsError).message);
     });
@@ -156,14 +191,16 @@ export const WorkspaceProvider = ({ children }: PropsWithChildren) => {
       setKeyStatus("idle");
       return;
     }
+    const epoch = lifecycleEpochRef.current;
     const controller = new AbortController();
     setKeyStatus("loading");
     setKeyError(null);
     void getVirtualKey(toGoTrueAccessToken(session.access_token), controller.signal).then((key) => {
+      if (epoch !== lifecycleEpochRef.current) return;
       setVirtualKey(key);
       setKeyStatus("ready");
     }).catch((keyFetchError: unknown) => {
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted || epoch !== lifecycleEpochRef.current) return;
       setKeyStatus("error");
       setKeyError(normalizeApiError(keyFetchError).message);
     });
@@ -204,13 +241,16 @@ export const WorkspaceProvider = ({ children }: PropsWithChildren) => {
 
   const clearLocalWorkspace = useCallback(async () => {
     if (!user) return;
+    saveGenerationRef.current += 1;
+    saveQueueRef.current.invalidate();
     await repository.delete(user.id);
     dispatch({ type: "workspace/reset", workspace: createStarterWorkspace(reducerContext.idFactory, reducerContext.clock) });
     setLastSavedAt(null);
-  }, [dispatch, reducerContext, user]);
+  }, [dispatch, reducerContext, repository, user]);
 
   const runGeneration = useCallback((generationNodeId: string) => {
     if (!virtualKey) throw new Error(keyError || "Your account key is not ready yet.");
+    const runEpoch = lifecycleEpochRef.current;
     const run = startGenerationRun({
       flow: workspace.flows.find((flow) => flow.id === workspace.activeFlowId) ?? workspace.flows[0]!,
       generationNodeId,
@@ -218,9 +258,14 @@ export const WorkspaceProvider = ({ children }: PropsWithChildren) => {
       idFactory: reducerContext.idFactory,
       clock: reducerContext.clock,
       dispatch,
+      canDispatch: () => runEpoch === lifecycleEpochRef.current,
     });
     activeRunsRef.current.set(run.batchId, run);
-    void run.completed.finally(() => activeRunsRef.current.delete(run.batchId));
+    setActiveRunIds((current) => ({ ...current, [generationNodeId]: run.batchId }));
+    void run.completed.finally(() => {
+      activeRunsRef.current.delete(run.batchId);
+      setActiveRunIds((current) => current[generationNodeId] === run.batchId ? Object.fromEntries(Object.entries(current).filter(([nodeId]) => nodeId !== generationNodeId)) : current);
+    });
     return run;
   }, [dispatch, keyError, reducerContext, virtualKey, workspace]);
 
@@ -248,6 +293,7 @@ export const WorkspaceProvider = ({ children }: PropsWithChildren) => {
     saving,
     lastSavedAt,
     error,
+    storageWarning,
     models,
     modelsStatus,
     modelsError,
@@ -267,10 +313,11 @@ export const WorkspaceProvider = ({ children }: PropsWithChildren) => {
     clearLocalWorkspace,
     runGeneration,
     cancelRun,
+    activeRunIds,
     canUndo: history.past.length > 0,
     canRedo: history.future.length > 0,
     undo,
     redo,
-  }), [activeFlow, cancelRun, clearLocalWorkspace, createFlow, deleteFlow, dispatch, duplicateFlow, error, exportWorkspace, history, importWorkspace, keyError, keyStatus, lastSavedAt, loadStatus, models, modelsError, modelsStatus, redo, reloadModels, renameFlow, runGeneration, saving, activateFlow, undo, virtualKey, workspace]);
+  }), [activeFlow, activeRunIds, cancelRun, clearLocalWorkspace, createFlow, deleteFlow, dispatch, duplicateFlow, error, exportWorkspace, history, importWorkspace, keyError, keyStatus, lastSavedAt, loadStatus, models, modelsError, modelsStatus, redo, reloadModels, renameFlow, runGeneration, saving, storageWarning, activateFlow, undo, virtualKey, workspace]);
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
 };

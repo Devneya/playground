@@ -16,7 +16,8 @@ type RunOptions = {
   idFactory: IdFactory;
   clock: Clock;
   dispatch(action: WorkspaceAction): void;
-  signal?: AbortSignal;
+  signal?: AbortSignal | undefined;
+  canDispatch?: () => boolean;
 };
 
 export type GenerationRun = {
@@ -43,7 +44,10 @@ const executionError = (error: unknown): ExecutionError => {
 const duration = (started: number) => Math.max(0, Math.round(performance.now() - started));
 
 export const startGenerationRun = (options: RunOptions): GenerationRun => {
-  const { flow, generationNodeId, virtualKey, idFactory, clock, dispatch } = options;
+  const { flow, generationNodeId, virtualKey, idFactory, clock, dispatch, canDispatch = () => true } = options;
+  const emit = (action: WorkspaceAction) => {
+    if (canDispatch()) dispatch(action);
+  };
   const generation = getNode(flow, generationNodeId);
   if (!isGenerationNode(generation)) throw new Error("Choose a Generation node to run.");
   const modelIds = [...generation.data.modelIds];
@@ -86,6 +90,8 @@ export const startGenerationRun = (options: RunOptions): GenerationRun => {
   const externalAbort = options.signal;
   const abortExternal = () => controller.abort();
   externalAbort?.addEventListener("abort", abortExternal, { once: true });
+  // The start action is synchronous with the user gesture and establishes the run UI.
+  // Late settlement actions remain lifecycle-guarded below.
   dispatch({ type: "batch/started", flowId: flow.id, batch, outputNodes, resultEdges });
 
   const completed = Promise.allSettled(executions.map(async (execution) => {
@@ -93,16 +99,16 @@ export const startGenerationRun = (options: RunOptions): GenerationRun => {
     try {
       const result = await createChatCompletion(virtualKey, { model: execution.modelId, messages, stream: false }, controller.signal);
       const usage = result.usage as Usage | undefined;
-      dispatch({ type: "execution/succeeded", flowId: flow.id, batchId, executionId: execution.id, text: result.content, durationMs: duration(started), ...(usage ? { usage } : {}) });
+      emit({ type: "execution/succeeded", flowId: flow.id, batchId, executionId: execution.id, text: result.content, durationMs: duration(started), ...(usage ? { usage } : {}) });
     } catch (error) {
       const failure = executionError(error);
-      dispatch(failure.kind === "cancelled"
+      emit(failure.kind === "cancelled"
         ? { type: "execution/cancelled", flowId: flow.id, batchId, executionId: execution.id, error: failure, durationMs: duration(started) }
         : { type: "execution/failed", flowId: flow.id, batchId, executionId: execution.id, error: failure, durationMs: duration(started) });
     }
   })).then(() => {
     externalAbort?.removeEventListener("abort", abortExternal);
-    dispatch({ type: "batch/completed", flowId: flow.id, batchId, completedAt: clock.now().toISOString() });
+    emit({ type: "batch/completed", flowId: flow.id, batchId, completedAt: clock.now().toISOString() });
   });
 
   return { batchId, cancel: () => controller.abort(), completed };

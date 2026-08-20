@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { AuthProvider } from "../auth/AuthProvider";
+import type { ComponentType, PropsWithChildren } from "react";
 import { AuthScreen } from "../auth/AuthScreen";
 import { PasswordRecoveryScreen } from "../auth/PasswordRecoveryScreen";
 import { useAuth } from "../auth/useAuth";
@@ -17,12 +18,12 @@ const AuthGate = () => {
   if (initializing) return <main className="loading-screen"><div className="loading-mark">Loading Devneya Playground…</div></main>;
   if (recovery) return <PasswordRecoveryScreen />;
   if (!user) return <AuthScreen />;
-  return <WorkspaceProvider><WorkspaceScreen /></WorkspaceProvider>;
+  return <WorkspaceProvider key={user.id}><WorkspaceScreen /></WorkspaceProvider>;
 };
 
 const WorkspaceScreen = () => {
   const { user, signOut } = useAuth();
-  const { workspace, activeFlow, loading, saving, lastSavedAt, error, modelsStatus, keyStatus, keyError, createFlow, duplicateFlow, deleteFlow, activateFlow, renameFlow, addNode, exportWorkspace, importWorkspace, clearLocalWorkspace, canUndo, canRedo, undo, redo } = useWorkspace();
+  const { workspace, activeFlow, loading, saving, lastSavedAt, error, storageWarning, modelsStatus, keyStatus, keyError, createFlow, duplicateFlow, deleteFlow, activateFlow, renameFlow, addNode, exportWorkspace, importWorkspace, clearLocalWorkspace, canUndo, canRedo, undo, redo } = useWorkspace();
   const importRef = useRef<HTMLInputElement>(null);
   const [renameId, setRenameId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -74,10 +75,13 @@ const WorkspaceScreen = () => {
         <div className="canvas-toolbar"><div><p className="eyebrow">{activeFlow.name}</p><h1>Compose a flow</h1></div><div className="canvas-actions"><button type="button" onClick={() => addNewNode("text")}>+ Text</button><button type="button" onClick={() => addNewNode("generation")}>+ Generation</button><button type="button" onClick={undo} disabled={!canUndo} aria-label="Undo last change">Undo</button><button type="button" onClick={redo} disabled={!canRedo} aria-label="Redo last change">Redo</button><span className="catalog-status">{modelsStatus === "ready" ? "Live model catalog" : modelsStatus === "loading" ? "Loading models…" : "Model catalog unavailable"}</span></div></div>
         <div className="workspace-notice">{LOCAL_NOTICE}</div>
         {(error || keyStatus === "error") && <div className="inline-alert" role="alert">{error || keyError}</div>}
+        {storageWarning && <div className="inline-alert" role="status">{storageWarning}</div>}
         {loading ? <div className="canvas-loading">Loading this browser's workspace…</div> : <WorkspaceCanvas />}
       </section>
     </div>
   </main>;
 };
 
-export const App = () => <AuthProvider><AuthGate /></AuthProvider>;
+type AuthBoundaryComponent = ComponentType<PropsWithChildren>;
+
+export const App = ({ authBoundary: AuthBoundary = AuthProvider }: { authBoundary?: AuthBoundaryComponent } = {}) => <AuthBoundary><AuthGate /></AuthBoundary>;

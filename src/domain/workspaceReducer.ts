@@ -112,7 +112,12 @@ export const reduceWorkspace = (workspace: WorkspaceDocument, action: WorkspaceA
       const orders = new Map(ordered.map((item, order) => [item.id, order]));
       return { ...flow, edges: flow.edges.map((item) => item.kind === "input" && orders.has(item.id) ? { ...item, order: orders.get(item.id) ?? item.order } : item) };
     });
-    case "batch/started": return updateFlow(workspace, action.flowId, context, (flow) => ({ ...flow, batches: [...flow.batches, action.batch], nodes: [...flow.nodes, ...action.outputNodes], edges: [...flow.edges, ...action.resultEdges] }));
+    case "batch/started": return updateFlow(workspace, action.flowId, context, (flow) => ({
+      ...flow,
+      batches: [...flow.batches, action.batch],
+      nodes: [...flow.nodes.map((node) => node.id === action.batch.generationNodeId ? { ...node, updatedAt: action.batch.startedAt } : node), ...action.outputNodes],
+      edges: [...flow.edges, ...action.resultEdges],
+    }));
     case "execution/succeeded": {
       const settlement: Settlement = { status: "success", text: action.text, durationMs: action.durationMs };
       if (action.usage) settlement.usage = action.usage;

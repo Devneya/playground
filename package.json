@@ -5,7 +5,7 @@
   "license": "BUSL-1.1",
   "type": "module",
   "dependencies": {
-    "@supabase/supabase-js": "^2.49.4",
+    "@supabase/supabase-js": "^2.112.3",
     "@xyflow/react": "^12.5.6",
     "idb": "^8.0.2",
     "react": "^19.1.0",
@@ -14,17 +14,27 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "npm run build:prod",
     "preview": "vite preview",
     "lint": "eslint . --ext .ts,.tsx,.js,.cjs --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "test:e2e": "playwright test"
+    "build:prod": "npm run typecheck && vite build --mode production",
+    "build:validation": "npm run typecheck && vite build --mode validation",
+    "build:mock": "npm run typecheck && vite build --mode mock",
+    "verify:artifact": "node scripts/verify-production-artifact.mjs",
+    "test:unit": "vitest run",
+    "test:e2e": "E2E_MODE=real playwright test",
+    "test:e2e:real": "E2E_MODE=real playwright test",
+    "test:e2e:real:matrix": "E2E_MODE=real E2E_BROWSER_MATRIX=true playwright test",
+    "test:browser-integration": "E2E_MODE=mock playwright test",
+    "test:browser-integration:matrix": "E2E_MODE=mock E2E_BROWSER_MATRIX=true playwright test",
+    "test:browser-integration:evidence": "E2E_MODE=evidence playwright test"
   },
   "devDependencies": {
-    "@playwright/test": "1.48.2",
+    "@playwright/test": "^1.62.1",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.1.0",
@@ -34,16 +44,24 @@
     "@types/react-dom": "^19.1.2",
     "@typescript-eslint/eslint-plugin": "^8.18.0",
     "@typescript-eslint/parser": "^8.18.0",
-    "@vitejs/plugin-react": "^4.3.4",
-    "@vitest/coverage-v8": "^2.1.9",
-    "eslint": "^8.57.1",
-    "eslint-plugin-react-hooks": "^5.1.0",
+    "@vitejs/plugin-react": "^6.0.5",
+    "@vitest/coverage-v8": "^4.1.11",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "fake-indexeddb": "^6.0.0",
-    "jsdom": "^24.1.3",
+    "jsdom": "^30.0.1",
     "msw": "^2.7.0",
-    "playwright": "1.48.2",
+    "playwright": "^1.62.1",
     "typescript": "^5.9.3",
-    "vite": "^6.2.6",
-    "vitest": "^2.1.9"
+    "vite": "^8.2.1",
+    "vitest": "^4.1.11"
+  },
+  "engines": {
+    "node": ">=22 <23"
+  },
+  "msw": {
+    "workerDirectory": [
+      "public"
+    ]
   }
 }

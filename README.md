@@ -4,9 +4,10 @@ The clean-cutover flow playground for `playground.devneya.com`. It is a React + 
 
 ### Local development
 
-Node.js 18+ and npm are required.
+Node.js 22 and npm are required. The repository pins the supported major in .nvmrc and package.json.
 
 ```bash
+nvm use
 npm ci
 npm run dev
 ```
@@ -36,10 +37,18 @@ npm run typecheck
 npm run lint
 npm test
 npm run test:coverage
-npm run test:e2e
+npm run build:validation
+npm run build:mock
+npm run test:browser-integration
 ```
 
-Vitest covers completion formatting, graph invariants, reducer transitions, execution settlement/cancellation, API credential boundaries, MSW-backed HTTP adapters, IndexedDB persistence/corruption handling, and auth UI states. Playwright is configured for Chromium smoke and browser workflow coverage.
+Vitest covers domain transitions, execution lifecycle invalidation, API boundaries, persistence fallback and save coalescing, and auth UI states. Mock-backed Playwright browser integration covers model fan-out, partial failure, cancellation, isolation, export/import, and error responses. Real-server functional E2E is a separate mandatory release gate.
+
+For deterministic browser integration without production credentials, use the mock build. It is test-only and is never deployed to GitHub Pages. These tests are not functional E2E.
+
+For real-server functional E2E, set `PLAYGROUND_E2E_BASE_URL`, `E2E_TEST_EMAIL`, `E2E_TEST_PASSWORD`, and optionally `E2E_TEST_MODEL`, then run `npm run test:e2e:real`. Add `EVIDENCE_DIR=real-functional-evidence` to save unaltered screenshots locally during each real test. The command refuses local/mock URLs and fails on missing credentials or any test failure.
+
+For a protected production build, provide the real public GoTrue anonymous key, then run `npm run build:prod` followed by `npm run verify:artifact`.
 
 ### Deployment
 

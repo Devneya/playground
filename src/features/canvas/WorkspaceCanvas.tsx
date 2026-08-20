@@ -46,7 +46,7 @@ export const WorkspaceCanvas = () => {
   const onNodeDragStop = (_event: MouseEvent, node: Node) => dispatch({ type: "node/move", flowId: activeFlow.id, nodeId: node.id, position: node.position });
 
   return <section className="canvas-shell" aria-label="Flow canvas">
-    <ReactFlow<Node<NodeData>, Edge> nodes={nodes} edges={edges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onReconnect={onReconnect} onNodeDragStop={onNodeDragStop} fitView minZoom={0.2} maxZoom={2} deleteKeyCode={["Backspace", "Delete"]} onlyRenderVisibleElements>
+    <ReactFlow<Node<NodeData>, Edge> nodes={nodes} edges={edges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onReconnect={onReconnect} onNodeDragStop={onNodeDragStop} fitView minZoom={0.2} maxZoom={2} deleteKeyCode={["Backspace", "Delete"]} onlyRenderVisibleElements={false}>
       <Background gap={24} size={1} color="#d9e0ea" />
       <Controls />
       <MiniMap pannable zoomable nodeColor={(node) => node.type === "generation" ? "#7c3aed" : "#0f766e"} />

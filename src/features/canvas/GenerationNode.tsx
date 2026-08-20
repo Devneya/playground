@@ -8,9 +8,10 @@ import { useWorkspace } from "../workspace/useWorkspace";
 type GenerationFlowNode = Node<GenerationData, "generation">;
 
 export const GenerationNode = ({ id, data }: NodeProps<GenerationFlowNode>) => {
-  const { activeFlow, models, modelsStatus, modelsError, reloadModels, dispatch, runGeneration, cancelRun, virtualKey } = useWorkspace();
+  const { activeFlow, activeRunIds, models, modelsStatus, modelsError, reloadModels, dispatch, runGeneration, cancelRun, virtualKey } = useWorkspace();
   const [runError, setRunError] = useState<string | null>(null);
   const [selectedInputId, setSelectedInputId] = useState("");
+  const [localRunId, setLocalRunId] = useState<string | null>(null);
   const inputs = getOrderedInputEdges(activeFlow, id);
   const addableInputs = activeFlow.nodes
     .filter(isTextNode)
@@ -23,6 +24,7 @@ export const GenerationNode = ({ id, data }: NodeProps<GenerationFlowNode>) => {
     setSelectedInputId("");
   };
   const runningBatch = useMemo(() => activeFlow.batches.find((batch) => batch.generationNodeId === id && batch.executions.some((execution) => execution.status === "pending")), [activeFlow.batches, id]);
+  const runningBatchId = runningBatch?.id ?? activeRunIds[id] ?? localRunId;
   const selected = new Set(data.modelIds);
   const toggleModel = (modelId: string) => {
     const next = selected.has(modelId) ? data.modelIds.filter((item) => item !== modelId) : [...data.modelIds, modelId];
@@ -31,7 +33,11 @@ export const GenerationNode = ({ id, data }: NodeProps<GenerationFlowNode>) => {
   };
   const run = () => {
     setRunError(null);
-    try { runGeneration(id); } catch (error) { setRunError(error instanceof Error ? error.message : "Unable to start the run."); }
+    try {
+      const started = runGeneration(id);
+      setLocalRunId(started.batchId);
+      void started.completed.finally(() => setLocalRunId((current) => current === started.batchId ? null : current));
+    } catch (error) { setRunError(error instanceof Error ? error.message : "Unable to start the run."); }
   };
   return <article className="flow-node generation-node">
     <Handle type="target" position={Position.Left} id="generation-input" />
@@ -64,11 +70,11 @@ export const GenerationNode = ({ id, data }: NodeProps<GenerationFlowNode>) => {
       <div className="field-label">Models <span className="muted">({data.modelIds.length}/4)</span></div>
       {modelsStatus === "loading" && <span className="muted">Loading live catalog…</span>}
       {modelsStatus === "error" && <span className="form-error">{modelsError} <button type="button" className="small-button" onClick={reloadModels}>Retry</button></span>}
-      {modelsStatus === "ready" && models.map((model) => <label className="model-option" key={model.id}><input type="checkbox" checked={selected.has(model.id)} onChange={() => toggleModel(model.id)} disabled={!selected.has(model.id) && data.modelIds.length >= 4} /> <span>{model.id}</span></label>)}
+      {modelsStatus === "ready" && models.map((model) => <label className="model-option" key={model.id}><input type="checkbox" aria-label={`${data.title} model ${model.id}`} checked={selected.has(model.id)} onChange={() => toggleModel(model.id)} disabled={!selected.has(model.id) && data.modelIds.length >= 4} /> <span>{model.id}</span></label>)}
       {data.modelIds.filter((modelId) => !models.some((model) => model.id === modelId)).map((modelId) => <span className="model-option stale-model" key={modelId}><span>✓ {modelId}</span><button type="button" className="icon-button" onClick={() => toggleModel(modelId)} aria-label={`Remove ${modelId}`}>×</button></span>)}
       {modelsStatus === "ready" && models.length === 0 && <span className="muted">No models are currently available.</span>}
     </div>
     {(runError || !virtualKey) && <p className="form-error node-error">{runError || "Account key is loading; sign in to run."}</p>}
-    <button type="button" className="primary-button run-button" onClick={runningBatch ? () => cancelRun(runningBatch.id) : run} disabled={!runningBatch && (!virtualKey || data.modelIds.length === 0)}>{runningBatch ? "Cancel run" : "Run generation"}</button>
+    <button type="button" className="primary-button run-button" onClick={runningBatchId ? () => cancelRun(runningBatchId) : run} disabled={!runningBatchId && (!virtualKey || data.modelIds.length === 0)}>{runningBatchId ? "Cancel run" : "Run generation"}</button>
   </article>;
 };

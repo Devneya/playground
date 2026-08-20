@@ -1,6 +1,7 @@
 import { createClient, type SupportedStorage } from "@supabase/supabase-js";
-import { apiBaseUrl, gotrueAnonKey } from "../config";
+import { apiBaseUrl, config, gotrueAnonKey } from "../config";
 
+if (!gotrueAnonKey && !config.useMocks && import.meta.env.MODE !== "test") throw new Error("Missing VITE_GOTRUE_ANON_KEY for the production authentication client.");
 export const AUTH_STORAGE_KEY = "devneya-playground-auth";
 const AUTH_STORAGE_PREFIX = `${AUTH_STORAGE_KEY}:`;
 

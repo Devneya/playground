@@ -15,24 +15,50 @@ concurrency:
 
 jobs:
   validate:
-    name: Typecheck, lint, unit tests, coverage
+    name: Validate source, dependencies, mock build, and browser integration
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 22
           cache: npm
       - run: npm ci
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test
       - run: npm run test:coverage
+      - name: Production dependency audit
+        run: npm audit --omit=dev
+      - name: Full dependency audit
+        run: npm audit
+      - name: Build validation artifact
+        run: npm run build:validation
+        env:
+          VITE_API_BASE_URL: https://api.devneya.com
+          VITE_GOTRUE_ANON_KEY: validation-public-anon-key
+      - run: npm run build:mock
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:e2e
+      - run: npm run test:browser-integration
+
+  release-browsers:
+    name: Browser-integration release-candidate matrix
+    needs: validate
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build:mock
+      - run: npx playwright install --with-deps chromium firefox webkit
+      - run: npm run test:browser-integration:matrix
 
   build:
-    name: Build static site
+    name: Build and inspect protected production artifact
     needs: validate
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -42,13 +68,14 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run build
+      - run: npm run build:prod
         env:
           VITE_API_BASE_URL: https://api.devneya.com
           VITE_GOTRUE_ANON_KEY: ${{ secrets.VITE_GOTRUE_ANON_KEY }}
+      - run: npm run verify:artifact
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
@@ -56,6 +83,8 @@ jobs:
   deploy:
     name: Deploy to GitHub Pages
     needs: build
+    outputs:
+      page_url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     permissions:
       pages: write
@@ -66,3 +95,28 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
+
+  functional-live:
+    name: Real-server functional E2E
+    needs: deploy
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ needs.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Run real-server functional E2E
+        run: npm run test:e2e:real
+        env:
+          PLAYGROUND_E2E_BASE_URL: ${{ needs.deploy.outputs.page_url }}
+          E2E_TEST_EMAIL: ${{ secrets.PLAYGROUND_E2E_EMAIL }}
+          E2E_TEST_PASSWORD: ${{ secrets.PLAYGROUND_E2E_PASSWORD }}
+          E2E_TEST_MODEL: ${{ secrets.PLAYGROUND_E2E_MODEL }}
+          EVIDENCE_DIR: real-functional-evidence
