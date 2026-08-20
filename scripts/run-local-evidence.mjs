@@ -48,6 +48,10 @@ const visit = (directory) => {
   }
 };
 visit(evidenceDir);
+const observations = files.filter((path) => path.includes("/observations/") && path.endsWith(".json")).map((path) => JSON.parse(readFileSync(path, "utf8")));
+const evidenceSummaryPath = join(evidenceDir, "evidence-summary.json");
+writeFileSync(evidenceSummaryPath, `${JSON.stringify({ mode, commit, result: metadata.result, testCount: observations.length, passedCount: observations.filter((item) => item.status === "passed").length, failedCount: observations.filter((item) => item.status !== "passed").length, screenshotCount: observations.filter((item) => item.screenshot).length, visualReview: "pending", observations }, null, 2)}\n`);
+files.push(evidenceSummaryPath);
 const manifest = files.sort().map((path) => `${createHash("sha256").update(readFileSync(path)).digest("hex")}  ${relative(evidenceDir, path)}`).join("\n");
 writeFileSync(join(evidenceDir, "SHA256SUMS"), `${manifest}\n`);
 console.log(`Local ${mode} evidence: ${evidenceDir}`);

@@ -1,7 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+
+const pageErrors = new WeakMap<Page, string[]>();
+const networkFailures = new WeakMap<Page, string[]>();
 
 const assertAccessible = async (page: Page) => {
   const results = await new AxeBuilder({ page }).analyze();
@@ -10,18 +13,39 @@ const assertAccessible = async (page: Page) => {
 
 test.describe("Playground browser shell", () => {
   test.beforeEach(async ({ page }) => {
+    const errors: string[] = [];
+    const failures: string[] = [];
+    pageErrors.set(page, errors);
+    networkFailures.set(page, failures);
+    page.on("pageerror", (error) => {
+      if (/^ResizeObserver loop completed with undelivered notifications\.?$/.test(error.message)) return;
+      errors.push(`pageerror: ${error.message}`);
+    });
+    page.on("console", (message) => { if (message.type() === "error") errors.push(`console: ${message.text()}`); });
+    page.on("requestfailed", (request) => {
+      const url = new URL(request.url());
+      failures.push(`${request.method()} ${url.origin}${url.pathname}: ${request.failure()?.errorText ?? "request failed"}`);
+    });
     await page.goto("/");
     await expect(page).toHaveTitle("Devneya Playground");
   });
 
   test.afterEach(async ({ page }, testInfo) => {
+    const errors = pageErrors.get(page) ?? [];
+    const failures = networkFailures.get(page) ?? [];
     await page.screenshot({ path: testInfo.outputPath("shell.png"), fullPage: true });
     const evidenceDir = process.env.EVIDENCE_DIR;
+    const safeName = testInfo.titlePath.join("-").replace(/[^a-z0-9-]+/gi, "-").replace(/^-|-$/g, "").toLowerCase();
+    let screenshotPath: string | null = null;
     if (evidenceDir) {
       mkdirSync(evidenceDir, { recursive: true });
-      const safeName = testInfo.titlePath.join("-").replace(/[^a-z0-9-]+/gi, "-").replace(/^-|-$/g, "").toLowerCase();
-      await page.screenshot({ path: join(evidenceDir, `${testInfo.project.name}-${safeName}.png`), fullPage: true });
+      screenshotPath = join(evidenceDir, `${testInfo.project.name}-${safeName}.png`);
+      await page.screenshot({ path: screenshotPath, fullPage: true });
+      mkdirSync(join(evidenceDir, "observations"), { recursive: true });
+      writeFileSync(join(evidenceDir, "observations", `${testInfo.project.name}-${safeName}.json`), `${JSON.stringify({ test: testInfo.titlePath, status: testInfo.status, screenshot: screenshotPath, browserErrors: errors, networkFailures: failures, visualReview: "pending" }, null, 2)}\n`);
     }
+    expect(errors, `Unexpected browser errors: ${errors.join(" | ")}`).toEqual([]);
+    expect(failures, `Network failures: ${failures.join(" | ")}`).toEqual([]);
   });
 
   test("shows the product heading", async ({ page }) => {

@@ -1,10 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const evidenceDir = process.env.EVIDENCE_DIR;
 const browserErrors = new WeakMap<Page, string[]>();
+const networkFailures = new WeakMap<Page, string[]>();
 const assertAccessible = async (page: Page) => {
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations.filter((violation) => violation.impact === "serious" || violation.impact === "critical")).toEqual([]);
@@ -84,7 +85,9 @@ const runAndWaitForOutputs = async (page: Page, expectedCount: number) => {
 
 test.beforeEach(async ({ page }) => {
   const errors: string[] = [];
+  const failures: string[] = [];
   browserErrors.set(page, errors);
+  networkFailures.set(page, failures);
   page.on("pageerror", (error) => {
     if (/^ResizeObserver loop completed with undelivered notifications\.?$/.test(error.message)) return;
     errors.push(`pageerror: ${error.message}`);
@@ -94,15 +97,26 @@ test.beforeEach(async ({ page }) => {
     if (/^Failed to load resource: the server responded with a status of (401|402|403|502|503)/.test(message.text())) return;
     errors.push(`console: ${message.text()}`);
   });
+  page.on("requestfailed", (request) => {
+    const url = new URL(request.url());
+    failures.push(`${request.method()} ${url.origin}${url.pathname}: ${request.failure()?.errorText ?? "request failed"}`);
+  });
 });
 
 test.afterEach(async ({ page }, testInfo) => {
+  const errors = browserErrors.get(page) ?? [];
+  const failures = networkFailures.get(page) ?? [];
+  const safeName = testInfo.titlePath.join("-").replace(/[^a-z0-9-]+/gi, "-").replace(/^-|-$/g, "").toLowerCase();
+  let screenshotPath: string | null = null;
   if (evidenceDir) {
     mkdirSync(evidenceDir, { recursive: true });
-    const safeName = testInfo.titlePath.join("-").replace(/[^a-z0-9-]+/gi, "-").replace(/^-|-$/g, "").toLowerCase();
-    await page.screenshot({ path: join(evidenceDir, `${testInfo.project.name}-${safeName}.png`), fullPage: true });
+    screenshotPath = join(evidenceDir, `${testInfo.project.name}-${safeName}.png`);
+    await page.screenshot({ path: screenshotPath, fullPage: true });
+    mkdirSync(join(evidenceDir, "observations"), { recursive: true });
+    writeFileSync(join(evidenceDir, "observations", `${testInfo.project.name}-${safeName}.json`), `${JSON.stringify({ test: testInfo.titlePath, status: testInfo.status, screenshot: screenshotPath, browserErrors: errors, networkFailures: failures, visualReview: "pending" }, null, 2)}\n`);
   }
-  expect(browserErrors.get(page) ?? [], `Unexpected browser errors: ${(browserErrors.get(page) ?? []).join(" | ")}`).toEqual([]);
+  expect(errors, `Unexpected browser errors: ${errors.join(" | ")}`).toEqual([]);
+  expect(failures, `Network failures: ${failures.join(" | ")}`).toEqual([]);
 });
 
 test.describe("mocked workspace flows", () => {
