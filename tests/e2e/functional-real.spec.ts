@@ -266,7 +266,7 @@ test.describe("real-server functional E2E", () => {
     await runAndExpect(page, "DEVNEYA_SMOKE_FIRST", 1);
     await page.getByLabel("Generation 1 instruction").fill("Reply with DEVNEYA_SMOKE_RERUN and no sensitive information.");
     await runAndExpect(page, "DEVNEYA_SMOKE_RERUN", 2);
-    await expect(page.locator(".generated-content")).toContainText("DEVNEYA_SMOKE_FIRST");
+    await expect(page.locator(".generated-content").filter({ hasText: "DEVNEYA_SMOKE_FIRST" }).first()).toBeVisible();
     const exported = await exportWorkspace(page);
     expect(exported).toContain("DEVNEYA_SMOKE_FIRST");
     expect(exported).toContain("DEVNEYA_SMOKE_RERUN");
