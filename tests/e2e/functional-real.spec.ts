@@ -128,7 +128,7 @@ test.describe("real-server functional E2E", () => {
 
   test.beforeAll(() => {
     if (process.env.E2E_MODE === "mock" || process.env.E2E_MODE === "evidence") throw new Error("Real functional E2E cannot run in mock mode.");
-    if (!/^https?:\/\//.test(baseUrl) || /(?:localhost|127\.0\.0\.1)/.test(baseUrl)) throw new Error("PLAYGROUND_E2E_BASE_URL must point to a real pre-production or production server.");
+    if (!/^https:\/\//.test(baseUrl) || /(?:localhost|127\.0\.0\.1)/.test(baseUrl)) throw new Error("PLAYGROUND_E2E_BASE_URL must point to a real HTTPS pre-production or production server.");
   });
 
   test.beforeEach(async ({ page }) => {

@@ -124,6 +124,6 @@ jobs:
       - name: Run real-server functional E2E
         run: npm run test:e2e:real
         env:
-          PLAYGROUND_E2E_BASE_URL: ${{ needs.deploy.outputs.page_url }}
+          PLAYGROUND_E2E_BASE_URL: https://playground.devneya.com
           E2E_TEST_MODEL: ${{ secrets.PLAYGROUND_E2E_MODEL }}
           EVIDENCE_DIR: real-functional-evidence
