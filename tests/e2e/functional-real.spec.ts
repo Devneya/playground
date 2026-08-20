@@ -1,16 +1,22 @@
 import { expect, test, type Page } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import {
+  activateWithTestCheckout,
+  cancelAndDeleteAccount,
+  createDisposableMailbox,
+  deleteDisposableMailbox,
+  sessionAccessToken,
+  waitForSignupConfirmation,
+  type RealTestAccount,
+} from "./real-accounts";
 
 const baseUrl = process.env.PLAYGROUND_E2E_BASE_URL ?? "";
-const testEmail = process.env.E2E_TEST_EMAIL ?? "";
-const testPassword = process.env.E2E_TEST_PASSWORD ?? "";
-const isolationEmail = process.env.E2E_TEST_EMAIL_B ?? "";
-const isolationPassword = process.env.E2E_TEST_PASSWORD_B ?? "";
 const configuredModel = process.env.E2E_TEST_MODEL;
 const evidenceDir = process.env.EVIDENCE_DIR;
 const pageErrors = new WeakMap<Page, string[]>();
 const networkFailures = new WeakMap<Page, string[]>();
+const managedAccounts: RealTestAccount[] = [];
 
 const generation = (page: Page) => page.locator(".generation-node");
 const fitCanvas = async (page: Page) => page.getByRole("button", { name: "fit view" }).click();
@@ -36,13 +42,35 @@ const storedWorkspaceJson = async (page: Page) => page.evaluate(() => new Promis
 }));
 
 const waitForStoredText = async (page: Page, text: string) => {
-  await expect.poll(async () => (await storedWorkspaceJson(page)).includes(`"text":"${text}"`), { timeout: 30_000 }).toBe(true);
+  await expect.poll(async () => (await storedWorkspaceJson(page)).includes("\"text\":\"" + text + "\""), { timeout: 30_000 }).toBe(true);
 };
 
-const signIn = async (page: Page, email = testEmail, password = testPassword) => {
+const clearSensitiveFields = async (page: Page) => {
+  await page.locator("input[type='password']").evaluateAll((fields) => fields.forEach((field) => {
+    (field as HTMLInputElement).value = "";
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+  })).catch(() => undefined);
+};
+
+const captureCheckpoint = async (page: Page, name: string) => {
+  if (!evidenceDir) return;
+  await clearSensitiveFields(page);
+  mkdirSync(evidenceDir, { recursive: true });
+  const safeName = name.replace(/[^a-z0-9-]+/gi, "-").replace(/^-|-$/g, "").toLowerCase();
+  await page.screenshot({ path: join(evidenceDir, "checkpoint-" + safeName + ".png"), fullPage: true });
+};
+
+const credentialsFor = (accountIndex: number) => {
+  const account = managedAccounts[accountIndex];
+  if (!account) throw new Error("Real release account " + (accountIndex + 1) + " has not been created.");
+  return { email: account.address, password: account.password };
+};
+
+const signIn = async (page: Page, email?: string, password?: string, accountIndex = 0) => {
+  const credentials = email && password ? { email, password } : credentialsFor(accountIndex);
   await expect(page.getByLabel("Email")).toBeVisible({ timeout: 60_000 });
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill(password);
+  await page.getByLabel("Email").fill(credentials.email);
+  await page.getByLabel("Password").fill(credentials.password);
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page.getByRole("heading", { name: "Compose a flow" })).toBeVisible({ timeout: 60_000 });
   await expect(page.getByText("Live model catalog")).toBeVisible({ timeout: 60_000 });
@@ -58,8 +86,8 @@ const selectRealModel = async (page: Page): Promise<string> => {
   const node = generation(page);
   const available = await node.locator('input[type="checkbox"]').evaluateAll((inputs) => inputs.map((input) => input.getAttribute("aria-label")?.replace(/^Generation 1 model /, "")));
   const model = configuredModel ?? ["gpt-oss-20b", "gpt-oss-120b"].find((candidate) => available.includes(candidate));
-  if (!model || !available.includes(model)) throw new Error(`No configured release-test model is available. Available models: ${available.join(", ")}`);
-  await node.getByRole("checkbox", { name: `Generation 1 model ${model}` }).check();
+  if (!model || !available.includes(model)) throw new Error("No configured release-test model is available. Available models: " + available.join(", "));
+  await node.getByRole("checkbox", { name: "Generation 1 model " + model }).check();
   await fitCanvas(page);
   return model;
 };
@@ -85,12 +113,11 @@ const exportWorkspace = async (page: Page): Promise<string> => {
 };
 
 test.describe("real-server functional E2E", () => {
-  test.describe.configure({ timeout: 180_000 });
+  test.describe.configure({ mode: "serial", timeout: 240_000 });
 
   test.beforeAll(() => {
     if (process.env.E2E_MODE === "mock" || process.env.E2E_MODE === "evidence") throw new Error("Real functional E2E cannot run in mock mode.");
     if (!/^https?:\/\//.test(baseUrl) || /(?:localhost|127\.0\.0\.1)/.test(baseUrl)) throw new Error("PLAYGROUND_E2E_BASE_URL must point to a real pre-production or production server.");
-    if (!testEmail || !testPassword) throw new Error("E2E_TEST_EMAIL and E2E_TEST_PASSWORD are required for real functional E2E.");
   });
 
   test.beforeEach(async ({ page }) => {
@@ -100,12 +127,12 @@ test.describe("real-server functional E2E", () => {
     networkFailures.set(page, failures);
     page.on("pageerror", (error) => {
       if (/^ResizeObserver loop completed with undelivered notifications\.?$/.test(error.message)) return;
-      errors.push(error.message);
+      errors.push("page: " + error.message);
     });
-    page.on("console", (message) => { if (message.type() === "error") errors.push(`console: ${message.text()}`); });
+    page.on("console", (message) => { if (message.type() === "error") errors.push("console: " + message.text()); });
     page.on("requestfailed", (request) => {
       const url = new URL(request.url());
-      failures.push(`${request.method()} ${url.origin}${url.pathname}: ${request.failure()?.errorText ?? "request failed"}`);
+      failures.push(request.method() + " " + url.origin + url.pathname + ": " + (request.failure()?.errorText ?? "request failed"));
     });
     await page.goto("/", { waitUntil: "domcontentloaded" });
     await expect(page).toHaveTitle("Devneya Playground");
@@ -119,14 +146,55 @@ test.describe("real-server functional E2E", () => {
     const safeName = testInfo.titlePath.join("-").replace(/[^a-z0-9-]+/gi, "-").replace(/^-|-$/g, "").toLowerCase();
     let screenshotPath: string | null = null;
     if (evidenceDir) {
+      await clearSensitiveFields(page);
       mkdirSync(evidenceDir, { recursive: true });
-      screenshotPath = join(evidenceDir, `${testInfo.project.name}-${safeName}.png`);
+      screenshotPath = join(evidenceDir, testInfo.project.name + "-" + safeName + ".png");
       await page.screenshot({ path: screenshotPath, fullPage: true });
       mkdirSync(join(evidenceDir, "observations"), { recursive: true });
-      writeFileSync(join(evidenceDir, "observations", `${testInfo.project.name}-${safeName}.json`), `${JSON.stringify({ test: testInfo.titlePath, status: testInfo.status, screenshot: screenshotPath, browserErrors: errors, networkFailures: failures, visualReview: "pending" }, null, 2)}\n`);
+      writeFileSync(join(evidenceDir, "observations", testInfo.project.name + "-" + safeName + ".json"), JSON.stringify({ test: testInfo.titlePath, status: testInfo.status, screenshot: screenshotPath, browserErrors: errors, networkFailures: failures, visualReview: "pending" }, null, 2) + "\n");
     }
-    expect(errors, `Uncaught browser errors: ${errors.join(" | ")}`).toEqual([]);
-    expect(failures, `Network failures: ${failures.join(" | ")}`).toEqual([]);
+    expect(errors, "Uncaught browser errors: " + errors.join(" | ")).toEqual([]);
+    expect(failures, "Network failures: " + failures.join(" | ")).toEqual([]);
+  });
+
+  const registerConfirmActivate = async (page: Page, accountIndex: number) => {
+    const account = await createDisposableMailbox();
+    managedAccounts[accountIndex] = account;
+    await expect(page.getByLabel("Email")).toBeVisible({ timeout: 60_000 });
+    await page.getByRole("button", { name: "Create an account" }).click();
+    await page.getByLabel("Email").fill(account.address);
+    await page.getByLabel("Password").fill(account.password);
+    await page.getByRole("button", { name: "Create account" }).click();
+    await expect(page.getByText("Check your email to confirm your account.")).toBeVisible({ timeout: 60_000 });
+    await clearSensitiveFields(page);
+    await captureCheckpoint(page, "account-" + (accountIndex + 1) + "-confirmation-requested");
+
+    await page.getByRole("button", { name: /already have an account/i }).click();
+    await page.getByLabel("Email").fill(account.address);
+    await page.getByLabel("Password").fill(account.password);
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(page.getByRole("alert")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole("heading", { name: "Compose a flow" })).not.toBeVisible();
+    await clearSensitiveFields(page);
+
+    const confirmationUrl = await waitForSignupConfirmation(account, baseUrl);
+    await page.goto(confirmationUrl, { waitUntil: "domcontentloaded" });
+    await expect.poll(() => new URL(page.url()).origin, { timeout: 60_000 }).toBe(new URL(baseUrl).origin);
+    if (await page.getByRole("heading", { name: "Compose a flow" }).isVisible().catch(() => false)) await signOut(page);
+    await signIn(page, account.address, account.password);
+    account.accessToken = await sessionAccessToken(page);
+    await captureCheckpoint(page, "account-" + (accountIndex + 1) + "-confirmed-login");
+    await activateWithTestCheckout(page, account, (name, checkoutPage) => captureCheckpoint(checkoutPage, name));
+    await captureCheckpoint(page, "account-" + (accountIndex + 1) + "-activated");
+    await signOut(page);
+  };
+
+  test("real server: registers, confirms, activates, and logs in account A", async ({ page }) => {
+    await registerConfirmActivate(page, 0);
+  });
+
+  test("real server: registers, confirms, activates, and logs in account B", async ({ page }) => {
+    await registerConfirmActivate(page, 1);
   });
 
   test("real server: authenticates, discovers a model, and completes a generation", async ({ page }) => {
@@ -194,18 +262,37 @@ test.describe("real-server functional E2E", () => {
   });
 
   test("real server: isolates two release-test accounts", async ({ page }) => {
-    if (!isolationEmail || !isolationPassword) throw new Error("E2E_TEST_EMAIL_B and E2E_TEST_PASSWORD_B are required for real user-isolation E2E.");
-    await signIn(page, testEmail, testPassword);
+    await signIn(page, undefined, undefined, 0);
     await page.getByLabel("Text 1 text").fill("REAL_USER_A_MARKER");
     await waitForStoredText(page, "REAL_USER_A_MARKER");
     await signOut(page);
-    await signIn(page, isolationEmail, isolationPassword);
+    await signIn(page, undefined, undefined, 1);
     await expect(page.getByLabel("Text 1 text")).not.toHaveValue("REAL_USER_A_MARKER");
     await page.getByLabel("Text 1 text").fill("REAL_USER_B_MARKER");
     await waitForStoredText(page, "REAL_USER_B_MARKER");
     await signOut(page);
-    await signIn(page, testEmail, testPassword);
+    await signIn(page, undefined, undefined, 0);
     await expect(page.getByLabel("Text 1 text")).toHaveValue("REAL_USER_A_MARKER");
     await signOut(page);
+  });
+
+  test.afterAll(async ({ browser }) => {
+    const cleanupErrors: string[] = [];
+    for (const account of [...managedAccounts].reverse()) {
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      try {
+        await page.goto(baseUrl, { waitUntil: "domcontentloaded" });
+        await signIn(page, account.address, account.password);
+        account.accessToken = await sessionAccessToken(page);
+        await cancelAndDeleteAccount(account);
+      } catch (error) {
+        cleanupErrors.push(account.address + ": " + (error instanceof Error ? error.message : "unknown cleanup error"));
+        await deleteDisposableMailbox(account).catch(() => undefined);
+      } finally {
+        await context.close();
+      }
+    }
+    if (cleanupErrors.length) throw new Error("Real release-account cleanup failed: " + cleanupErrors.join(" | "));
   });
 });

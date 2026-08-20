@@ -17,6 +17,7 @@ const metadata = {
   startedAt,
   baseUrl: process.env.PLAYGROUND_E2E_BASE_URL ?? null,
   model: process.env.E2E_TEST_MODEL ?? null,
+  accountMode: mode === "real" ? "autonomous-disposable-mailbox-and-dodo-test-checkout" : "mock",
   browserMatrix: process.env.E2E_BROWSER_MATRIX === "true",
   node: process.version,
   npm: execFileSync("npm", ["--version"], { encoding: "utf8" }).trim(),

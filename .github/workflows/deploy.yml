@@ -123,9 +123,5 @@ jobs:
         run: npm run test:e2e:real
         env:
           PLAYGROUND_E2E_BASE_URL: ${{ needs.deploy.outputs.page_url }}
-          E2E_TEST_EMAIL: ${{ secrets.PLAYGROUND_E2E_EMAIL }}
-          E2E_TEST_PASSWORD: ${{ secrets.PLAYGROUND_E2E_PASSWORD }}
-          E2E_TEST_EMAIL_B: ${{ secrets.PLAYGROUND_E2E_EMAIL_B }}
-          E2E_TEST_PASSWORD_B: ${{ secrets.PLAYGROUND_E2E_PASSWORD_B }}
           E2E_TEST_MODEL: ${{ secrets.PLAYGROUND_E2E_MODEL }}
           EVIDENCE_DIR: real-functional-evidence

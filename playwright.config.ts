@@ -15,14 +15,14 @@ export default defineConfig({
   fullyParallel: true,
   failOnFlakyTests: true,
   forbidOnly: Boolean(process.env.CI),
-  retries: process.env.CI ? 2 : 0,
+  retries: realMode ? 0 : (process.env.CI ? 2 : 0),
   reporter: process.env.CI ? "github" : [["list"], ["html", { outputFolder: evidenceDir ? `${evidenceDir}/playwright-report` : "playwright-report", open: "never" }]],
   outputDir: evidenceDir ? `${evidenceDir}/test-results` : "test-results",
   use: {
     baseURL: externalBaseUrl ?? "http://127.0.0.1:3001",
-    trace: "retain-on-failure",
-    screenshot: "only-on-failure",
-    video: "retain-on-failure",
+    trace: realMode ? "off" : "retain-on-failure",
+    screenshot: realMode ? "off" : "only-on-failure",
+    video: realMode ? "off" : "retain-on-failure",
   },
   projects: browserMatrix ? [
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },
