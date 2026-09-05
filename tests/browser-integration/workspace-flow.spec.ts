@@ -328,6 +328,19 @@ test("connects a new Text node with the pointer and restores the edge after relo
   await expect(generation(page)).toContainText("Inputs (2)", { timeout: 15_000 });
 });
 
+test("removes an input edge from its hover midpoint control", async ({ page }) => {
+  await prepare(page, "default");
+  await signIn(page);
+  await fitCanvas(page);
+  const removeButton = page.getByRole("button", { name: "Remove connection" });
+  await expect(removeButton).toBeHidden();
+  await page.locator(".react-flow__edge-managed.input-edge").first().hover();
+  await expect(removeButton).toBeVisible();
+  await removeButton.click();
+  await expect(generation(page)).toContainText("Inputs (0)");
+  await expect(page.locator(".react-flow__edge")).toHaveCount(0);
+});
+
 test("rejects an accessible cycle attempt with a visible reason", async ({ page }) => {
   await prepare(page, "default");
   await signIn(page);

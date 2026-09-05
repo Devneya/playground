@@ -6,13 +6,16 @@ import { canAddInputConnection } from "../../domain/graph";
 import type { InputEdge, NodeData, PlaygroundEdge, PlaygroundNode } from "../../domain/types";
 import { useWorkspace } from "../workspace/useWorkspace";
 import { GenerationNode } from "./GenerationNode";
+import { ManagedEdge } from "./ManagedEdge";
 import { TextNode } from "./TextNode";
 
 const nodeTypes = { text: TextNode, generation: GenerationNode };
 
+const edgeTypes = { managed: ManagedEdge };
+
 const toFlowNode = (node: PlaygroundNode): Node<NodeData> => ({ id: node.id, type: node.data.kind, position: node.position, data: node.data });
 
-const toFlowEdge = (edge: PlaygroundEdge): Edge => ({ id: edge.id, source: edge.source, target: edge.target, type: edge.kind === "result" ? "smoothstep" : "default", animated: edge.kind === "result", selectable: edge.kind === "input", className: edge.kind === "result" ? "result-edge" : "input-edge", data: { kind: edge.kind } });
+const toFlowEdge = (edge: PlaygroundEdge): Edge => ({ id: edge.id, source: edge.source, target: edge.target, type: "managed", animated: edge.kind === "result", selectable: edge.kind === "input", className: edge.kind === "result" ? "result-edge" : "input-edge", data: { kind: edge.kind } });
 
 export const WorkspaceCanvas = () => {
   const { activeFlow, dispatch } = useWorkspace();
@@ -52,10 +55,10 @@ export const WorkspaceCanvas = () => {
   const onNodeDragStop = (_event: MouseEvent, node: Node) => dispatch({ type: "node/move", flowId: activeFlow.id, nodeId: node.id, position: node.position });
 
   return <section className="canvas-shell" aria-label="Flow canvas">
-    <ReactFlow<Node<NodeData>, Edge> nodes={nodes} edges={edges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onReconnect={onReconnect} onNodeDragStop={onNodeDragStop} fitView nodesFocusable={false} edgesFocusable={false} minZoom={0.2} maxZoom={2} deleteKeyCode={["Backspace", "Delete"]} onlyRenderVisibleElements={false}>
+    <ReactFlow<Node<NodeData>, Edge> nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onReconnect={onReconnect} onNodeDragStop={onNodeDragStop} fitView nodesFocusable={false} edgesFocusable={false} minZoom={0.2} maxZoom={2} deleteKeyCode={["Backspace", "Delete"]} onlyRenderVisibleElements={false}>
       <Background gap={24} size={1} color="#d9e0ea" />
       <Controls />
-      <MiniMap pannable zoomable nodeColor={(node) => node.type === "generation" ? "#7c3aed" : "#0f766e"} />
+      <MiniMap pannable zoomable nodeColor={(node) => node.type === "generation" ? "#d97706" : "#0f766e"} />
     </ReactFlow>
     {notice && <div className="canvas-notice" role="status">{notice}<button type="button" onClick={() => setNotice(null)} aria-label="Dismiss notice">×</button></div>}
   </section>;
