@@ -15,7 +15,7 @@ const edgeTypes = { managed: ManagedEdge };
 
 const toFlowNode = (node: PlaygroundNode): Node<NodeData> => ({ id: node.id, type: node.data.kind, position: node.position, data: node.data });
 
-const toFlowEdge = (edge: PlaygroundEdge): Edge => ({ id: edge.id, source: edge.source, target: edge.target, type: "managed", animated: edge.kind === "result", selectable: edge.kind === "input", className: edge.kind === "result" ? "result-edge" : "input-edge", markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, color: edge.kind === "result" ? "#a4a9e8" : "#7d899d" }, data: { kind: edge.kind } });
+const toFlowEdge = (edge: PlaygroundEdge): Edge => ({ id: edge.id, source: edge.source, target: edge.target, type: "managed", animated: false, selectable: edge.kind === "input", className: edge.kind === "result" ? "result-edge" : "input-edge", markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, color: edge.kind === "result" ? "#a4a9e8" : "#7d899d" }, data: { kind: edge.kind } });
 
 export const WorkspaceCanvas = () => {
   const { activeFlow, dispatch } = useWorkspace();

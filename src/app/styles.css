@@ -118,7 +118,7 @@ input:focus, textarea:focus { border-color: #b45309; box-shadow: 0 0 0 3px #b453
 .send-button:hover:not(:disabled) { background: #f0b400; }
 .send-button:disabled { opacity: .45; cursor: not-allowed; }
 .send-button.running { background: #b42318; color: #fff; }
-.result-edge .react-flow__edge-path { stroke: #8b8ff5; stroke-width: 1.6; stroke-dasharray: 5 4; }
+.result-edge .react-flow__edge-path { stroke: #8b8ff5; stroke-width: 1.6; }
 .input-edge { stroke: #7d899d; }
 .react-flow__edge.selectable:hover .react-flow__edge-path { stroke-width: 2.5; }
 .managed-edge-control { position: absolute; transform: translate(-50%, -50%); pointer-events: all; }
