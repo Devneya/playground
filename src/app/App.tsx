@@ -72,11 +72,12 @@ const WorkspaceScreen = () => {
         <div className="sidebar-tools"><button type="button" onClick={exportWorkspace}>Export workspace</button><button type="button" onClick={() => importRef.current?.click()}>Import workspace</button><input ref={importRef} className="visually-hidden" type="file" aria-label="Workspace JSON file" accept="application/json,.json" onChange={(event) => void handleImport(event.target.files?.[0])} />{importError && <p className="form-error">{importError}</p>}<button type="button" className="danger-link" onClick={() => { if (window.confirm("Clear this browser's saved workspace? Export first if you need a copy.")) void clearLocalWorkspace(); }}>Clear local workspace</button></div>
       </aside>
       <section className="workspace-main">
-        <div className="canvas-toolbar"><div><p className="eyebrow">{activeFlow.name}</p><h1>Compose a flow</h1></div><div className="canvas-actions"><button type="button" onClick={() => addNewNode("text")}>+ Text</button><button type="button" onClick={() => addNewNode("generation")}>+ Generation</button><button type="button" onClick={undo} disabled={!canUndo} aria-label="Undo last change">Undo</button><button type="button" onClick={redo} disabled={!canRedo} aria-label="Redo last change">Redo</button><span className="catalog-status">{modelsStatus === "ready" ? "Live model catalog" : modelsStatus === "loading" ? "Loading models…" : "Model catalog unavailable"}</span></div></div>
+        <div className="canvas-toolbar"><div><p className="eyebrow">{activeFlow.name}</p><h1>Compose a flow</h1></div><div className="canvas-actions"><button type="button" onClick={undo} disabled={!canUndo} aria-label="Undo last change">Undo</button><button type="button" onClick={redo} disabled={!canRedo} aria-label="Redo last change">Redo</button><span className="catalog-status">{modelsStatus === "ready" ? "Live model catalog" : modelsStatus === "loading" ? "Loading models…" : "Model catalog unavailable"}</span></div></div>
         <div className="workspace-notice">{LOCAL_NOTICE}</div>
         {(error || keyStatus === "error") && <div className="inline-alert" role="alert">{error || keyError}</div>}
         {storageWarning && <div className="inline-alert" role="status">{storageWarning}</div>}
         {loading ? <div className="canvas-loading">Loading this browser's workspace…</div> : <Suspense fallback={<div className="canvas-loading">Loading the flow editor…</div>}><WorkspaceCanvas /></Suspense>}
+        {!loading && <div className="canvas-fab" role="toolbar" aria-label="Canvas actions"><button type="button" onClick={() => addNewNode("text")}>+ Text</button><button type="button" onClick={() => addNewNode("generation")}>+ Generation</button></div>}
       </section>
     </div>
   </main>;
