@@ -147,19 +147,19 @@ test.describe("mocked workspace flows", () => {
     await runAndWaitForOutputs(page, 2);
     await page.getByRole("button", { name: "+ Generation" }).click();
     await fitCanvas(page);
-    const second = page.locator(".generation-node").nth(1);
+    const second = page.locator(".generation-node").last();
     const firstResult = page.locator(".generated-node").first().locator(".react-flow__handle.source");
     await firstResult.dragTo(second.locator(".react-flow__handle.target"));
     await expect(second).toContainText("model-a");
     const secondResult = page.locator(".generated-node").nth(1).locator(".react-flow__handle.source");
     await secondResult.dragTo(second.locator(".react-flow__handle.target"));
     await expect(page.getByRole("status")).toContainText("at most 1 input");
-  await expect(page.locator(".react-flow__edge")).toHaveCount(4);
-    await page.locator(".react-flow__edge-managed.input-edge").first().hover();
+  await expect(page.locator(".react-flow__edge")).toHaveCount(5);
+    await page.locator(".react-flow__edge-managed.input-edge").last().hover();
     await page.getByRole("button", { name: "Remove connection" }).click();
     await secondResult.dragTo(second.locator(".react-flow__handle.target"));
     await expect(second).toContainText("model-b");
-  await expect(page.locator(".react-flow__edge")).toHaveCount(4);
+  await expect(page.locator(".react-flow__edge")).toHaveCount(5);
   });
 
   test("runs all four selected models and preserves result siblings", async ({ page }) => {
@@ -346,15 +346,15 @@ test("removes an input edge from its hover midpoint control", async ({ page }) =
   await runAndWaitForOutputs(page, 1);
   await page.getByRole("button", { name: "+ Generation" }).click();
   await fitCanvas(page);
-  const second = page.locator(".generation-node").nth(1);
+  const second = page.locator(".generation-node").last();
   await page.locator(".generated-node").first().locator(".react-flow__handle.source").dragTo(second.locator(".react-flow__handle.target"));
   const removeButton = page.getByRole("button", { name: "Remove connection" });
   await expect(removeButton).toBeHidden();
-  await page.locator(".react-flow__edge-managed.input-edge").first().hover();
+  await page.locator(".react-flow__edge-managed.input-edge").last().hover();
   await expect(removeButton).toBeVisible();
   await removeButton.click();
   await expect(second).toContainText("Context (0)");
-  await expect(page.locator(".react-flow__edge")).toHaveCount(1);
+  await expect(page.locator(".react-flow__edge")).toHaveCount(2);
 });
 
 test("selects models through the pill picker with search", async ({ page }) => {
@@ -378,7 +378,7 @@ test("threads a result into a second prompt and refuses the cycle back", async (
   await runAndWaitForOutputs(page, 1);
   await page.getByRole("button", { name: "+ Generation" }).click();
   await fitCanvas(page);
-  const second = page.locator(".generation-node").nth(1);
+  const second = page.locator(".generation-node").last();
   const outputHandle = page.locator(".generated-node").first().locator(".react-flow__handle.source");
   await outputHandle.dragTo(second.locator(".react-flow__handle.target"));
   await expect(second).toContainText("model-a");
@@ -386,7 +386,7 @@ test("threads a result into a second prompt and refuses the cycle back", async (
   await page.getByRole("button", { name: "Remove connection" }).click();
   await page.locator(".generated-node").first().locator(".react-flow__handle.source").dragTo(generation(page).first().locator(".react-flow__handle.target"));
   await expect(page.getByRole("status")).toContainText("cycle");
-  await expect(page.locator(".react-flow__edge")).toHaveCount(1);
+  await expect(page.locator(".react-flow__edge")).toHaveCount(2);
 });
 
 test("runs a threaded generation from a result input", async ({ page }) => {
@@ -396,7 +396,7 @@ test("runs a threaded generation from a result input", async ({ page }) => {
   await runAndWaitForOutputs(page, 1);
   await page.getByRole("button", { name: "+ Generation" }).click();
   await fitCanvas(page);
-  const second = page.locator(".generation-node").nth(1);
+  const second = page.locator(".generation-node").last();
   const secondTitle = (await second.locator(".node-header strong").textContent())!;
   await page.locator(".generated-node").first().locator(".react-flow__handle.source").dragTo(second.locator(".react-flow__handle.target"));
   await second.getByRole("button", { name: `${secondTitle} model picker` }).click();
