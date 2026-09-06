@@ -71,7 +71,7 @@ describe("domain edge cases", () => {
   it("allows successful generated results and rejects pending ones", () => {
     const { workspace, flow, output, batch } = generatedFixture();
     const generation = flow.nodes.find((node) => node.data.kind === "generation")!;
-    const readyFlow = { ...flow, nodes: [...flow.nodes, output], batches: [batch] };
+    const readyFlow = { ...flow, nodes: [...flow.nodes, output], edges: flow.edges.filter((edge) => edge.kind !== "input"), batches: [batch] };
     expect(canAddInputConnection(readyFlow, output.id, generation.id)).toEqual({ allowed: true });
     const pendingFlow = { ...readyFlow, batches: [{ ...batch, executions: [{ ...batch.executions[0]!, status: "pending" as const }] }] };
     expect(canAddInputConnection(pendingFlow, output.id, generation.id)).toMatchObject({ allowed: false });

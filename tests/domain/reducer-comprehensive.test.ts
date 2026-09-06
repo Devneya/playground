@@ -42,7 +42,7 @@ describe("comprehensive domain transitions", () => {
     expect(text.data.kind).toBe("text");
   });
 
-  it("adds, reorders, reconnects, and removes ordered inputs", () => {
+  it("replaces, reconnects, and removes the single input", () => {
     let workspace = starter();
     const flow = flowOf(workspace);
     const generation = nodeOf(workspace, "generation");
@@ -51,15 +51,16 @@ describe("comprehensive domain transitions", () => {
     const third = manualNode("third-text", "Third", 720);
     workspace = reduceWorkspace(workspace, { type: "node/add", flowId: flow.id, node: second }, context);
     workspace = reduceWorkspace(workspace, { type: "node/add", flowId: flow.id, node: third }, context);
-    workspace = reduceWorkspace(workspace, { type: "input/add", flowId: flow.id, edge: { id: "second-edge", kind: "input", source: second.id, target: generation.id, order: 1 } }, context);
+    const starterEdge = flowOf(workspace).edges.find((edge) => edge.kind === "input" && edge.source === first.id)!;
+    workspace = reduceWorkspace(workspace, { type: "input/remove", flowId: flow.id, edgeId: starterEdge.id }, context);
+    expect(flowOf(workspace).edges.filter((edge) => edge.kind === "input")).toHaveLength(0);
+    workspace = reduceWorkspace(workspace, { type: "input/add", flowId: flow.id, edge: { id: "second-edge", kind: "input", source: second.id, target: generation.id, order: 0 } }, context);
     workspace = reduceWorkspace(workspace, { type: "input/move", flowId: flow.id, edgeId: "second-edge", direction: "up" }, context);
-    expect(flowOf(workspace).edges.filter((edge) => edge.kind === "input").sort((a, b) => a.order - b.order).map((edge) => edge.source)).toEqual([second.id, first.id]);
-    const firstEdge = flowOf(workspace).edges.find((edge) => edge.kind === "input" && edge.source === first.id)!;
-    workspace = reduceWorkspace(workspace, { type: "input/reconnect", flowId: flow.id, edgeId: firstEdge.id, source: third.id, target: generation.id }, context);
-    expect(flowOf(workspace).edges.filter((edge) => edge.kind === "input").map((edge) => edge.source)).toContain(third.id);
+    expect(flowOf(workspace).edges.filter((edge) => edge.kind === "input").map((edge) => edge.source)).toEqual([second.id]);
+    workspace = reduceWorkspace(workspace, { type: "input/reconnect", flowId: flow.id, edgeId: "second-edge", source: third.id, target: generation.id }, context);
+    expect(flowOf(workspace).edges.filter((edge) => edge.kind === "input").map((edge) => edge.source)).toEqual([third.id]);
     workspace = reduceWorkspace(workspace, { type: "input/remove", flowId: flow.id, edgeId: "second-edge" }, context);
-    expect(flowOf(workspace).edges.filter((edge) => edge.kind === "input")).toHaveLength(1);
-    expect(flowOf(workspace).edges.filter((edge) => edge.kind === "input")[0]?.order).toBe(0);
+    expect(flowOf(workspace).edges.filter((edge) => edge.kind === "input")).toHaveLength(0);
   });
 
   it("settles successful, failed, and cancelled results without removing siblings", () => {

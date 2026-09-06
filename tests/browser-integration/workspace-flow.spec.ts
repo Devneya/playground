@@ -140,21 +140,20 @@ test.describe("mocked workspace flows", () => {
     await expect(page.locator(".generated-node")).toContainText("model-a");
   });
 
-  test("adds, reconnects, reorders, and removes a second input", async ({ page }) => {
+  test("refuses a second input with a visible reason", async ({ page }) => {
     await prepare(page, "default");
     await signIn(page);
     await page.getByRole("button", { name: "+ Text" }).click();
     await fitCanvas(page);
-    await page.getByLabel("Text 3 text").fill("Second input");
     const node = generation(page);
-    await node.getByRole("button", { name: "Add input" }).click();
-    await expect(node.getByLabel("Reconnect input 2")).toHaveCount(1);
-    await fitCanvas(page);
-    await node.getByLabel("Generation 1 input 2 move up").click();
-    await expect(node.getByLabel("Reconnect input 1")).toHaveValue(/.+/);
-    await node.getByLabel("Generation 1 input 1 move down").click();
-    await node.getByLabel("Remove input 2").click();
-    await expect(node.getByLabel("Reconnect input 2")).toHaveCount(0);
+    const source = page.locator(".react-flow__node-text").filter({ hasText: "Text 3" }).locator(".react-flow__handle.source");
+    await source.dragTo(node.locator(".react-flow__handle.target"));
+    await expect(page.getByRole("status")).toContainText("only one input");
+    await expect(page.locator(".react-flow__edge")).toHaveCount(1);
+    await page.locator(".react-flow__edge-managed.input-edge").first().hover();
+    await page.getByRole("button", { name: "Remove connection" }).click();
+    await source.dragTo(node.locator(".react-flow__handle.target"));
+    await expect(page.locator(".react-flow__edge")).toHaveCount(1);
     await expect(node).toContainText("Inputs (1)");
   });
 
@@ -320,17 +319,18 @@ test("connects a new Text node with the pointer and restores the edge after relo
   await prepare(page, "default");
   await signIn(page);
   await page.getByRole("button", { name: "+ Text" }).click();
+  await page.getByRole("button", { name: "+ Generation" }).click();
   await fitCanvas(page);
   const source = page.locator(".react-flow__node-text").filter({ hasText: "Text 3" }).locator(".react-flow__handle.source");
-  const target = generation(page).locator(".react-flow__handle.target");
-  await source.dragTo(target);
-  await expect(generation(page)).toContainText("Inputs (2)");
+  const second = page.locator(".generation-node").nth(1);
+  await source.dragTo(second.locator(".react-flow__handle.target"));
+  await expect(second).toContainText("Text 3");
   await expect(page.locator(".react-flow__edge")).toHaveCount(2);
   await waitForSave(page);
   await waitForStoredInputCount(page, 2);
   await page.reload({ waitUntil: "domcontentloaded" });
   await expect(page.locator(".catalog-dot.live")).toBeVisible({ timeout: 15_000 });
-  await expect(generation(page)).toContainText("Inputs (2)", { timeout: 15_000 });
+  await expect(page.locator(".generation-node").nth(1)).toContainText("Text 3", { timeout: 15_000 });
 });
 
 test("removes an input edge from its hover midpoint control", async ({ page }) => {
@@ -360,7 +360,25 @@ test("selects models through the pill picker with search", async ({ page }) => {
   await expect(picker).toContainText("model-c (1/4)");
 });
 
-test("rejects an accessible cycle attempt with a visible reason", async ({ page }) => {
+test("threads a result into a second generation and refuses the cycle back", async ({ page }) => {
+  await prepare(page, "default");
+  await signIn(page);
+  await selectModels(page, ["model-a"]);
+  await runAndWaitForOutputs(page, 1);
+  await page.getByRole("button", { name: "+ Generation" }).click();
+  await fitCanvas(page);
+  const second = page.locator(".generation-node").nth(1);
+  const outputHandle = page.locator(".generated-node").first().locator(".react-flow__handle.source");
+  await outputHandle.dragTo(second.locator(".react-flow__handle.target"));
+  await expect(second).toContainText("model-a");
+  await page.locator(".react-flow__edge-managed.input-edge").first().hover();
+  await page.getByRole("button", { name: "Remove connection" }).click();
+  await outputHandle.dragTo(generation(page).first().locator(".react-flow__handle.target"));
+  await expect(page.getByRole("status")).toContainText("cycle");
+  await expect(page.locator(".react-flow__edge")).toHaveCount(2);
+});
+
+test("runs a threaded generation from a result input", async ({ page }) => {
   await prepare(page, "default");
   await signIn(page);
   await selectModels(page, ["model-a"]);
@@ -369,47 +387,12 @@ test("rejects an accessible cycle attempt with a visible reason", async ({ page 
   await fitCanvas(page);
   const second = page.locator(".generation-node").nth(1);
   const secondTitle = (await second.locator(".node-header strong").textContent())!;
-  await second.getByRole("button", { name: "Add input" }).click();
-  await fitCanvas(page);
-  await second.getByRole("combobox", { name: `${secondTitle} input source` }).selectOption({ label: "model-a" });
-  await second.getByRole("button", { name: "Add input" }).click();
+  await page.locator(".generated-node").first().locator(".react-flow__handle.source").dragTo(second.locator(".react-flow__handle.target"));
   await second.getByRole("button", { name: `${secondTitle} model picker` }).click();
   await second.getByRole("checkbox", { name: `${secondTitle} model model-a` }).check();
   await page.keyboard.press("Escape");
   await second.getByRole("button", { name: "Run generation" }).click();
   await expect(page.locator(".generated-node")).toHaveCount(2, { timeout: 15_000 });
-  const firstInput = generation(page).first().getByLabel("Reconnect input 1");
-  const outputOption = firstInput.locator("option").nth(2);
-  const outputId = await outputOption.getAttribute("value");
-  expect(outputId).toBeTruthy();
-  await firstInput.selectOption(outputId!);
-  await expect(page.getByRole("status")).toContainText("cycle");
-  await expect(firstInput).not.toHaveValue(outputId!);
-});
-
-test("merges two upstream paths into a second generation", async ({ page }) => {
-  await prepare(page, "default");
-  await signIn(page);
-  await page.getByLabel("Text 1 text").fill("BRANCH_ALPHA");
-  await page.getByRole("button", { name: "+ Text" }).click();
-  await fitCanvas(page);
-  await page.getByLabel("Text 3 text").fill("BRANCH_BETA");
-  await page.getByRole("button", { name: "+ Generation" }).click();
-  await fitCanvas(page);
-  const second = page.locator(".generation-node").nth(1);
-  const secondTitle = (await second.locator(".node-header strong").textContent())!;
-  await second.getByRole("button", { name: "Add input" }).click();
-  await fitCanvas(page);
-  await second.getByRole("combobox", { name: `${secondTitle} input source` }).selectOption({ label: "Text 3" });
-  await second.getByRole("button", { name: "Add input" }).click();
-  await second.getByRole("button", { name: `${secondTitle} model picker` }).click();
-  await second.getByRole("checkbox", { name: `${secondTitle} model model-a` }).check();
-  await page.keyboard.press("Escape");
-  await second.getByLabel(`${secondTitle} instruction`).fill("Repeat both branch labels.");
-  await second.getByRole("button", { name: "Run generation" }).click();
-  await expect(page.locator(".generated-node")).toHaveCount(1, { timeout: 15_000 });
-  await expect(page.locator(".generated-content")).toContainText("Mock result");
-  await expect(second).toContainText("Inputs (2)");
 });
 
 test("supports flow creation, rename, duplication, activation, deletion, undo, and redo", async ({ page }) => {

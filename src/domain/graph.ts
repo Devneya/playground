@@ -40,7 +40,7 @@ export const canAddInputConnection = (flow: FlowDocument, sourceTextId: string, 
     if (!execution || execution.status !== "success") return { allowed: false, reason: "Only successful results can be used as inputs." };
   }
   if (getOrderedInputEdges(flow, target.id).some((edge) => edge.id !== ignoredEdgeId && edge.source === source.id)) return { allowed: false, reason: "That Text node is already connected." };
-  if (getOrderedInputEdges(flow, target.id).filter((edge) => edge.id !== ignoredEdgeId).length >= LIMITS.maxInputsPerGeneration) return { allowed: false, reason: `A Generation node can have at most ${LIMITS.maxInputsPerGeneration} inputs.` };
+  if (getOrderedInputEdges(flow, target.id).filter((edge) => edge.id !== ignoredEdgeId).length >= LIMITS.maxInputsPerGeneration) return { allowed: false, reason: "A Generation node can have only one input." };
   if (hasDirectedPath(flow, target.id, source.id, ignoredEdgeId)) return { allowed: false, reason: "That connection would create a cycle." };
   return { allowed: true };
 };

@@ -24,7 +24,7 @@ The app discovers models from `GET /llm/v1/models`, obtains a Bifrost virtual ke
 ### Product boundaries
 
 - Nodes are Text and Generation only. Text may be manual or a read-only generated result.
-- Inputs are ordered, graph cycles are rejected, and only successful results can be reused.
+- Each Generation takes at most one Text input, graph cycles are rejected, and only successful results can be reused as inputs for threading.
 - A run snapshots its inputs and instruction, creates one result per selected model, runs models concurrently, and records failures without retrying or overwriting results.
 - Named flows are persisted in IndexedDB (`devneya-playground`, `workspaces`) under the authenticated user ID.
 - Workspace export/import uses the versioned `devneya-flow-v1` JSON format.

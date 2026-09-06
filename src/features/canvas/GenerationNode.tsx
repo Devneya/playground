@@ -1,8 +1,7 @@
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import { useMemo, useState } from "react";
-import { canAddInputConnection, getOrderedInputEdges } from "../../domain/graph";
-import { randomIdFactory } from "../../domain/ids";
-import { isTextNode, type GenerationData, type InputEdge } from "../../domain/types";
+import { getOrderedInputEdges } from "../../domain/graph";
+import type { GenerationData } from "../../domain/types";
 import { useWorkspace } from "../workspace/useWorkspace";
 import { ModelPicker } from "./ModelPicker";
 
@@ -11,30 +10,8 @@ type GenerationFlowNode = Node<GenerationData, "generation">;
 export const GenerationNode = ({ id, data }: NodeProps<GenerationFlowNode>) => {
   const { activeFlow, activeRunIds, models, modelsStatus, modelsError, reloadModels, reloadKey, dispatch, runGeneration, cancelRun, virtualKey, keyStatus, keyError } = useWorkspace();
   const [runError, setRunError] = useState<string | null>(null);
-  const [selectedInputId, setSelectedInputId] = useState("");
   const [localRunId, setLocalRunId] = useState<string | null>(null);
-  const [connectionError, setConnectionError] = useState<string | null>(null);
   const inputs = getOrderedInputEdges(activeFlow, id);
-  const addableInputs = activeFlow.nodes
-    .filter(isTextNode)
-    .filter((node) => !inputs.some((edge) => edge.source === node.id) && canAddInputConnection(activeFlow, node.id, id).allowed);
-  const addInput = () => {
-    const source = addableInputs.find((node) => node.id === (selectedInputId || addableInputs[0]?.id));
-    if (!source) return;
-    const edge: InputEdge = { id: randomIdFactory(), kind: "input", source: source.id, target: id, order: inputs.length };
-    dispatch({ type: "input/add", flowId: activeFlow.id, edge });
-    setSelectedInputId("");
-    setConnectionError(null);
-  };
-  const reconnectInput = (edgeId: string, source: string) => {
-    const check = canAddInputConnection(activeFlow, source, id, edgeId);
-    if (!check.allowed) {
-      setConnectionError(check.reason);
-      return;
-    }
-    dispatch({ type: "input/reconnect", flowId: activeFlow.id, edgeId, source, target: id });
-    setConnectionError(null);
-  };
   const runningBatch = useMemo(() => activeFlow.batches.find((batch) => batch.generationNodeId === id && batch.executions.some((execution) => execution.status === "pending")), [activeFlow.batches, id]);
   const runningBatchId = runningBatch?.id ?? activeRunIds[id] ?? localRunId;
   const selected = new Set(data.modelIds);
@@ -62,24 +39,11 @@ export const GenerationNode = ({ id, data }: NodeProps<GenerationFlowNode>) => {
     <ModelPicker title={data.title} modelIds={data.modelIds} models={models} status={modelsStatus} error={modelsError} onReload={reloadModels} onToggle={toggleModel} />
     <label className="node-field"><textarea className="node-textarea instruction-textarea" aria-label={`${data.title} instruction`} value={data.instruction} onChange={(event) => dispatch({ type: "node/edit-instruction", flowId: activeFlow.id, nodeId: id, instruction: event.target.value })} placeholder="Optional instruction for the model…" /></label>
     <div className="input-order" aria-label="Generation inputs">
-      {connectionError && <div className="canvas-notice" role="status">{connectionError}<button type="button" onClick={() => setConnectionError(null)} aria-label="Dismiss connection notice">×</button></div>}
       <div className="field-label visually-hidden">Inputs <span className="muted">({inputs.length})</span></div>
-      {addableInputs.length > 0 && <div className="input-adder">
-        <select aria-label={`${data.title} input source`} value={selectedInputId || addableInputs[0]?.id || ""} onChange={(event) => setSelectedInputId(event.target.value)}>
-          {addableInputs.map((node) => <option key={node.id} value={node.id}>{node.data.title}</option>)}
-        </select>
-        <button type="button" className="small-button" onClick={addInput}>Add input</button>
-      </div>}
-      {inputs.length === 0 ? <span className="muted">Connect Text nodes here or use Add input.</span> : inputs.map((edge, index) => <div className="input-row" key={edge.id}>
-        <select aria-label={`Reconnect input ${index + 1}`} value={edge.source} onChange={(event) => reconnectInput(edge.id, event.target.value)}>
-          {activeFlow.nodes.filter(isTextNode).map((node) => <option key={node.id} value={node.id}>{node.data.title}</option>)}
-        </select>
-        <span>
-          <button type="button" className="icon-button" aria-label={`${data.title} input ${index + 1} move up`} disabled={index === 0} onClick={() => dispatch({ type: "input/move", flowId: activeFlow.id, edgeId: edge.id, direction: "up" })}>↑</button>
-          <button type="button" className="icon-button" aria-label={`${data.title} input ${index + 1} move down`} disabled={index === inputs.length - 1} onClick={() => dispatch({ type: "input/move", flowId: activeFlow.id, edgeId: edge.id, direction: "down" })}>↓</button>
-          <button type="button" className="icon-button" aria-label={`Remove input ${index + 1}`} onClick={() => dispatch({ type: "input/remove", flowId: activeFlow.id, edgeId: edge.id })}>×</button>
-        </span>
-      </div>)}
+      {inputs.length === 0 ? <span className="muted">Drag a Text node onto this card.</span> : inputs.map((edge, index) => {
+        const source = activeFlow.nodes.find((node) => node.id === edge.source);
+        return <div className="input-row" key={edge.id}><span>{source?.data.title ?? "Text"}</span><button type="button" className="icon-button" aria-label={`Remove input ${index + 1}`} onClick={() => dispatch({ type: "input/remove", flowId: activeFlow.id, edgeId: edge.id })}>×</button></div>;
+      })}
     </div>
     <div className="model-picker">
       {data.modelIds.filter((modelId) => !models.some((model) => model.id === modelId)).map((modelId) => <span className="model-option stale-model" key={modelId}><span>✓ {modelId}</span><button type="button" className="icon-button" onClick={() => toggleModel(modelId)} aria-label={`Remove ${modelId}`}>×</button></span>)}

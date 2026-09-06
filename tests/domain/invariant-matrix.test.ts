@@ -84,9 +84,8 @@ describe("workspace invariant branch matrix", () => {
     const second = manual("second");
     const withSecond = { ...flow, nodes: [...flow.nodes, second], edges: [...flow.edges, { id: "second-input", kind: "input" as const, source: second.id, target: generation.id, order: 1 }] };
     expect(canAddInputConnection(withSecond, text.id, generation.id)).toMatchObject({ allowed: false, reason: "That Text node is already connected." });
-    const full = { ...withSecond, edges: Array.from({ length: LIMITS.maxInputsPerGeneration }, (_, index) => ({ id: `edge-${index}`, kind: "input" as const, source: index === 0 ? text.id : `source-${index}`, target: generation.id, order: index })) };
-    const withNodes = { ...full, nodes: [...full.nodes, ...Array.from({ length: LIMITS.maxInputsPerGeneration }, (_, index) => manual(`source-${index}`)), manual("source-extra")] };
-    expect(canAddInputConnection(withNodes, "source-extra", generation.id)).toMatchObject({ allowed: false, reason: "A Generation node can have at most 32 inputs." });
+    const extra = manual("source-extra");
+    expect(canAddInputConnection({ ...withSecond, nodes: [...withSecond.nodes, extra] }, extra.id, generation.id)).toMatchObject({ allowed: false, reason: "A Generation node can have only one input." });
     const cycleSource = manual("cycle-source");
     expect(canAddInputConnection({ ...flow, nodes: [...flow.nodes, cycleSource], edges: [{ id: "cycle-result", kind: "result" as const, source: generation.id, target: cycleSource.id }] }, cycleSource.id, generation.id)).toMatchObject({ allowed: false, reason: "That connection would create a cycle." });
   });
