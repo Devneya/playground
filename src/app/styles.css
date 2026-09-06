@@ -142,3 +142,8 @@ input:focus, textarea:focus { border-color: #b45309; box-shadow: 0 0 0 3px #b453
   .canvas-actions { flex-wrap: wrap; }
   .workspace-notice, .inline-alert { margin-left: 15px; margin-right: 15px; }
 }
+.context-order { margin: 6px 12px 0; }
+.node-kind { margin-right: 6px; font-size: .6rem; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; padding: 2px 7px; border-radius: 999px; }
+.text-kind { background: #e7f6f0; color: #0f766e; }
+.generation-kind { background: #f1ecfe; color: #6d28d9; }
+.flow-node.drop-target { outline: 3px solid #16a34a; outline-offset: 3px; }
