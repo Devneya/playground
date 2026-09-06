@@ -40,7 +40,7 @@ export const GenerationNode = ({ id, data }: NodeProps<GenerationFlowNode>) => {
     <label className="node-field"><textarea className="node-textarea instruction-textarea" aria-label={`${data.title} instruction`} value={data.instruction} onChange={(event) => dispatch({ type: "node/edit-instruction", flowId: activeFlow.id, nodeId: id, instruction: event.target.value })} placeholder="Optional instruction for the model…" /></label>
     <div className="input-order" aria-label="Generation inputs">
       <div className="field-label visually-hidden">Inputs <span className="muted">({inputs.length})</span></div>
-      {inputs.length === 0 ? <span className="muted">Drag a Text node onto this card.</span> : inputs.map((edge, index) => {
+      {inputs.length === 0 ? <span className="muted">Drag from a Text node’s right dot onto this card.</span> : inputs.map((edge, index) => {
         const source = activeFlow.nodes.find((node) => node.id === edge.source);
         return <div className="input-row" key={edge.id}><span>{source?.data.title ?? "Text"}</span><button type="button" className="icon-button" aria-label={`Remove input ${index + 1}`} onClick={() => dispatch({ type: "input/remove", flowId: activeFlow.id, edgeId: edge.id })}>×</button></div>;
       })}
