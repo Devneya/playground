@@ -28,11 +28,17 @@ const WorkspaceScreen = () => {
   const [renameValue, setRenameValue] = useState("");
   const [importError, setImportError] = useState<string | null>(null);
 
-  const addNewPrompt = () => {
+  const addNewText = () => {
     const now = systemClock.now().toISOString();
     const index = activeFlow.nodes.length + 1;
     const x = Math.max(80, ...activeFlow.nodes.map((node) => node.position.x)) + 380;
-    addNode({ id: randomIdFactory(), position: { x, y: 120 }, createdAt: now, updatedAt: now, data: { kind: "prompt", title: `Prompt ${index}`, prompt: "", modelIds: [] } });
+    addNode({ id: randomIdFactory(), position: { x, y: 120 }, createdAt: now, updatedAt: now, data: { kind: "text", origin: "manual", title: `Text ${index}`, text: "" } });
+  };
+  const addNewGeneration = () => {
+    const now = systemClock.now().toISOString();
+    const index = activeFlow.nodes.length + 1;
+    const x = Math.max(80, ...activeFlow.nodes.map((node) => node.position.x)) + 380;
+    addNode({ id: randomIdFactory(), position: { x, y: 120 }, createdAt: now, updatedAt: now, data: { kind: "generation", title: `Generation ${index}`, instruction: "", modelIds: [] } });
   };
 
   const beginRename = (flowId: string, name: string) => { setRenameId(flowId); setRenameValue(name); };
@@ -66,7 +72,8 @@ const WorkspaceScreen = () => {
         </>}
       </div>
       <div className="canvas-toolbar-floating" role="toolbar" aria-label="Canvas">
-        <button type="button" aria-label="+ Prompt" onClick={addNewPrompt}><span className="tool-glyph" aria-hidden="true">✦</span><span className="tool-caption">Prompt</span></button>
+        <button type="button" aria-label="+ Text" onClick={addNewText}><span className="tool-glyph" aria-hidden="true">✦</span><span className="tool-caption">Text</span></button>
+        <button type="button" aria-label="+ Generation" onClick={addNewGeneration}><span className="tool-glyph" aria-hidden="true">✷</span><span className="tool-caption">Generation</span></button>
         <button type="button" onClick={undo} disabled={!canUndo} aria-label="Undo last change"><span className="tool-glyph" aria-hidden="true">↶</span><span className="tool-caption">Undo</span></button>
         <button type="button" onClick={redo} disabled={!canRedo} aria-label="Redo last change"><span className="tool-glyph" aria-hidden="true">↷</span><span className="tool-caption">Redo</span></button>
         <button type="button" aria-label="Canvases" aria-expanded={canvasesOpen} onClick={() => { setCanvasesOpen((value) => !value); setAccountOpen(false); }}><span className="tool-glyph" aria-hidden="true">▤</span><span className="tool-caption">Canvases</span></button>
