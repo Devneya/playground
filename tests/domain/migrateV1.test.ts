@@ -43,6 +43,7 @@ describe("v1 to v2 migration", () => {
     expect(prompt.data).toMatchObject({ title: "Generation 1", prompt: "Summarize", modelIds: ["model-a"] });
     expect(migrated.flows[0]!.edges.filter((edge) => edge.kind === "input")).toHaveLength(1);
     expect(migrated.flows[0]!.batches[0]).toMatchObject({ promptNodeId: "g1" });
+    expect(JSON.stringify(migrated)).not.toContain("generationNodeId");
   });
 
   it("accepts v1 exports and emits v2", () => {

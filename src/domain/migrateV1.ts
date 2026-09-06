@@ -38,7 +38,7 @@ const migrateFlow = (flow: V1Flow): FlowDocument => {
     }
     edges.push({ id: edge.id, kind: "result", source: edge.source, target: edge.target });
   }
-  const batches = flow.batches.map((batch) => ({ ...batch, promptNodeId: batch.generationNodeId }));
+  const batches = flow.batches.map(({ generationNodeId: promptNodeId, ...batch }) => ({ ...batch, promptNodeId }));
   return { ...flow, nodes, edges, batches } as FlowDocument;
 };
 
