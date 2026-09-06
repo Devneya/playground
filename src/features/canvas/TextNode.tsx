@@ -25,6 +25,7 @@ export const TextNode = ({ id, data }: NodeProps<TextFlowNode>) => {
     });
   };
   return <article className={`flow-node text-node ${generated ? "generated-node" : "manual-node"}`}>
+    <Handle type="target" position={Position.Left} id="text-input" />
     <Handle type="source" position={Position.Right} id="text-output" />
     <header className="node-header">
       <strong title={data.title}>{data.title}</strong>

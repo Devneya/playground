@@ -113,8 +113,12 @@ input:focus, textarea:focus { border-color: #b45309; box-shadow: 0 0 0 3px #b453
 .model-option input { width: auto; }
 .stale-model { justify-content: space-between; color: #805b00; }
 .node-error { padding: 0 12px; margin: 5px 0; }
-.run-button { display: block; width: calc(100% - 24px); margin: 8px 12px 10px; }
-.result-edge { stroke: #a4a9e8; stroke-dasharray: 5 4; }
+.node-run-row { display: flex; justify-content: flex-end; padding: 2px 12px 12px; }
+.send-button { width: 34px; height: 34px; border-radius: 50%; border: 0; background: #ffc400; color: #221a00; font-size: 15px; line-height: 1; cursor: pointer; box-shadow: 0 3px 10px #b4530940; }
+.send-button:hover:not(:disabled) { background: #f0b400; }
+.send-button:disabled { opacity: .45; cursor: not-allowed; }
+.send-button.running { background: #b42318; color: #fff; }
+.result-edge .react-flow__edge-path { stroke: #8b8ff5; stroke-width: 1.6; stroke-dasharray: 5 4; }
 .input-edge { stroke: #7d899d; }
 .react-flow__edge.selectable:hover .react-flow__edge-path { stroke-width: 2.5; }
 .managed-edge-control { position: absolute; transform: translate(-50%, -50%); pointer-events: all; }
