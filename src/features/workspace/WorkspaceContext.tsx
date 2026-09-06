@@ -16,7 +16,7 @@ import { ResilientWorkspaceRepository } from "../../persistence/ResilientWorkspa
 import { WorkspaceSaveQueue } from "../../persistence/WorkspaceSaveQueue";
 import type { WorkspaceRepository } from "../../persistence/WorkspaceRepository";
 import { startGenerationRun, type GenerationRun } from "../execution/executeGeneration";
-import { emptyHistory, pushHistory, redoHistory, undoHistory, type HistoryState } from "../../domain/workspaceHistory";
+import { emptyHistory, isHistoryAction, pushHistory, redoHistory, undoHistory, type HistoryState } from "../../domain/workspaceHistory";
 
 type AsyncStatus = "idle" | "loading" | "ready" | "error";
 type WorkspaceProviderProps = PropsWithChildren<{ repository?: WorkspaceRepository }>;
@@ -76,12 +76,7 @@ export const WorkspaceProvider = ({ children, repository: injectedRepository }: 
   const [history, setHistory] = useState<HistoryState>(emptyHistory);
   const lastHistoryActionRef = useRef<string | null>(null);
   const dispatch = useCallback((action: WorkspaceAction) => {
-    const isHistoryAction = !action.type.startsWith("batch/")
-      && !action.type.startsWith("execution/")
-      && action.type !== "workspace/reset"
-      && action.type !== "workspace/imported"
-      && action.type !== "viewport/update";
-    if (isHistoryAction) {
+    if (isHistoryAction(action)) {
       const actionKey = JSON.stringify(action);
       const previousWorkspace = workspaceRef.current;
       if (lastHistoryActionRef.current !== actionKey) setHistory((current) => pushHistory(current, previousWorkspace));

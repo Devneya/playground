@@ -1,4 +1,4 @@
-import { Background, BackgroundVariant, Controls, MarkerType, ReactFlow, useReactFlow, type Connection, type Edge, type EdgeChange, type Node, type NodeChange, type OnConnect, type OnReconnect, type Viewport } from "@xyflow/react";
+import { Background, BackgroundVariant, Controls, MarkerType, ReactFlow, useReactFlow, type Connection, type Edge, type EdgeChange, type Node, type NodeChange, type OnConnect, type OnMoveEnd, type OnReconnect, type Viewport } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { randomIdFactory } from "../../domain/ids";
@@ -53,9 +53,18 @@ export const WorkspaceCanvas = () => {
     setNotice(null);
   };
   const onNodeDragStop = (_event: MouseEvent, node: Node) => dispatch({ type: "node/move", flowId: activeFlow.id, nodeId: node.id, position: node.position });
+  const onMoveEnd: OnMoveEnd = (event, viewport) => {
+    // Programmatic viewport changes (the fitView/setViewport applied when a
+    // flow is restored or switched) arrive with a null event; only persist a
+    // user-initiated pan/zoom so we never overwrite the stored camera.
+    if (event === null) return;
+    const current = activeFlow.viewport;
+    if (current.x === viewport.x && current.y === viewport.y && current.zoom === viewport.zoom) return;
+    dispatch({ type: "viewport/update", flowId: activeFlow.id, viewport });
+  };
 
   return <section className="canvas-shell" aria-label="Flow canvas">
-    <ReactFlow<Node<NodeData>, Edge> nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onReconnect={onReconnect} onNodeDragStop={onNodeDragStop} fitView fitViewOptions={{ maxZoom: 0.25, padding: 0.3 }} defaultViewport={activeFlow.viewport} nodesFocusable={false} edgesFocusable={false} minZoom={0.2} maxZoom={2} deleteKeyCode={["Backspace", "Delete"]} onlyRenderVisibleElements={false}>
+    <ReactFlow<Node<NodeData>, Edge> nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onReconnect={onReconnect} onNodeDragStop={onNodeDragStop} onMoveEnd={onMoveEnd} fitView fitViewOptions={{ maxZoom: 0.25, padding: 0.3 }} defaultViewport={activeFlow.viewport} nodesFocusable={false} edgesFocusable={false} minZoom={0.2} maxZoom={2} deleteKeyCode={["Backspace", "Delete"]} onlyRenderVisibleElements={false}>
       <Background variant={BackgroundVariant.Lines} gap={30} color="#e2e2e2" />
       <Controls position="bottom-left" />
       <ViewportFitter flowId={activeFlow.id} hasNodes={nodes.length > 0} storedViewport={activeFlow.viewport} />
@@ -66,23 +75,28 @@ export const WorkspaceCanvas = () => {
 
 
 
-// Fits the view to a default zoom of 0.25 once the flow's nodes first become
-// available. React Flow's `fitView` prop only runs on mount, so when nodes are
-// loaded asynchronously (after mount) the initial fit is missed; this effect
-// re-applies it. A restored flow that already carries a customized, saved
-// viewport is left untouched so its persisted camera is preserved.
+// Applies the initial camera once a flow's nodes are available. React Flow's
+// `fitView` prop only runs on mount, so when nodes are loaded asynchronously
+// (after mount) the initial fit is missed; this effect re-applies it. When a
+// flow already carries a customized, persisted viewport it is restored exactly
+// via setViewport instead of refitted, so switching flows keeps each saved
+// camera. Programmatic setViewport/fitView calls arrive with a null onMoveEnd
+// event, so they never overwrite the stored viewport.
 const ViewportFitter = ({ flowId, hasNodes, storedViewport }: { flowId: string; hasNodes: boolean; storedViewport: Viewport }) => {
-  const { fitView } = useReactFlow();
+  const { fitView, setViewport } = useReactFlow();
   const fittedFlow = useRef<string | null>(null);
   useEffect(() => {
     if (!hasNodes || fittedFlow.current === flowId) return;
     const hasStoredViewport = !(storedViewport.x === 0 && storedViewport.y === 0 && storedViewport.zoom === 1);
     if (hasStoredViewport) {
-      fittedFlow.current = flowId;
-      return;
+      // A previously persisted, non-default camera exists: restore it exactly
+      // instead of refitting, so switching flows (which does not remount the
+      // canvas) preserves each flow's saved view.
+      setViewport(storedViewport, { duration: 0 });
+    } else {
+      fitView({ maxZoom: 0.25, padding: 0.3 });
     }
-    fitView({ maxZoom: 0.25, padding: 0.3 });
     fittedFlow.current = flowId;
-  }, [flowId, hasNodes, storedViewport, fitView]);
+  }, [flowId, hasNodes, storedViewport, fitView, setViewport]);
   return null;
 };

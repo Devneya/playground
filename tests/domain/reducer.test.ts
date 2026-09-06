@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createStarterWorkspace } from "../../src/domain/workspaceFactory";
 import { reduceWorkspace } from "../../src/domain/workspaceReducer";
+import { emptyHistory, isHistoryAction, pushHistory } from "../../src/domain/workspaceHistory";
 import type { Clock, IdFactory } from "../../src/domain/types";
 
 const ids = (() => { let index = 0; return () => `id-${index++}`; })();
@@ -18,6 +19,26 @@ describe("workspace reducer", () => {
     const deleted = reduceWorkspace(back, { type: "flow/delete", flowId: initial.flows[0]!.id }, context);
     expect(deleted.flows).toHaveLength(1);
     expect(deleted.activeFlowId).toBe("second");
+  });
+  it("persists the viewport into the flow without recording undo history", () => {
+    const initial = createStarterWorkspace(ids, clock);
+    const flowId = initial.flows[0]!.id;
+    const viewport = { x: 120, y: -80, zoom: 0.6 };
+    const updated = reduceWorkspace(initial, { type: "viewport/update", flowId, viewport }, context);
+    expect(updated.flows[0]!.viewport).toEqual(viewport);
+
+    // The viewport action must not create an undo entry: mirroring the
+    // WorkspaceContext dispatch, only history actions push onto the past stack.
+    let history = emptyHistory();
+    const viewportAction = { type: "viewport/update", flowId, viewport } as const;
+    if (isHistoryAction(viewportAction)) history = pushHistory(history, initial);
+    expect(history.past).toHaveLength(0);
+
+    // A genuine history action (node/move) still records an entry for contrast.
+    const moveAction = { type: "node/move", flowId, nodeId: "n", position: { x: 1, y: 1 } } as const;
+    expect(isHistoryAction(moveAction)).toBe(true);
+    if (isHistoryAction(moveAction)) history = pushHistory(history, initial);
+    expect(history.past).toHaveLength(1);
   });
 
   it("marks pending executions interrupted on reload", async () => {

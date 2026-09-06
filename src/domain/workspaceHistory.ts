@@ -1,5 +1,17 @@
 import { LIMITS, utf8ByteLength } from "./limits";
+import type { WorkspaceAction } from "./workspaceReducer";
 import type { WorkspaceDocument } from "./types";
+
+// Actions that should be recorded in the undo history. Viewport changes are
+// excluded because they are high-frequency, camera-only state that must never
+// be reverted by undo; this mirrors how node/move is treated (a history
+// action) so the two can be reasoned about together.
+export const isHistoryAction = (action: WorkspaceAction): boolean =>
+  !action.type.startsWith("batch/")
+  && !action.type.startsWith("execution/")
+  && action.type !== "workspace/reset"
+  && action.type !== "workspace/imported"
+  && action.type !== "viewport/update";
 
 export type HistoryState = { past: WorkspaceDocument[]; future: WorkspaceDocument[]; bytes: number };
 export const emptyHistory = (): HistoryState => ({ past: [], future: [], bytes: 0 });
