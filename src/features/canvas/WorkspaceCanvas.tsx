@@ -1,6 +1,6 @@
-import { Background, BackgroundVariant, Controls, MarkerType, ReactFlow, type Connection, type Edge, type EdgeChange, type Node, type NodeChange, type OnConnect, type OnReconnect } from "@xyflow/react";
+import { Background, BackgroundVariant, Controls, MarkerType, ReactFlow, useReactFlow, type Connection, type Edge, type EdgeChange, type Node, type NodeChange, type OnConnect, type OnReconnect, type Viewport } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { useMemo, useState, type MouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { randomIdFactory } from "../../domain/ids";
 import { canAddInputConnection } from "../../domain/graph";
 import type { InputEdge, NodeData, PlaygroundEdge, PlaygroundNode } from "../../domain/types";
@@ -55,10 +55,34 @@ export const WorkspaceCanvas = () => {
   const onNodeDragStop = (_event: MouseEvent, node: Node) => dispatch({ type: "node/move", flowId: activeFlow.id, nodeId: node.id, position: node.position });
 
   return <section className="canvas-shell" aria-label="Flow canvas">
-    <ReactFlow<Node<NodeData>, Edge> nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onReconnect={onReconnect} onNodeDragStop={onNodeDragStop} fitView fitViewOptions={{ maxZoom: 0.5, padding: 0.3 }} nodesFocusable={false} edgesFocusable={false} minZoom={0.2} maxZoom={2} deleteKeyCode={["Backspace", "Delete"]} onlyRenderVisibleElements={false}>
+    <ReactFlow<Node<NodeData>, Edge> nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onReconnect={onReconnect} onNodeDragStop={onNodeDragStop} fitView fitViewOptions={{ maxZoom: 0.25, padding: 0.3 }} defaultViewport={activeFlow.viewport} nodesFocusable={false} edgesFocusable={false} minZoom={0.2} maxZoom={2} deleteKeyCode={["Backspace", "Delete"]} onlyRenderVisibleElements={false}>
       <Background variant={BackgroundVariant.Lines} gap={30} color="#e2e2e2" />
       <Controls position="bottom-left" />
+      <ViewportFitter flowId={activeFlow.id} hasNodes={nodes.length > 0} storedViewport={activeFlow.viewport} />
     </ReactFlow>
     {notice && <div className="canvas-notice" role="status">{notice}<button type="button" onClick={() => setNotice(null)} aria-label="Dismiss notice">×</button></div>}
   </section>;
+};
+
+
+
+// Fits the view to a default zoom of 0.25 once the flow's nodes first become
+// available. React Flow's `fitView` prop only runs on mount, so when nodes are
+// loaded asynchronously (after mount) the initial fit is missed; this effect
+// re-applies it. A restored flow that already carries a customized, saved
+// viewport is left untouched so its persisted camera is preserved.
+const ViewportFitter = ({ flowId, hasNodes, storedViewport }: { flowId: string; hasNodes: boolean; storedViewport: Viewport }) => {
+  const { fitView } = useReactFlow();
+  const fittedFlow = useRef<string | null>(null);
+  useEffect(() => {
+    if (!hasNodes || fittedFlow.current === flowId) return;
+    const hasStoredViewport = !(storedViewport.x === 0 && storedViewport.y === 0 && storedViewport.zoom === 1);
+    if (hasStoredViewport) {
+      fittedFlow.current = flowId;
+      return;
+    }
+    fitView({ maxZoom: 0.25, padding: 0.3 });
+    fittedFlow.current = flowId;
+  }, [flowId, hasNodes, storedViewport, fitView]);
+  return null;
 };
