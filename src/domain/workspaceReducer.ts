@@ -1,6 +1,7 @@
 import type { Clock, ExecutionBatch, ExecutionError, FlowDocument, IdFactory, InputEdge, PlaygroundEdge, PlaygroundNode, WorkspaceDocument } from "./types";
 import { canAddInputConnection, getOrderedInputEdges, nextGenerationIndex, normalizeInputOrder } from "./graph";
 import { createBlankFlow } from "./workspaceFactory";
+import { RESULT_COL_STRIDE, RESULT_TO_CONTINUATION_STRIDE } from "./resultPlacement";
 import { isGeneratedTextNode, isGenerationNode, isManualTextNode } from "./types";
 
 export type WorkspaceAction =
@@ -92,11 +93,18 @@ export const reduceWorkspace = (workspace: WorkspaceDocument, action: WorkspaceA
       if (!execution || execution.status !== "success") return workspace;
       const parent = batch ? flow.nodes.find((node) => node.id === batch.generationNodeId) : undefined;
       const modelIds = isGenerationNode(parent) ? [...parent.data.modelIds] : [];
+      // A continuation descends below its result. The first continuation from a
+      // result sits directly below it; every further Continue from the same
+      // result opens a new parallel column to the right (a fork), keeping each
+      // answer thread readable top→down. The branch index is the number of
+      // existing continuation edges already descending from this result.
+      const branchIndex = flow.edges.filter((edge) => edge.kind === "input" && edge.source === source.id).length;
+      const position = {
+        x: source.position.x + branchIndex * RESULT_COL_STRIDE,
+        y: source.position.y + RESULT_TO_CONTINUATION_STRIDE,
+      };
       const newId = context.idFactory();
       const now = context.clock.now().toISOString();
-      // Continuation nodes stack below the result, reading top→down like a chat.
-      const stack = flow.edges.filter((edge) => edge.kind === "input" && edge.source === source.id).length;
-      const position = { x: source.position.x, y: source.position.y + 260 * (stack + 1) };
       const newGeneration: PlaygroundNode = {
         id: newId,
         position,
