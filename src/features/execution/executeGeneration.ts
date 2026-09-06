@@ -93,12 +93,13 @@ export const startGenerationRun = (options: RunOptions): GenerationRun => {
   // The start action is synchronous with the user gesture and establishes the run UI.
   // Late settlement actions remain lifecycle-guarded below.
   dispatch({ type: "batch/started", flowId: flow.id, batch, outputNodes, resultEdges });
-
+  const succeededOutputs: string[] = [];
   const completed = Promise.allSettled(executions.map(async (execution) => {
     const started = performance.now();
     try {
       const result = await createChatCompletion(virtualKey, { model: execution.modelId, messages, stream: false }, controller.signal);
       const usage = result.usage as Usage | undefined;
+      succeededOutputs.push(execution.outputNodeId);
       emit({ type: "execution/succeeded", flowId: flow.id, batchId, executionId: execution.id, text: result.content, durationMs: duration(started), ...(usage ? { usage } : {}) });
     } catch (error) {
       const failure = executionError(error);
@@ -108,6 +109,10 @@ export const startGenerationRun = (options: RunOptions): GenerationRun => {
     }
   })).then(() => {
     externalAbort?.removeEventListener("abort", abortExternal);
+    // Auto-continuation: the moment each answer lands, drop an empty prompt box
+    // below it so the thread can keep going. This is the live execution path
+    // only — aborted or epoch-stale runs are skipped by `emit`'s canDispatch guard.
+    for (const outputNodeId of succeededOutputs) emit({ type: "generation/continue", flowId: flow.id, sourceNodeId: outputNodeId });
     emit({ type: "batch/completed", flowId: flow.id, batchId, completedAt: clock.now().toISOString() });
   });
 
