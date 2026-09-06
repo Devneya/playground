@@ -39,7 +39,10 @@ export const WorkspaceCanvas = () => {
     if (!connection.source || !connection.target) return;
     const check = canAddInputConnection(activeFlow, connection.source, connection.target);
     if (!check.allowed) { setNotice(check.reason); return; }
-    const edge: InputEdge = { id: randomIdFactory(), kind: "input", source: connection.source, target: connection.target, order: activeFlow.edges.filter((item) => item.kind === "input" && item.target === connection.target).length };
+    // Record the exact handles the user grabbed so React Flow re-resolves the
+    // edge to the same handle on every render (user-drawn edges use the side
+    // dots, never the isConnectable={false} flow handles).
+    const edge: InputEdge = { id: randomIdFactory(), kind: "input", source: connection.source, target: connection.target, sourceHandle: connection.sourceHandle ?? null, targetHandle: connection.targetHandle ?? null, order: activeFlow.edges.filter((item) => item.kind === "input" && item.target === connection.target).length };
     dispatch({ type: "input/add", flowId: activeFlow.id, edge });
     setNotice(null);
   };
@@ -50,7 +53,7 @@ export const WorkspaceCanvas = () => {
       setNotice(check.reason);
       return;
     }
-    dispatch({ type: "input/reconnect", flowId: activeFlow.id, edgeId: oldEdge.id, source: connection.source, target: connection.target });
+    dispatch({ type: "input/reconnect", flowId: activeFlow.id, edgeId: oldEdge.id, source: connection.source, target: connection.target, sourceHandle: connection.sourceHandle ?? null, targetHandle: connection.targetHandle ?? null });
     setNotice(null);
   };
   const onNodeDragStop = (_event: MouseEvent, node: Node) => dispatch({ type: "node/move", flowId: activeFlow.id, nodeId: node.id, position: node.position });

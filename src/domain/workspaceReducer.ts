@@ -21,7 +21,7 @@ export type WorkspaceAction =
   | { type: "node/duplicate"; flowId: string; node: PlaygroundNode }
   | { type: "generation/continue"; flowId: string; sourceNodeId: string }
   | { type: "input/add"; flowId: string; edge: PlaygroundEdge }
-  | { type: "input/reconnect"; flowId: string; edgeId: string; source: string; target: string }
+| { type: "input/reconnect"; flowId: string; edgeId: string; source: string; target: string; sourceHandle?: string | null; targetHandle?: string | null }
   | { type: "input/remove"; flowId: string; edgeId: string }
   | { type: "input/move"; flowId: string; edgeId: string; direction: "up" | "down" }
   | { type: "viewport/update"; flowId: string; viewport: { x: number; y: number; zoom: number } }
@@ -138,7 +138,7 @@ export const reduceWorkspace = (workspace: WorkspaceDocument, action: WorkspaceA
       if (!old || old.kind !== "input") return flow;
       const without = { ...flow, edges: flow.edges.filter((edge) => edge.id !== action.edgeId) };
       const check = canAddInputConnection(without, action.source, action.target);
-      return check.allowed ? { ...without, edges: normalizeInputOrder([...without.edges, { ...old, source: action.source, target: action.target, order: getOrderedInputEdges(without, action.target).length }], action.target) } : flow;
+      return check.allowed ? { ...without, edges: normalizeInputOrder([...without.edges, { ...old, source: action.source, target: action.target, sourceHandle: action.sourceHandle ?? null, targetHandle: action.targetHandle ?? null, order: getOrderedInputEdges(without, action.target).length }], action.target) } : flow;
     });
     case "input/remove": return updateFlow(workspace, action.flowId, context, (flow) => ({ ...flow, edges: normalizeInputOrder(flow.edges.filter((edge) => edge.id !== action.edgeId)) }));
     case "input/move": return updateFlow(workspace, action.flowId, context, (flow) => {

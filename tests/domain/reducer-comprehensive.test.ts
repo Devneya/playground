@@ -66,6 +66,27 @@ describe("comprehensive domain transitions", () => {
     workspace = reduceWorkspace(workspace, { type: "input/remove", flowId: flow.id, edgeId: "second-edge" }, context);
     expect(flowOf(workspace).edges.filter((edge) => edge.kind === "input")).toHaveLength(0);
   });
+  it("records and persists the exact handles a user drew an input edge between", () => {
+    let workspace = starter();
+    const flow = flowOf(workspace);
+    const prompt = nodeOf(workspace, "generation");
+    const source = manualNode("first-text", "First");
+    workspace = reduceWorkspace(workspace, { type: "node/add", flowId: flow.id, node: source }, context);
+    // A user-drawn edge (grabbed from the right dot → left dot) carries the
+    // side-dot handle ids so React Flow re-resolves to the same handle on every
+    // render instead of silently falling back to a flow handle.
+    const drawn: PlaygroundEdge = { id: "drawn-edge", kind: "input", source: source.id, target: prompt.id, sourceHandle: "text-output", targetHandle: "generation-input", order: 0 };
+    workspace = reduceWorkspace(workspace, { type: "input/add", flowId: flow.id, edge: drawn }, context);
+    const added = flowOf(workspace).edges.find((edge) => edge.id === "drawn-edge")!;
+    expect(added).toMatchObject({ kind: "input", source: source.id, target: prompt.id, sourceHandle: "text-output", targetHandle: "generation-input" });
+
+    // Reconnecting to a different source keeps the handles the user grabbed.
+    const other = manualNode("second-text", "Second", 720);
+    workspace = reduceWorkspace(workspace, { type: "node/add", flowId: flow.id, node: other }, context);
+    workspace = reduceWorkspace(workspace, { type: "input/reconnect", flowId: flow.id, edgeId: "drawn-edge", source: other.id, target: prompt.id, sourceHandle: "text-output", targetHandle: "generation-input" }, context);
+    const reconnected = flowOf(workspace).edges.find((edge) => edge.id === "drawn-edge")!;
+    expect(reconnected).toMatchObject({ source: other.id, target: prompt.id, sourceHandle: "text-output", targetHandle: "generation-input" });
+  });
 
   it("settles successful, failed, and cancelled results without removing siblings", () => {
     const workspace = starter();
