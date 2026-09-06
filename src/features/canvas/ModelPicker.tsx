@@ -52,14 +52,11 @@ export const ModelPicker = ({ title, modelIds, models, status, error, onReload, 
     {status === "ready" && models.length === 0 && <span className="muted model-status-line">No models are currently available.</span>}
     {open && <div className="model-popover" role="dialog" aria-label={`${title} models`}>
       <input className="model-search" aria-label={`${title} model search`} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search models…" />
-      {status === "loading" && <span className="muted">Loading live catalog…</span>}
-      {status === "error" && <span className="form-error">{error} <button type="button" className="small-button" onClick={onReload}>Retry</button></span>}
       {status === "ready" && visible.map((model) => <label className="model-option" key={model.id}>
         <input type="checkbox" aria-label={`${title} model ${model.id}`} checked={selected.has(model.id)} onChange={() => onToggle(model.id)} disabled={!selected.has(model.id) && modelIds.length >= MAX_MODELS} />
         <span>{model.id}</span>
       </label>)}
       {status === "ready" && visible.length === 0 && <span className="muted">No models match.</span>}
-      {status === "ready" && models.length === 0 && <span className="muted">No models are currently available.</span>}
     </div>}
   </div>;
 };
