@@ -6,12 +6,12 @@ import { getInputSnapshots, getNode } from "../../domain/graph";
 import { LIMITS, utf8ByteLength } from "../../domain/limits";
 import { placeNewResultNodes } from "../../domain/resultPlacement";
 import type { Clock, ExecutionBatch, ExecutionError, FlowDocument, IdFactory, PlaygroundEdge, PlaygroundNode, Usage } from "../../domain/types";
-import { isPromptNode } from "../../domain/types";
+import { isGenerationNode } from "../../domain/types";
 import type { WorkspaceAction } from "../../domain/workspaceReducer";
 
 type RunOptions = {
   flow: FlowDocument;
-  promptNodeId: string;
+  generationNodeId: string;
   virtualKey: BifrostVirtualKey;
   idFactory: IdFactory;
   clock: Clock;
@@ -20,7 +20,7 @@ type RunOptions = {
   canDispatch?: () => boolean;
 };
 
-export type PromptRun = {
+export type GenerationRun = {
   batchId: string;
   cancel(): void;
   completed: Promise<void>;
@@ -43,20 +43,20 @@ const executionError = (error: unknown): ExecutionError => {
 
 const duration = (started: number) => Math.max(0, Math.round(performance.now() - started));
 
-export const startPromptRun = (options: RunOptions): PromptRun => {
-  const { flow, promptNodeId, virtualKey, idFactory, clock, dispatch, canDispatch = () => true } = options;
+export const startGenerationRun = (options: RunOptions): GenerationRun => {
+  const { flow, generationNodeId, virtualKey, idFactory, clock, dispatch, canDispatch = () => true } = options;
   const emit = (action: WorkspaceAction) => {
     if (canDispatch()) dispatch(action);
   };
-  const prompt = getNode(flow, promptNodeId);
-  if (!isPromptNode(prompt)) throw new Error("Choose a prompt node to run.");
+  const prompt = getNode(flow, generationNodeId);
+  if (!isGenerationNode(prompt)) throw new Error("Choose a Generation node to run.");
   const modelIds = [...prompt.data.modelIds];
   if (modelIds.length === 0) throw new Error("Choose at least one model before running.");
   if (modelIds.length > LIMITS.maxModelsPerBatch) throw new Error(`Choose no more than ${LIMITS.maxModelsPerBatch} models.`);
   const inputs = getInputSnapshots(flow, prompt.id);
-  const instruction = prompt.data.prompt;
+  const instruction = prompt.data.instruction;
+  if (utf8ByteLength(instruction) > LIMITS.maxTextBytes) throw new Error("The instruction is too large.");
   const messages = buildCompletionMessagesV1(inputs, instruction);
-  if (utf8ByteLength(messages[0]?.content ?? "") > LIMITS.maxPromptBytes) throw new Error("The generated prompt is too large.");
 
   const batchId = idFactory();
   const startedAt = clock.now().toISOString();
@@ -72,14 +72,14 @@ export const startPromptRun = (options: RunOptions): PromptRun => {
   const outputNodes: PlaygroundNode[] = executions.map((execution) => ({
     id: execution.outputNodeId,
     position: execution.position ?? { x: prompt.position.x + 360, y: prompt.position.y },
-    data: { kind: "content", origin: "generated", title: execution.modelId, text: "", modelId: execution.modelId, batchId, executionId: execution.id },
+    data: { kind: "text", origin: "generated", title: execution.modelId, text: "", batchId, executionId: execution.id },
     createdAt: startedAt,
     updatedAt: startedAt,
   }));
   const resultEdges: PlaygroundEdge[] = executions.map((execution) => ({ id: idFactory(), kind: "result", source: prompt.id, target: execution.outputNodeId }));
   const batch: ExecutionBatch = {
     id: batchId,
-    promptNodeId: prompt.id,
+    generationNodeId: prompt.id,
     startedAt,
     promptFormatVersion: 1,
     instruction,

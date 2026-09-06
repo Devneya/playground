@@ -1,7 +1,7 @@
+import type { Clock, ExecutionBatch, ExecutionError, FlowDocument, IdFactory, PlaygroundEdge, PlaygroundNode, WorkspaceDocument } from "./types";
 import { canAddInputConnection, getOrderedInputEdges, normalizeInputOrder } from "./graph";
 import { createBlankFlow } from "./workspaceFactory";
-import type { Clock, ExecutionBatch, ExecutionError, FlowDocument, IdFactory, PlaygroundEdge, PlaygroundNode, WorkspaceDocument } from "./types";
-import { isGeneratedContentNode, isPromptNode } from "./types";
+import { isGeneratedTextNode, isGenerationNode, isManualTextNode } from "./types";
 
 export type WorkspaceAction =
   | { type: "flow/create"; flow: FlowDocument }
@@ -12,7 +12,8 @@ export type WorkspaceAction =
   | { type: "node/add"; flowId: string; node: PlaygroundNode }
   | { type: "node/move"; flowId: string; nodeId: string; position: { x: number; y: number } }
   | { type: "node/rename"; flowId: string; nodeId: string; title: string }
-  | { type: "node/edit-prompt"; flowId: string; nodeId: string; prompt: string }
+  | { type: "node/edit-instruction"; flowId: string; nodeId: string; instruction: string }
+  | { type: "node/edit-text"; flowId: string; nodeId: string; text: string }
   | { type: "node/set-models"; flowId: string; nodeId: string; modelIds: string[] }
   | { type: "node/delete"; flowId: string; nodeId: string }
   | { type: "node/make-editable"; flowId: string; node: PlaygroundNode }
@@ -42,18 +43,17 @@ const updateFlow = (workspace: WorkspaceDocument, flowId: string, context: Reduc
 
 const removePromptTree = (flow: FlowDocument, nodeId: string) => {
   const node = flow.nodes.find((item) => item.id === nodeId);
-  const batchIds = node && isPromptNode(node) ? new Set(flow.batches.filter((batch) => batch.promptNodeId === nodeId).map((batch) => batch.id)) : new Set<string>();
-  const removedNodeIds = new Set([nodeId, ...flow.nodes.filter((item) => isGeneratedContentNode(item) && item.data.batchId && batchIds.has(item.data.batchId)).map((item) => item.id)]);
+  const batchIds = node && isGenerationNode(node) ? new Set(flow.batches.filter((batch) => batch.generationNodeId === nodeId).map((batch) => batch.id)) : new Set<string>();
+  const removedNodeIds = new Set([nodeId, ...flow.nodes.filter((item) => isGeneratedTextNode(item) && item.data.batchId && batchIds.has(item.data.batchId)).map((item) => item.id)]);
   const edges = flow.edges.filter((edge) => !removedNodeIds.has(edge.source) && !removedNodeIds.has(edge.target));
   let batches = flow.batches;
-  if (node && isGeneratedContentNode(node)) {
+  if (node && isGeneratedTextNode(node)) {
     batches = batches.map((batch) => ({ ...batch, executions: batch.executions.map((execution) => execution.outputNodeId === nodeId ? (({ outputNodeId: _outputNodeId, ...withoutOutput }) => withoutOutput)(execution) : execution) }));
     batches = batches.filter((batch) => batch.executions.some((execution) => execution.outputNodeId));
   }
   if (batchIds.size > 0) batches = batches.filter((batch) => !batchIds.has(batch.id));
   return { ...flow, nodes: flow.nodes.filter((item) => !removedNodeIds.has(item.id)), edges, batches };
 };
-
 
 export const reduceWorkspace = (workspace: WorkspaceDocument, action: WorkspaceAction, context: ReducerContext): WorkspaceDocument => {
   switch (action.type) {
@@ -74,9 +74,10 @@ export const reduceWorkspace = (workspace: WorkspaceDocument, action: WorkspaceA
     }
     case "node/add": return updateFlow(workspace, action.flowId, context, (flow) => ({ ...flow, nodes: [...flow.nodes, action.node] }));
     case "node/move": return updateFlow(workspace, action.flowId, context, (flow) => ({ ...flow, nodes: flow.nodes.map((node) => node.id === action.nodeId ? { ...node, position: { ...action.position } } : node) }));
-    case "node/rename": return updateFlow(workspace, action.flowId, context, (flow) => ({ ...flow, nodes: flow.nodes.map((node) => node.id === action.nodeId && !isGeneratedContentNode(node) ? { ...node, data: { ...node.data, title: action.title } } : node) }));
-    case "node/edit-prompt": return updateFlow(workspace, action.flowId, context, (flow) => ({ ...flow, nodes: flow.nodes.map((node) => isPromptNode(node) && node.id === action.nodeId ? { ...node, data: { ...node.data, prompt: action.prompt } } : node) }));
-    case "node/set-models": return updateFlow(workspace, action.flowId, context, (flow) => ({ ...flow, nodes: flow.nodes.map((node) => isPromptNode(node) && node.id === action.nodeId ? { ...node, data: { ...node.data, modelIds: [...action.modelIds] } } : node) }));
+    case "node/rename": return updateFlow(workspace, action.flowId, context, (flow) => ({ ...flow, nodes: flow.nodes.map((node) => node.id === action.nodeId && !isGeneratedTextNode(node) ? { ...node, data: { ...node.data, title: action.title } } : node) }));
+    case "node/edit-instruction": return updateFlow(workspace, action.flowId, context, (flow) => ({ ...flow, nodes: flow.nodes.map((node) => isGenerationNode(node) && node.id === action.nodeId ? { ...node, data: { ...node.data, instruction: action.instruction } } : node) }));
+    case "node/edit-text": return updateFlow(workspace, action.flowId, context, (flow) => ({ ...flow, nodes: flow.nodes.map((node) => node.id === action.nodeId && isManualTextNode(node) ? { ...node, data: { ...node.data, text: action.text } } : node) }));
+    case "node/set-models": return updateFlow(workspace, action.flowId, context, (flow) => ({ ...flow, nodes: flow.nodes.map((node) => isGenerationNode(node) && node.id === action.nodeId ? { ...node, data: { ...node.data, modelIds: [...action.modelIds] } } : node) }));
     case "node/delete": return updateFlow(workspace, action.flowId, context, (flow) => removePromptTree(flow, action.nodeId));
     case "node/make-editable": return updateFlow(workspace, action.flowId, context, (flow) => ({ ...flow, nodes: [...flow.nodes, action.node] }));
     case "node/duplicate": return updateFlow(workspace, action.flowId, context, (flow) => ({ ...flow, nodes: [...flow.nodes, action.node] }));
@@ -113,7 +114,7 @@ export const reduceWorkspace = (workspace: WorkspaceDocument, action: WorkspaceA
     case "batch/started": return updateFlow(workspace, action.flowId, context, (flow) => ({
       ...flow,
       batches: [...flow.batches, action.batch],
-      nodes: [...flow.nodes.map((node) => node.id === action.batch.promptNodeId ? { ...node, updatedAt: action.batch.startedAt } : node), ...action.outputNodes],
+      nodes: [...flow.nodes.map((node) => node.id === action.batch.generationNodeId ? { ...node, updatedAt: action.batch.startedAt } : node), ...action.outputNodes],
       edges: [...flow.edges, ...action.resultEdges],
     }));
     case "execution/succeeded": {
@@ -134,7 +135,7 @@ type Settlement = { status: "success" | "failed" | "cancelled"; text: string; du
 const settleExecution = (workspace: WorkspaceDocument, flowId: string, batchId: string, executionId: string, settlement: Settlement, context: ReducerContext) => updateFlow(workspace, flowId, context, (flow) => {
   const batches = flow.batches.map((batch) => batch.id === batchId ? { ...batch, executions: batch.executions.map((execution) => execution.id === executionId ? { ...execution, status: settlement.status, completedAt: context.clock.now().toISOString(), durationMs: settlement.durationMs, ...(settlement.error ? { error: settlement.error } : {}), ...(settlement.usage ? { usage: settlement.usage } : {}) } : execution) } : batch);
   const execution = batches.flatMap((batch) => batch.executions).find((item) => item.id === executionId);
-  return { ...flow, batches, nodes: flow.nodes.map((node) => node.id === execution?.outputNodeId && isGeneratedContentNode(node) ? { ...node, data: { ...node.data, text: settlement.text } } : node) };
+  return { ...flow, batches, nodes: flow.nodes.map((node) => node.id === execution?.outputNodeId && isGeneratedTextNode(node) ? { ...node, data: { ...node.data, text: settlement.text } } : node) };
 });
 
 
@@ -146,7 +147,7 @@ export const normalizeInterruptedBatches = (workspace: WorkspaceDocument, clock:
       ...flow,
       batches: flow.batches.map((batch) => ({ ...batch, executions: batch.executions.map((execution) => execution.status === "pending" ? { ...execution, status: "failed", completedAt: now, error: { kind: "interrupted", message: "This run was interrupted when the page closed." } } : execution) })),
       nodes: flow.nodes.map((node) => {
-        if (!isGeneratedContentNode(node)) return node;
+        if (!isGeneratedTextNode(node)) return node;
         const execution = flow.batches.flatMap((batch) => batch.executions).find((item) => item.id === node.data.executionId);
         return execution?.status === "pending" ? { ...node, data: { ...node.data, text: "Failed: This run was interrupted when the page closed." } } : node;
       }),

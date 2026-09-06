@@ -10,24 +10,32 @@ export type Usage = {
   totalTokens?: number;
 };
 
-export type PromptData = {
-  kind: "prompt";
+export type ManualTextData = {
+  kind: "text";
+  origin: "manual";
   title: string;
-  prompt: string;
+  text: string;
+};
+
+export type GeneratedTextData = {
+  kind: "text";
+  origin: "generated";
+  title: string;
+  text: string;
+  batchId: EntityId;
+  executionId: EntityId;
+};
+
+export type GenerationData = {
+  kind: "generation";
+  title: string;
+  instruction: string;
   modelIds: string[];
 };
 
-export type ContentData = {
-  kind: "content";
-  title: string;
-  text: string;
-  origin: "imported" | "generated";
-  modelId?: string;
-  batchId?: EntityId;
-  executionId?: EntityId;
-};
+export type TextNodeData = ManualTextData | GeneratedTextData;
 
-export type NodeData = PromptData | ContentData;
+export type NodeData = TextNodeData | GenerationData;
 
 export type PlaygroundNode = {
   id: EntityId;
@@ -83,7 +91,7 @@ export type ModelExecution = {
 
 export type ExecutionBatch = {
   id: EntityId;
-  promptNodeId: EntityId;
+  generationNodeId: EntityId;
   startedAt: string;
   completedAt?: string;
   promptFormatVersion: 1;
@@ -104,7 +112,7 @@ export type FlowDocument = {
 };
 
 export type WorkspaceDocument = {
-  schemaVersion: 2;
+  schemaVersion: 3;
   activeFlowId: EntityId;
   flows: FlowDocument[];
   createdAt: string;
@@ -121,20 +129,25 @@ export type Model = {
 export type Clock = { now(): Date };
 export type IdFactory = () => EntityId;
 
-export const isPromptNode = (
+export const isTextNode = (
   node: PlaygroundNode | undefined,
-): node is PlaygroundNode & { data: PromptData } =>
-  node?.data.kind === "prompt";
+): node is PlaygroundNode & { data: TextNodeData } =>
+  node?.data.kind === "text";
 
-export const isContentNode = (
+export const isGenerationNode = (
   node: PlaygroundNode | undefined,
-): node is PlaygroundNode & { data: ContentData } =>
-  node?.data.kind === "content";
+): node is PlaygroundNode & { data: GenerationData } =>
+  node?.data.kind === "generation";
 
-export const isGeneratedContentNode = (
+export const isManualTextNode = (
   node: PlaygroundNode | undefined,
-): node is PlaygroundNode & { data: ContentData } =>
-  node?.data.kind === "content" && node.data.origin === "generated";
+): node is PlaygroundNode & { data: ManualTextData } =>
+  node?.data.kind === "text" && node.data.origin === "manual";
+
+export const isGeneratedTextNode = (
+  node: PlaygroundNode | undefined,
+): node is PlaygroundNode & { data: GeneratedTextData } =>
+  node?.data.kind === "text" && node.data.origin === "generated";
 
 export const isFinitePosition = (position: Position) =>
   Number.isFinite(position.x) && Number.isFinite(position.y);

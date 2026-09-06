@@ -15,7 +15,7 @@ export const createStarterFlow = (idFactory: IdFactory = randomIdFactory, clock:
   const now = timestamp(clock);
   const promptId = idFactory();
   const nodes: PlaygroundNode[] = [
-    { id: promptId, position: { x: 80, y: 120 }, data: { kind: "prompt", title: "Prompt 1", prompt: "", modelIds: [] }, createdAt: now, updatedAt: now },
+    { id: promptId, position: { x: 80, y: 120 }, data: { kind: "generation", title: "Generation 1", instruction: "", modelIds: [] }, createdAt: now, updatedAt: now },
   ];
   return { id: idFactory(), name, nodes, edges: [], batches: [], viewport: { x: 0, y: 0, zoom: 1 }, createdAt: now, updatedAt: now };
 };
@@ -23,7 +23,7 @@ export const createStarterFlow = (idFactory: IdFactory = randomIdFactory, clock:
 export const createStarterWorkspace = (idFactory: IdFactory = randomIdFactory, clock: Clock = systemClock): WorkspaceDocument => {
   const now = timestamp(clock);
   const flow = createStarterFlow(idFactory, clock);
-  return { schemaVersion: 2, activeFlowId: flow.id, flows: [flow], createdAt: now, updatedAt: now };
+  return { schemaVersion: 3, activeFlowId: flow.id, flows: [flow], createdAt: now, updatedAt: now };
 };
 
 export const createBlankFlow = (workspace: WorkspaceDocument, idFactory: IdFactory = randomIdFactory, clock: Clock = systemClock, requestedName = starterFlowName) =>

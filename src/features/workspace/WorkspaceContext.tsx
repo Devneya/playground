@@ -15,7 +15,7 @@ import { InMemoryWorkspaceRepository } from "../../persistence/InMemoryWorkspace
 import { ResilientWorkspaceRepository } from "../../persistence/ResilientWorkspaceRepository";
 import { WorkspaceSaveQueue } from "../../persistence/WorkspaceSaveQueue";
 import type { WorkspaceRepository } from "../../persistence/WorkspaceRepository";
-import { startPromptRun, type PromptRun } from "../execution/executeGeneration";
+import { startGenerationRun, type GenerationRun } from "../execution/executeGeneration";
 import { emptyHistory, pushHistory, redoHistory, undoHistory, type HistoryState } from "../../domain/workspaceHistory";
 
 type AsyncStatus = "idle" | "loading" | "ready" | "error";
@@ -47,7 +47,7 @@ export type WorkspaceContextValue = {
   exportWorkspace(): void;
   importWorkspace(file: File): Promise<void>;
   clearLocalWorkspace(): Promise<void>;
-  runPrompt(promptNodeId: string): PromptRun;
+  runPrompt(promptNodeId: string): GenerationRun;
   canUndo: boolean;
   canRedo: boolean;
   undo(): void;
@@ -103,7 +103,7 @@ export const WorkspaceProvider = ({ children, repository: injectedRepository }: 
   const [keyStatus, setKeyStatus] = useState<AsyncStatus>("idle");
   const [keyError, setKeyError] = useState<string | null>(null);
   const loadedUserRef = useRef<string | null>(null);
-  const activeRunsRef = useRef(new Map<string, PromptRun>());
+  const activeRunsRef = useRef(new Map<string, GenerationRun>());
   const [activeRunIds, setActiveRunIds] = useState<Record<string, string>>({});
   const lifecycleEpochRef = useRef(0);
   const modelAbortRef = useRef<AbortController | null>(null);
@@ -277,9 +277,9 @@ export const WorkspaceProvider = ({ children, repository: injectedRepository }: 
   const runPrompt = useCallback((promptNodeId: string) => {
     if (!virtualKey) throw new Error(keyError || "Your account key is not ready yet.");
     const runEpoch = lifecycleEpochRef.current;
-    const run = startPromptRun({
+    const run = startGenerationRun({
       flow: workspace.flows.find((flow) => flow.id === workspace.activeFlowId) ?? workspace.flows[0]!,
-      promptNodeId,
+      generationNodeId: promptNodeId,
       virtualKey,
       idFactory: reducerContext.idFactory,
       clock: reducerContext.clock,
