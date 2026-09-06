@@ -60,10 +60,10 @@ export const GenerationNode = ({ id, data }: NodeProps<GenerationFlowNode>) => {
       <button type="button" className="icon-button" aria-label={`Delete ${data.title}`} onClick={() => dispatch({ type: "node/delete", flowId: activeFlow.id, nodeId: id })}>×</button>
     </header>
     <ModelPicker title={data.title} modelIds={data.modelIds} models={models} status={modelsStatus} error={modelsError} onReload={reloadModels} onToggle={toggleModel} />
-    <label className="node-field">Instruction<textarea className="node-textarea instruction-textarea" aria-label={`${data.title} instruction`} value={data.instruction} onChange={(event) => dispatch({ type: "node/edit-instruction", flowId: activeFlow.id, nodeId: id, instruction: event.target.value })} placeholder="Optional instruction for the model…" /></label>
+    <label className="node-field"><textarea className="node-textarea instruction-textarea" aria-label={`${data.title} instruction`} value={data.instruction} onChange={(event) => dispatch({ type: "node/edit-instruction", flowId: activeFlow.id, nodeId: id, instruction: event.target.value })} placeholder="Optional instruction for the model…" /></label>
     <div className="input-order" aria-label="Generation inputs">
       {connectionError && <div className="canvas-notice" role="status">{connectionError}<button type="button" onClick={() => setConnectionError(null)} aria-label="Dismiss connection notice">×</button></div>}
-      <div className="field-label">Inputs <span className="muted">({inputs.length})</span></div>
+      <div className="field-label visually-hidden">Inputs <span className="muted">({inputs.length})</span></div>
       {addableInputs.length > 0 && <div className="input-adder">
         <select aria-label={`${data.title} input source`} value={selectedInputId || addableInputs[0]?.id || ""} onChange={(event) => setSelectedInputId(event.target.value)}>
           {addableInputs.map((node) => <option key={node.id} value={node.id}>{node.data.title}</option>)}
@@ -85,6 +85,6 @@ export const GenerationNode = ({ id, data }: NodeProps<GenerationFlowNode>) => {
       {data.modelIds.filter((modelId) => !models.some((model) => model.id === modelId)).map((modelId) => <span className="model-option stale-model" key={modelId}><span>✓ {modelId}</span><button type="button" className="icon-button" onClick={() => toggleModel(modelId)} aria-label={`Remove ${modelId}`}>×</button></span>)}
     </div>
     {(runError || !virtualKey) && <p className="form-error node-error">{runError || keyError || (keyStatus === "loading" ? "Account key is loading; sign in to run." : "Account key is not ready yet.")} {keyStatus === "error" && <button type="button" className="small-button" onClick={reloadKey}>Retry account key</button>}</p>}
-    <button type="button" className="primary-button run-button" onClick={runningBatchId ? () => cancelRun(runningBatchId) : run} disabled={!runningBatchId && (!virtualKey || data.modelIds.length === 0)}>{runningBatchId ? "Cancel run" : "Run generation"}</button>
+    <div className="node-run-row"><button type="button" className={runningBatchId ? "send-button running" : "send-button"} aria-label={runningBatchId ? "Cancel run" : "Run generation"} title={runningBatchId ? "Cancel run" : "Run generation"} onClick={runningBatchId ? () => cancelRun(runningBatchId) : run} disabled={!runningBatchId && (!virtualKey || data.modelIds.length === 0)}>{runningBatchId ? "■" : "➤"}</button></div>
   </article>;
 };
