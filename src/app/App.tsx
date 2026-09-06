@@ -57,29 +57,48 @@ const WorkspaceScreen = () => {
     if (importRef.current) importRef.current.value = "";
   };
 
-  return <main className="app-shell">
-    <header className="topbar">
-      <div className="brand-lockup"><span className="brand-dot" /> <span>Devneya <strong>Playground</strong></span></div>
-      <div className="topbar-actions"><span className="user-label" title={user?.email}>{user?.email}</span><span className={`save-status ${saving ? "saving" : ""}`}>{saving ? "Saving locally…" : lastSavedAt ? "Saved locally" : "Not saved yet"}</span><button type="button" className="text-button" onClick={() => void signOut()}>Sign out</button></div>
-    </header>
-    <div className="workspace-layout">
-      <aside className="sidebar">
-        <div className="sidebar-heading"><div><p className="eyebrow">Workspace</p><h2>Flows</h2></div><button type="button" className="primary-button compact-button" onClick={createFlow}>New flow</button></div>
-        <div className="flow-list">{workspace.flows.map((flow) => <div className={`flow-list-item ${flow.id === activeFlow.id ? "active" : ""}`} key={flow.id}>
-          {renameId === flow.id ? <input autoFocus value={renameValue} onChange={(event) => setRenameValue(event.target.value)} onBlur={commitRename} onKeyDown={(event) => { if (event.key === "Enter") commitRename(); if (event.key === "Escape") setRenameId(null); }} /> : <button type="button" className="flow-select" onClick={() => activateFlow(flow.id)}><span>{flow.name}</span><small>{flow.nodes.length} nodes</small></button>}
-          {renameId !== flow.id && <div className="flow-actions"><button type="button" className="icon-button" aria-label={`Rename ${flow.name}`} onClick={() => beginRename(flow.id, flow.name)}>✎</button><button type="button" className="icon-button" aria-label={`Duplicate ${flow.name}`} onClick={() => duplicateFlow(flow.id)}>⧉</button><button type="button" className="icon-button" aria-label={`Delete ${flow.name}`} onClick={() => deleteFlow(flow.id)}>×</button></div>}
-        </div>)}</div>
-        <div className="sidebar-tools"><button type="button" onClick={exportWorkspace}>Export workspace</button><button type="button" onClick={() => importRef.current?.click()}>Import workspace</button><input ref={importRef} className="visually-hidden" type="file" aria-label="Workspace JSON file" accept="application/json,.json" onChange={(event) => void handleImport(event.target.files?.[0])} />{importError && <p className="form-error">{importError}</p>}<button type="button" className="danger-link" onClick={() => { if (window.confirm("Clear this browser's saved workspace? Export first if you need a copy.")) void clearLocalWorkspace(); }}>Clear local workspace</button></div>
-      </aside>
-      <section className="workspace-main">
-        <div className="canvas-toolbar"><div><p className="eyebrow">{activeFlow.name}</p><h1>Compose a flow</h1></div><div className="canvas-actions"><button type="button" onClick={undo} disabled={!canUndo} aria-label="Undo last change">Undo</button><button type="button" onClick={redo} disabled={!canRedo} aria-label="Redo last change">Redo</button><span className="catalog-status">{modelsStatus === "ready" ? "Live model catalog" : modelsStatus === "loading" ? "Loading models…" : "Model catalog unavailable"}</span></div></div>
-        <div className="workspace-notice">{LOCAL_NOTICE}</div>
-        {(error || keyStatus === "error") && <div className="inline-alert" role="alert">{error || keyError}</div>}
-        {storageWarning && <div className="inline-alert" role="status">{storageWarning}</div>}
-        {loading ? <div className="canvas-loading">Loading this browser's workspace…</div> : <Suspense fallback={<div className="canvas-loading">Loading the flow editor…</div>}><WorkspaceCanvas /></Suspense>}
-        {!loading && <div className="canvas-fab" role="toolbar" aria-label="Canvas actions"><button type="button" onClick={() => addNewNode("text")}>+ Text</button><button type="button" onClick={() => addNewNode("generation")}>+ Generation</button></div>}
-      </section>
-    </div>
+  const [canvasesOpen, setCanvasesOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
+  return <main className="app-shell canvas-first">
+    {loading ? <div className="canvas-loading">Loading this browser's workspace…</div> : <>
+      <div className="canvas-topbar"><span className="brand-dot" /><h1 className="flow-title">{activeFlow.name}</h1><span className={`save-status ${saving ? "saving" : ""}`}>{saving ? "Saving locally…" : lastSavedAt ? "Saved locally" : "Not saved yet"}</span><span className="catalog-status">{modelsStatus === "ready" ? "Live model catalog" : modelsStatus === "loading" ? "Loading models…" : "Model catalog unavailable"}</span></div>
+      <div className="canvas-account">
+        <button type="button" className="avatar-button" aria-label="Account" aria-expanded={accountOpen} onClick={() => { setAccountOpen((value) => !value); setCanvasesOpen(false); }}>{(user?.email ?? "?").slice(0, 1).toUpperCase()}</button>
+        {accountOpen && <>
+          <button type="button" className="popover-backdrop" aria-label="Close account" onClick={() => setAccountOpen(false)} />
+          <div className="account-popover" role="dialog" aria-label="Account">
+            <div className="account-email" title={user?.email}>{user?.email}</div>
+            <p className="account-notice">{LOCAL_NOTICE}</p>
+            <button type="button" className="text-button" onClick={() => void signOut()}>Sign out</button>
+          </div>
+        </>}
+      </div>
+      <div className="canvas-toolbar-floating" role="toolbar" aria-label="Canvas">
+        <button type="button" onClick={() => addNewNode("text")}>+ Text</button>
+        <button type="button" onClick={() => addNewNode("generation")}>+ Generation</button>
+        <button type="button" onClick={undo} disabled={!canUndo} aria-label="Undo last change">Undo</button>
+        <button type="button" onClick={redo} disabled={!canRedo} aria-label="Redo last change">Redo</button>
+        <button type="button" aria-label="Canvases" aria-expanded={canvasesOpen} onClick={() => { setCanvasesOpen((value) => !value); setAccountOpen(false); }}>Canvases</button>
+        <button type="button" onClick={exportWorkspace}>Export workspace</button>
+        <button type="button" onClick={() => importRef.current?.click()}>Import workspace</button>
+        <input ref={importRef} className="visually-hidden" type="file" aria-label="Workspace JSON file" accept="application/json,.json" onChange={(event) => void handleImport(event.target.files?.[0])} />
+        <button type="button" className="danger-link" onClick={() => { if (window.confirm("Clear this browser's saved workspace? Export first if you need a copy.")) void clearLocalWorkspace(); }}>Clear local workspace</button>
+      </div>
+      {canvasesOpen && <>
+        <button type="button" className="popover-backdrop" aria-label="Close canvases" onClick={() => setCanvasesOpen(false)} />
+        <div className="flows-popover" role="dialog" aria-label="Canvases">
+          <div className="flows-popover-head"><span>Flows</span><button type="button" className="primary-button compact-button" onClick={createFlow}>New flow</button></div>
+          {importError && <p className="form-error">{importError}</p>}
+          <div className="flow-list">{workspace.flows.map((flow) => <div className={`flow-list-item ${flow.id === activeFlow.id ? "active" : ""}`} key={flow.id}>
+            {renameId === flow.id ? <input autoFocus value={renameValue} onChange={(event) => setRenameValue(event.target.value)} onBlur={commitRename} onKeyDown={(event) => { if (event.key === "Enter") commitRename(); if (event.key === "Escape") setRenameId(null); }} /> : <button type="button" className="flow-select" onClick={() => activateFlow(flow.id)}><span>{flow.name}</span><small>{flow.nodes.length} nodes</small></button>}
+            {renameId !== flow.id && <div className="flow-actions"><button type="button" className="icon-button" aria-label={`Rename ${flow.name}`} onClick={() => beginRename(flow.id, flow.name)}>✎</button><button type="button" className="icon-button" aria-label={`Duplicate ${flow.name}`} onClick={() => duplicateFlow(flow.id)}>⧉</button><button type="button" className="icon-button" aria-label={`Delete ${flow.name}`} onClick={() => deleteFlow(flow.id)}>×</button></div>}
+          </div>)}</div>
+        </div>
+      </>}
+      {(error || keyStatus === "error") && <div className="inline-alert overlay-alert" role="alert">{error || keyError}</div>}
+      {storageWarning && <div className="inline-alert overlay-alert" role="status">{storageWarning}</div>}
+      <Suspense fallback={<div className="canvas-loading">Loading the flow editor…</div>}><WorkspaceCanvas /></Suspense>
+    </>}
   </main>;
 };
 

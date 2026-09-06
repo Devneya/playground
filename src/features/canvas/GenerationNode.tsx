@@ -55,8 +55,9 @@ export const GenerationNode = ({ id, data }: NodeProps<GenerationFlowNode>) => {
     <Handle type="target" position={Position.Left} id="generation-input" />
     <Handle type="source" position={Position.Right} id="generation-output" isConnectable={false} />
     <header className="node-header">
-      <span className="node-kind generation-kind">Generation</span>
       <strong title={data.title}>{data.title}</strong>
+      <span className="node-header-spacer" />
+      <button type="button" className="icon-button" aria-label={`Delete ${data.title}`} onClick={() => dispatch({ type: "node/delete", flowId: activeFlow.id, nodeId: id })}>×</button>
     </header>
     <ModelPicker title={data.title} modelIds={data.modelIds} models={models} status={modelsStatus} error={modelsError} onReload={reloadModels} onToggle={toggleModel} />
     <label className="node-field">Instruction<textarea className="node-textarea instruction-textarea" aria-label={`${data.title} instruction`} value={data.instruction} onChange={(event) => dispatch({ type: "node/edit-instruction", flowId: activeFlow.id, nodeId: id, instruction: event.target.value })} placeholder="Optional instruction for the model…" /></label>

@@ -27,9 +27,10 @@ export const TextNode = ({ id, data }: NodeProps<TextFlowNode>) => {
   return <article className={`flow-node text-node ${generated ? "generated-node" : "manual-node"}`}>
     <Handle type="source" position={Position.Right} id="text-output" />
     <header className="node-header">
-      <span className="node-kind">Text</span>
       <strong title={data.title}>{data.title}</strong>
       {generated && <span className="origin-chip">result</span>}
+      <span className="node-header-spacer" />
+      <button type="button" className="icon-button" aria-label={`Delete ${data.title}`} onClick={() => dispatch({ type: "node/delete", flowId: activeFlow.id, nodeId: id })}>×</button>
     </header>
     {generated ? <div className={`node-content generated-content ${expanded ? "expanded" : ""}`} onClick={() => setExpanded((value) => !value)} role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") setExpanded((value) => !value); }}>
       {data.text || "Waiting for model output…"}

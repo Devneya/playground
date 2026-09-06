@@ -74,7 +74,7 @@ const signIn = async (page: Page, email?: string, password?: string, accountInde
   await page.getByLabel("Email").fill(credentials.email);
   await page.getByLabel("Password").fill(credentials.password);
   await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page.getByRole("heading", { name: "Compose a flow" })).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator(".canvas-shell")).toBeVisible({ timeout: 60_000 });
   await expect(page.getByText("Live model catalog")).toBeVisible({ timeout: 60_000 });
   await expect(page.getByText("Loading this browser's workspace…")).toBeHidden({ timeout: 60_000 });
   await expect(generation(page).getByRole("button", { name: "Run generation" })).toBeVisible({ timeout: 60_000 });
@@ -192,7 +192,7 @@ test.describe("real-server functional E2E", () => {
     await page.getByLabel("Password").fill(account.password);
     await page.getByRole("button", { name: "Sign in" }).click();
     await expect(page.getByRole("alert")).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByRole("heading", { name: "Compose a flow" })).not.toBeVisible();
+    await expect(page.locator(".canvas-shell")).not.toBeVisible();
     await clearSensitiveFields(page);
 
     const confirmationUrl = await waitForSignupConfirmation(account, baseUrl);
@@ -200,11 +200,11 @@ test.describe("real-server functional E2E", () => {
     await page.goto(confirmationUrl, { waitUntil: "domcontentloaded" });
     await expect.poll(() => new URL(page.url()).origin, { timeout: 60_000 }).toBe(new URL(baseUrl).origin);
     await expect.poll(async () => {
-      if (await page.getByRole("heading", { name: "Compose a flow" }).isVisible().catch(() => false)) return "confirmed";
+      if (await page.locator(".canvas-shell").isVisible().catch(() => false)) return "confirmed";
       if (await page.getByLabel("Email").isVisible().catch(() => false)) return "login";
       return "loading";
     }, { timeout: 60_000 }).toMatch(/confirmed|login/);
-    const confirmedSession = await page.getByRole("heading", { name: "Compose a flow" }).isVisible();
+    const confirmedSession = await page.locator(".canvas-shell").isVisible();
     if (!confirmedSession) await signIn(page, account.address, account.password, accountIndex);
     account.accessToken = await sessionAccessToken(page);
     await captureCheckpoint(page, "account-" + (accountIndex + 1) + "-confirmed-login");
@@ -251,7 +251,7 @@ test.describe("real-server functional E2E", () => {
     expect(output).toContain("BETA");
     expect(output!.indexOf("ALPHA")).toBeLessThan(output!.indexOf("BETA"));
     await page.reload({ waitUntil: "domcontentloaded" });
-    await expect(page.getByRole("heading", { name: "Compose a flow" })).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator(".canvas-shell")).toBeVisible({ timeout: 60_000 });
     await waitForWorkspaceLoaded(page);
     await expect(page.getByLabel("Text 1 text")).toHaveValue("ALPHA");
     await expect(page.getByLabel("Text 3 text")).toHaveValue("BETA");

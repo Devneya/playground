@@ -40,7 +40,7 @@ const signIn = async (page: Page, email = "user-a@example.test") => {
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill("password123");
   await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page.getByRole("heading", { name: "Compose a flow" })).toBeVisible();
+  await expect(page.locator(".canvas-shell")).toBeVisible();
   await expect(page.getByRole("button", { name: "Run generation" })).toBeVisible();
 };
 
@@ -211,6 +211,7 @@ test.describe("mocked workspace flows", () => {
     await page.reload({ waitUntil: "domcontentloaded" });
     await expect(page.getByText("Live model catalog")).toBeVisible({ timeout: 15_000 });
     await expect(page.getByLabel("Text 1 text")).toHaveValue("USER_A_PRIVATE_TEXT", { timeout: 15_000 });
+  await page.getByRole("button", { name: "Account" }).click();
     await page.getByRole("button", { name: "Sign out" }).click();
     await expect(page.getByLabel("Email")).toBeVisible();
 
@@ -218,6 +219,7 @@ test.describe("mocked workspace flows", () => {
     await expect(page.getByLabel("Text 1 text")).toHaveValue("");
     await page.getByLabel("Text 1 text").fill("USER_B_PRIVATE_TEXT");
     await expect(page.getByText("Saved locally")).toBeVisible();
+  await page.getByRole("button", { name: "Account" }).click();
     await page.getByRole("button", { name: "Sign out" }).click();
 
     await signIn(page, "user-a@example.test");
@@ -253,6 +255,7 @@ test.describe("mocked workspace flows", () => {
     await expect(page.getByText("Model catalog unavailable")).toBeVisible();
     await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
 
+  await page.getByRole("button", { name: "Account" }).click();
     await page.getByRole("button", { name: "Sign out" }).click();
     await prepare(page, "key-error");
     await signIn(page);
@@ -277,7 +280,7 @@ test.describe("mocked workspace flows", () => {
     await expect(page.getByText("Saved locally")).toBeVisible();
     await waitForStoredText(page, "PERSISTED_AFTER_RELOAD");
     await page.reload({ waitUntil: "domcontentloaded" });
-    await expect(page.getByRole("heading", { name: "Compose a flow" })).toBeVisible();
+    await expect(page.locator(".canvas-shell")).toBeVisible();
     await expect(page.getByText("Live model catalog")).toBeVisible({ timeout: 15_000 });
     await expect(page.getByLabel("Text 1 text")).toHaveValue("PERSISTED_AFTER_RELOAD", { timeout: 15_000 });
   });
@@ -419,6 +422,7 @@ test("supports flow creation, rename, duplication, activation, deletion, undo, a
   await expect(page.getByLabel("Text 1 text")).toHaveValue("");
   await page.getByRole("button", { name: "Redo last change" }).click();
   await expect(page.getByLabel("Text 1 text")).toHaveValue("UNDO_ME");
+  await page.getByRole("button", { name: "Canvases" }).click();
   await page.getByRole("button", { name: "New flow" }).click();
   await expect(page.getByRole("button", { name: "Rename Untitled flow 2" })).toBeVisible();
   await page.getByRole("button", { name: "Rename Untitled flow 2" }).click();
@@ -431,7 +435,7 @@ test("supports flow creation, rename, duplication, activation, deletion, undo, a
   await page.getByRole("button", { name: "Delete Release flow 2" }).click();
   await expect(page.getByRole("button", { name: "Rename Release flow 2" })).toHaveCount(0);
   await page.getByRole("button", { name: "Untitled flow" }).click();
-  await expect(page.locator(".canvas-toolbar .eyebrow")).toHaveText("Untitled flow");
+  await expect(page.locator(".flow-title")).toHaveText("Untitled flow");
 });
 
 test("recovers from one catalog and account-key failure", async ({ page }) => {
@@ -441,6 +445,7 @@ test("recovers from one catalog and account-key failure", async ({ page }) => {
   await generation(page).getByRole("button", { name: "Retry" }).click();
   await expect(page.getByText("Live model catalog")).toBeVisible();
 
+  await page.getByRole("button", { name: "Account" }).click();
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page.getByLabel("Email")).toBeVisible();
   await prepare(page, "key-recover");
