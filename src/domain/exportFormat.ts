@@ -3,7 +3,7 @@ import { LIMITS, utf8ByteLength } from "./limits";
 import { parseExport } from "./schemas";
 import type { Clock, WorkspaceDocument } from "./types";
 
-export const EXPORT_FORMAT = "devneya-flow-v1" as const;
+export const EXPORT_FORMAT = "devneya-flow-v2" as const;
 
 export type WorkspaceExport = {
   format: typeof EXPORT_FORMAT;

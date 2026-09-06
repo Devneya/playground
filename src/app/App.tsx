@@ -8,7 +8,6 @@ const WorkspaceCanvas = lazy(() => import("../features/canvas/WorkspaceCanvas").
 import { useWorkspace } from "../features/workspace/useWorkspace";
 import { WorkspaceProvider } from "../features/workspace/WorkspaceContext";
 import { randomIdFactory, systemClock } from "../domain/ids";
-import type { PlaygroundNode } from "../domain/types";
 import "./styles.css";
 
 const LOCAL_NOTICE = "Stored only in this browser—not backed up or synchronized. Clearing browser data may remove this workspace. Export it to keep a portable copy.";
@@ -29,18 +28,11 @@ const WorkspaceScreen = () => {
   const [renameValue, setRenameValue] = useState("");
   const [importError, setImportError] = useState<string | null>(null);
 
-  const addNewNode = (kind: "text" | "generation") => {
+  const addNewPrompt = () => {
     const now = systemClock.now().toISOString();
     const index = activeFlow.nodes.length + 1;
     const x = Math.max(80, ...activeFlow.nodes.map((node) => node.position.x)) + 380;
-    const node: PlaygroundNode = kind === "text" ? {
-      id: randomIdFactory(), position: { x, y: 120 }, createdAt: now, updatedAt: now,
-      data: { kind: "text", origin: "manual", title: `Text ${index}`, text: "" },
-    } : {
-      id: randomIdFactory(), position: { x, y: 120 }, createdAt: now, updatedAt: now,
-      data: { kind: "generation", title: `Generation ${index}`, instruction: "", modelIds: [] },
-    };
-    addNode(node);
+    addNode({ id: randomIdFactory(), position: { x, y: 120 }, createdAt: now, updatedAt: now, data: { kind: "prompt", title: `Prompt ${index}`, prompt: "", modelIds: [] } });
   };
 
   const beginRename = (flowId: string, name: string) => { setRenameId(flowId); setRenameValue(name); };
@@ -74,8 +66,7 @@ const WorkspaceScreen = () => {
         </>}
       </div>
       <div className="canvas-toolbar-floating" role="toolbar" aria-label="Canvas">
-        <button type="button" aria-label="+ Text" onClick={() => addNewNode("text")}><span className="tool-glyph" aria-hidden="true">＋</span><span className="tool-caption">Text</span></button>
-        <button type="button" aria-label="+ Generation" onClick={() => addNewNode("generation")}><span className="tool-glyph" aria-hidden="true">✦</span><span className="tool-caption">Prompt</span></button>
+        <button type="button" aria-label="+ Prompt" onClick={addNewPrompt}><span className="tool-glyph" aria-hidden="true">✦</span><span className="tool-caption">Prompt</span></button>
         <button type="button" onClick={undo} disabled={!canUndo} aria-label="Undo last change"><span className="tool-glyph" aria-hidden="true">↶</span><span className="tool-caption">Undo</span></button>
         <button type="button" onClick={redo} disabled={!canRedo} aria-label="Redo last change"><span className="tool-glyph" aria-hidden="true">↷</span><span className="tool-caption">Redo</span></button>
         <button type="button" aria-label="Canvases" aria-expanded={canvasesOpen} onClick={() => { setCanvasesOpen((value) => !value); setAccountOpen(false); }}><span className="tool-glyph" aria-hidden="true">▤</span><span className="tool-caption">Canvases</span></button>

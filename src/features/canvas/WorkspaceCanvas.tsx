@@ -5,11 +5,11 @@ import { randomIdFactory } from "../../domain/ids";
 import { canAddInputConnection } from "../../domain/graph";
 import type { InputEdge, NodeData, PlaygroundEdge, PlaygroundNode } from "../../domain/types";
 import { useWorkspace } from "../workspace/useWorkspace";
-import { GenerationNode } from "./GenerationNode";
+import { PromptNode } from "./PromptNode";
 import { ManagedEdge } from "./ManagedEdge";
-import { TextNode } from "./TextNode";
+import { ContentNode } from "./ContentNode";
 
-const nodeTypes = { text: TextNode, generation: GenerationNode };
+const nodeTypes = { prompt: PromptNode, content: ContentNode };
 
 const edgeTypes = { managed: ManagedEdge };
 

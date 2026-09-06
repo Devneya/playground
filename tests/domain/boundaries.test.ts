@@ -4,7 +4,7 @@ import { duplicateFlowWithFreshIds } from "../../src/domain/duplicateFlow";
 import { createStarterWorkspace, uniqueFlowName } from "../../src/domain/workspaceFactory";
 import { placeNewResultNodes } from "../../src/domain/resultPlacement";
 import { emptyHistory, pushHistory, redoHistory, undoHistory } from "../../src/domain/workspaceHistory";
-import { isGeneratedTextNode, isGenerationNode, isManualTextNode, isTextNode } from "../../src/domain/types";
+import { isContentNode, isGeneratedContentNode, isPromptNode } from "../../src/domain/types";
 
 const clock = { now: () => new Date("2026-01-01T00:00:00.000Z") };
 
@@ -12,7 +12,7 @@ describe("workspace boundaries", () => {
   it("creates and validates the portable export format", () => {
     const workspace = createStarterWorkspace(() => crypto.randomUUID(), clock);
     const exported = createWorkspaceExport(workspace, clock);
-    expect(exported.format).toBe("devneya-flow-v1");
+    expect(exported.format).toBe("devneya-flow-v2");
     expect(parseWorkspaceExport(JSON.parse(JSON.stringify(exported))).workspace).toEqual(workspace);
     expect(() => parseWorkspaceExport({ format: "old" })).toThrow(WorkspaceExportError);
   });
@@ -30,10 +30,10 @@ describe("workspace boundaries", () => {
   it("places result nodes in a free column and handles invalid placement requests", () => {
     const workspace = createStarterWorkspace(() => crypto.randomUUID(), clock);
     const flow = workspace.flows[0]!;
-    const generation = flow.nodes.find((node) => isGenerationNode(node))!;
-    expect(placeNewResultNodes(flow, generation.id, 2)).toEqual([{ x: 860, y: 120 }, { x: 860, y: 380 }]);
+    const prompt = flow.nodes.find((node) => isPromptNode(node))!;
+    expect(placeNewResultNodes(flow, prompt.id, 2)).toEqual([{ x: 440, y: 120 }, { x: 440, y: 380 }]);
     expect(placeNewResultNodes(flow, "missing", 2)).toEqual([]);
-    expect(placeNewResultNodes(flow, generation.id, 0)).toEqual([]);
+    expect(placeNewResultNodes(flow, prompt.id, 0)).toEqual([]);
   });
 
   it("supports bounded undo and redo snapshots", () => {
@@ -46,13 +46,12 @@ describe("workspace boundaries", () => {
     expect(redone?.workspace).toEqual(second);
   });
 
-  it("distinguishes manual, generated, text, and generation nodes", () => {
+  it("distinguishes prompt and content nodes", () => {
     const workspace = createStarterWorkspace(() => crypto.randomUUID(), clock);
     const flow = workspace.flows[0]!;
-    const text = flow.nodes.find((node) => isTextNode(node))!;
-    const generation = flow.nodes.find((node) => isGenerationNode(node))!;
-    expect(isManualTextNode(text)).toBe(true);
-    expect(isGeneratedTextNode(text)).toBe(false);
-    expect(isGenerationNode(generation)).toBe(true);
+    const prompt = flow.nodes.find((node) => isPromptNode(node))!;
+    expect(isPromptNode(prompt)).toBe(true);
+    expect(isContentNode(prompt)).toBe(false);
+    expect(isGeneratedContentNode(prompt)).toBe(false);
   });
 });

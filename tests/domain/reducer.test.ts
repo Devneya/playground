@@ -24,7 +24,7 @@ describe("workspace reducer", () => {
     const { normalizeInterruptedBatches } = await import("../../src/domain/workspaceReducer");
     const workspace = createStarterWorkspace(ids, clock);
     const flow = workspace.flows[0]!;
-    const pending = { id: "batch", generationNodeId: flow.nodes[1]!.id, startedAt: clock.now().toISOString(), promptFormatVersion: 1 as const, instruction: "", inputs: [], executions: [{ id: "execution", modelId: "model", status: "pending" as const, startedAt: clock.now().toISOString(), outputNodeId: "output" }] };
+    const pending = { id: "batch", promptNodeId: flow.nodes[0]!.id, startedAt: clock.now().toISOString(), promptFormatVersion: 1 as const, instruction: "", inputs: [], executions: [{ id: "execution", modelId: "model", status: "pending" as const, startedAt: clock.now().toISOString(), outputNodeId: "output" }] };
     const result = normalizeInterruptedBatches({ ...workspace, flows: [{ ...flow, batches: [pending] }] }, clock);
     expect(result.flows[0]!.batches[0]!.executions[0]!.status).toBe("failed");
     expect(result.flows[0]!.batches[0]!.executions[0]!.error?.kind).toBe("interrupted");
