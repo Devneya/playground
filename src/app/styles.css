@@ -79,7 +79,7 @@ input:focus, textarea:focus { border-color: #b45309; box-shadow: 0 0 0 3px #b453
 .canvas-loading { display: grid; flex: 1; min-height: 600px; place-items: center; color: #5f6b7a; }
 .canvas-notice { position: absolute; z-index: 5; bottom: 18px; left: 50%; display: flex; gap: 12px; align-items: center; max-width: 440px; transform: translateX(-50%); padding: 9px 12px; border: 1px solid #f1d58b; border-radius: 7px; background: #fff9e7; color: #805b00; font-size: .76rem; box-shadow: 0 8px 24px #42506a1c; }
 .canvas-notice button { border: 0; background: none; color: inherit; }
-.flow-node { position: relative; width: 300px; overflow: hidden; border: 0; border-radius: 20px; background: #fff; box-shadow: 0 4px 14px #00000014; }
+.flow-node { position: relative; width: 480px; overflow: hidden; border: 0; border-radius: 20px; background: #fff; box-shadow: 0 4px 14px #00000014; }
 .flow-node:hover { box-shadow: 0 11px 28px #42506a22; }
 .flow-node.popover-open { overflow: visible; z-index: 30; }
 .node-header { display: flex; align-items: center; gap: 7px; padding: 10px 14px 6px; }

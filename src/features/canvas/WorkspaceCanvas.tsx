@@ -72,7 +72,7 @@ export const WorkspaceCanvas = () => {
     </ReactFlow>
     {activeFlow.nodes.length === 0 && (
       <div className="canvas-empty" role="status">
-        <p>Write an instruction and run it. Each answer gets its own prompt box below — keep the thread going or fork it with Continue.</p>
+        <p>Write an instruction and run it. Each answer appears below and gets its own prompt box — keep the thread going or fork it with Continue.</p>
       </div>
     )}
     {notice && <div className="canvas-notice" role="status">{notice}<button type="button" onClick={() => setNotice(null)} aria-label="Dismiss notice">×</button></div>}
