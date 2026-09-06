@@ -127,8 +127,8 @@ input:focus, textarea:focus { border-color: #b45309; box-shadow: 0 0 0 3px #b453
 .react-flow__edge.selectable:hover .react-flow__edge-path { stroke-width: 2.5; }
 .managed-edge-control { position: absolute; transform: translate(-50%, -50%); pointer-events: all; }
 .managed-edge-control button { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; border: 1px solid #d7deea; background: #fff; color: #5b6675; padding: 0; font-size: .9rem; line-height: 1; box-shadow: 0 2px 8px #42506a2e; }
-.managed-edge-hoverzone { position: absolute; transform: translate(-50%, -50%); width: 28px; height: 28px; background: transparent; pointer-events: all; }
 .react-flow__edgelabel-renderer { z-index: 1000; }
+.managed-edge-hoverzone { position: absolute; transform: translate(-50%, -50%); width: 28px; height: 28px; background: transparent; pointer-events: all; }
 .canvas-shell { --xy-handle-background-color: #9aa5b5; --xy-handle-border-color: #fff; }
 .react-flow__node .react-flow__handle { width: 10px; height: 10px; border-width: 2px; box-shadow: 0 1px 4px #42506a40; }
 .react-flow__node .react-flow__handle.connectionindicator { background: #ffc400; }

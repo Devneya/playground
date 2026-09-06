@@ -76,7 +76,7 @@ export const startGenerationRun = (options: RunOptions): GenerationRun => {
     createdAt: startedAt,
     updatedAt: startedAt,
   }));
-  const resultEdges: PlaygroundEdge[] = executions.map((execution) => ({ id: idFactory(), kind: "result", source: prompt.id, target: execution.outputNodeId }));
+  const resultEdges: PlaygroundEdge[] = executions.map((execution) => ({ id: idFactory(), kind: "result", source: prompt.id, target: execution.outputNodeId, sourceHandle: "flow-bottom", targetHandle: "flow-top" }));
   const batch: ExecutionBatch = {
     id: batchId,
     generationNodeId: prompt.id,

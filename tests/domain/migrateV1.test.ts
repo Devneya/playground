@@ -95,4 +95,17 @@ describe("v1 to v3 migration", () => {
     expect(() => parseWorkspace({ schemaVersion: 9, activeFlowId: "x", flows: [], createdAt: stamp, updatedAt: stamp })).toThrow();
     expect(() => parseWorkspaceExport({ format: "devneya-flow-v9", exportedAt: stamp, workspace: v1Workspace() })).toThrow();
   });
+  it("accepts v3 edges that carry optional sourceHandle/targetHandle", () => {
+    const base = v1Workspace();
+    const v3 = {
+      schemaVersion: 3 as const,
+      activeFlowId: base.activeFlowId,
+      flows: base.flows.map((flow) => ({ ...flow, edges: flow.edges.map((edge) => ({ ...edge, sourceHandle: "flow-bottom", targetHandle: "flow-top" })) })),
+      createdAt: stamp,
+      updatedAt: stamp,
+    };
+    expect(() => parseWorkspace(v3)).not.toThrow();
+    const parsed = parseWorkspace(v3);
+    expect(parsed.flows[0]!.edges.every((edge) => edge.sourceHandle === "flow-bottom" && edge.targetHandle === "flow-top")).toBe(true);
+  });
 });

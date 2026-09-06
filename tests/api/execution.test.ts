@@ -67,7 +67,11 @@ describe("prompt execution", () => {
     expect(actions.at(-1)?.type).toBe("batch/completed");
     const succeeded = actions.find((action) => action.type === "execution/succeeded");
     expect(succeeded).toMatchObject({ usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 } });
-    if (started?.type === "batch/started") expect(started.batch.executions).toHaveLength(2);
+    if (started?.type === "batch/started") {
+      expect(started.batch.executions).toHaveLength(2);
+      expect(started.resultEdges).toHaveLength(2);
+      expect(started.resultEdges[0]).toMatchObject({ kind: "result", sourceHandle: "flow-bottom", targetHandle: "flow-top" });
+    }
   });
 
 

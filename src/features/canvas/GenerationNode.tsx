@@ -32,8 +32,10 @@ export const GenerationNode = ({ id, data }: NodeProps<GenerationFlowNode>) => {
     } catch (error) { setRunError(error instanceof Error ? error.message : "Unable to start the run."); }
   };
   return <article className={`flow-node generation-node ${dropValid ? "drop-target" : ""}`}>
-    <Handle type="target" position={Position.Left} id="generation-input" />
+    <Handle type="target" position={Position.Left} id="generation-input" className="user-handle" />
+    <Handle type="target" position={Position.Top} id="flow-top" isConnectable={false} className="flow-handle" />
     <Handle type="source" position={Position.Right} id="generation-output" isConnectable={false} />
+    <Handle type="source" position={Position.Bottom} id="flow-bottom" isConnectable={false} className="flow-handle" />
     <header className="node-header">
       <span className="node-kind generation-kind">Generation</span>
       <strong title={data.title}>{data.title}</strong>

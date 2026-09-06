@@ -51,7 +51,7 @@ describe("generation/continue", () => {
     expect(newGen.position).toEqual({ x: 100, y: 260 });
 
     const edge = flow.edges[0]!;
-    expect(edge).toMatchObject({ kind: "input", source: "res-1", target: newGen.id });
+    expect(edge).toMatchObject({ kind: "input", source: "res-1", target: newGen.id, sourceHandle: "flow-bottom", targetHandle: "flow-top" });
 
     // Nothing else changed: the original generation and result remain.
     expect(flow.nodes.find((node) => node.id === "gen-1")).toBeDefined();

@@ -112,7 +112,7 @@ export const reduceWorkspace = (workspace: WorkspaceDocument, action: WorkspaceA
         createdAt: now,
         updatedAt: now,
       };
-      const edge: InputEdge = { id: context.idFactory(), kind: "input", source: source.id, target: newId, order: getOrderedInputEdges(flow, newId).length };
+      const edge: InputEdge = { id: context.idFactory(), kind: "input", source: source.id, target: newId, sourceHandle: "flow-bottom", targetHandle: "flow-top", order: getOrderedInputEdges(flow, newId).length };
       return updateFlow(workspace, action.flowId, context, (targetFlow) => ({ ...targetFlow, nodes: [...targetFlow.nodes, newGeneration], edges: normalizeInputOrder([...targetFlow.edges, edge], newId) }));
     }
     case "viewport/update": return updateFlow(workspace, action.flowId, context, (flow) => ({ ...flow, viewport: { ...action.viewport } }));

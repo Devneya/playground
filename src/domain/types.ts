@@ -50,6 +50,8 @@ export type InputEdge = {
   kind: "input";
   source: EntityId;
   target: EntityId;
+  sourceHandle?: string | null;
+  targetHandle?: string | null;
   order: number;
 };
 
@@ -58,6 +60,8 @@ export type ResultEdge = {
   kind: "result";
   source: EntityId;
   target: EntityId;
+  sourceHandle?: string | null;
+  targetHandle?: string | null;
 };
 
 export type PlaygroundEdge = InputEdge | ResultEdge;
