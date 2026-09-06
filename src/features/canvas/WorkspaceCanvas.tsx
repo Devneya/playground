@@ -64,7 +64,7 @@ export const WorkspaceCanvas = () => {
   };
 
   return <section className="canvas-shell" aria-label="Flow canvas">
-    <ReactFlow<Node<NodeData>, Edge> nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onReconnect={onReconnect} onNodeDragStop={onNodeDragStop} onMoveEnd={onMoveEnd} fitView fitViewOptions={{ maxZoom: 0.25, padding: 0.3 }} defaultViewport={activeFlow.viewport} nodesFocusable={false} edgesFocusable={false} minZoom={0.2} maxZoom={2} deleteKeyCode={["Backspace", "Delete"]} onlyRenderVisibleElements={false}>
+    <ReactFlow<Node<NodeData>, Edge> nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onReconnect={onReconnect} onNodeDragStop={onNodeDragStop} onMoveEnd={onMoveEnd} fitView fitViewOptions={{ maxZoom: 0.5, padding: 0.3 }} defaultViewport={activeFlow.viewport} nodesFocusable={false} edgesFocusable={false} minZoom={0.2} maxZoom={2} deleteKeyCode={["Backspace", "Delete"]} onlyRenderVisibleElements={false}>
       <Background variant={BackgroundVariant.Lines} gap={30} color="#e2e2e2" />
       <Controls position="bottom-left" />
       <ViewportFitter flowId={activeFlow.id} hasNodes={nodes.length > 0} storedViewport={activeFlow.viewport} />
@@ -94,7 +94,7 @@ const ViewportFitter = ({ flowId, hasNodes, storedViewport }: { flowId: string; 
       // canvas) preserves each flow's saved view.
       setViewport(storedViewport, { duration: 0 });
     } else {
-      fitView({ maxZoom: 0.25, padding: 0.3 });
+      fitView({ maxZoom: 0.5, padding: 0.3 });
     }
     fittedFlow.current = flowId;
   }, [flowId, hasNodes, storedViewport, fitView, setViewport]);
