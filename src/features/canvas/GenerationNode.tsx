@@ -8,7 +8,7 @@ import { ModelPicker } from "./ModelPicker";
 type GenerationFlowNode = Node<GenerationData, "generation">;
 
 export const GenerationNode = ({ id, data }: NodeProps<GenerationFlowNode>) => {
-  const { activeFlow, activeRunIds, models, modelsStatus, modelsError, reloadModels, reloadKey, dispatch, runPrompt, cancelRun, virtualKey, keyStatus, keyError } = useWorkspace();
+  const { activeFlow, activeRunIds, models, modelsStatus, modelsError, reloadModels, reloadKey, dispatch, runGeneration, cancelRun, virtualKey, keyStatus, keyError } = useWorkspace();
   const [runError, setRunError] = useState<string | null>(null);
   const [localRunId, setLocalRunId] = useState<string | null>(null);
   const connection = useConnection();
@@ -26,7 +26,7 @@ export const GenerationNode = ({ id, data }: NodeProps<GenerationFlowNode>) => {
   const run = () => {
     setRunError(null);
     try {
-      const started = runPrompt(id);
+      const started = runGeneration(id);
       setLocalRunId(started.batchId);
       void started.completed.finally(() => setLocalRunId((current) => current === started.batchId ? null : current));
     } catch (error) { setRunError(error instanceof Error ? error.message : "Unable to start the run."); }

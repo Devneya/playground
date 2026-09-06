@@ -115,7 +115,7 @@ const WorkspaceProbe = () => {
     <output data-testid="error">{workspace.error || workspace.modelsError || workspace.keyError || ""}</output>
     <button type="button" onClick={() => prompt && workspace.dispatch({ type: "node/edit-instruction", flowId: flow.id, nodeId: prompt.id, instruction: "component text" })}>edit</button>
     <button type="button" onClick={() => prompt && workspace.dispatch({ type: "node/set-models", flowId: flow.id, nodeId: prompt.id, modelIds: ["model-a"] })}>select</button>
-    <button type="button" onClick={() => prompt && void workspace.runPrompt(prompt.id).completed}>run</button>
+    <button type="button" onClick={() => prompt && void workspace.runGeneration(prompt.id).completed}>run</button>
     <button type="button" onClick={() => workspace.addNode(addNode)}>add</button>
     <button type="button" onClick={workspace.undo}>undo</button>
     <button type="button" onClick={workspace.redo}>redo</button>
@@ -128,7 +128,7 @@ const WorkspaceProbe = () => {
     <button type="button" onClick={() => workspace.duplicateFlow("missing-flow")}>duplicate-missing</button>
     <button type="button" onClick={() => workspace.activateFlow("missing-flow")}>activate-missing</button>
     <button type="button" onClick={() => workspace.deleteFlow("missing-flow")}>delete-missing</button>
-    <button type="button" onClick={() => invoke(() => workspace.runPrompt("missing-prompt"))}>run-invalid</button>
+    <button type="button" onClick={() => invoke(() => workspace.runGeneration("missing-prompt"))}>run-invalid</button>
     <button type="button" onClick={() => workspace.cancelRun("missing-run")}>cancel-missing</button>
     <button type="button" onClick={() => invoke(() => workspace.exportWorkspace())}>export</button>
     <button type="button" onClick={() => invoke(() => workspace.importWorkspace(new File(["not-json"], "bad.json", { type: "application/json" })))}>import-invalid</button>
