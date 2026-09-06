@@ -3,6 +3,7 @@ import "@xyflow/react/dist/style.css";
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { randomIdFactory } from "../../domain/ids";
 import { canAddInputConnection } from "../../domain/graph";
+import { LAYOUT } from "../../domain/resultPlacement";
 import type { InputEdge, NodeData, PlaygroundEdge, PlaygroundNode } from "../../domain/types";
 import { useWorkspace } from "../workspace/useWorkspace";
 import { TextNode } from "./TextNode";
@@ -64,7 +65,7 @@ export const WorkspaceCanvas = () => {
   };
 
   return <section className="canvas-shell" aria-label="Flow canvas">
-    <ReactFlow<Node<NodeData>, Edge> nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onReconnect={onReconnect} onNodeDragStop={onNodeDragStop} onMoveEnd={onMoveEnd} fitView fitViewOptions={{ maxZoom: 0.5, padding: 0.3 }} defaultViewport={activeFlow.viewport} nodesFocusable={false} edgesFocusable={false} minZoom={0.2} maxZoom={2} deleteKeyCode={["Backspace", "Delete"]} onlyRenderVisibleElements={false}>
+    <ReactFlow<Node<NodeData>, Edge> nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onReconnect={onReconnect} onNodeDragStop={onNodeDragStop} onMoveEnd={onMoveEnd} defaultViewport={activeFlow.viewport} nodesFocusable={false} edgesFocusable={false} minZoom={0.2} maxZoom={2} deleteKeyCode={["Backspace", "Delete"]} onlyRenderVisibleElements={false}>
       <Background variant={BackgroundVariant.Lines} gap={30} color="#e2e2e2" />
       <Controls position="bottom-left" />
       <ViewportFitter flowId={activeFlow.id} hasNodes={nodes.length > 0} storedViewport={activeFlow.viewport} />
@@ -80,15 +81,19 @@ export const WorkspaceCanvas = () => {
 
 
 
-// Applies the initial camera once a flow's nodes are available. React Flow's
-// `fitView` prop only runs on mount, so when nodes are loaded asynchronously
-// (after mount) the initial fit is missed; this effect re-applies it. When a
-// flow already carries a customized, persisted viewport it is restored exactly
-// via setViewport instead of refitted, so switching flows keeps each saved
-// camera. Programmatic setViewport/fitView calls arrive with a null onMoveEnd
-// event, so they never overwrite the stored viewport.
+// Applies the initial camera once a flow's nodes are available. The default
+// camera (a flow whose stored viewport is still {0,0,1}) is a natural-size,
+// zoom-1 view: the first node is horizontally centered and ~80px from the top,
+// so a card reads at the same physical size on any monitor. React Flow's
+// `fitView` prop only runs on mount, so when nodes load asynchronously the
+// initial view is set here instead. A flow that already carries a customized,
+// persisted viewport is restored exactly via setViewport, so switching flows
+// (which does not remount the canvas) keeps each saved camera. Programmatic
+// setViewport calls arrive with a null onMoveEnd event, so they never
+// overwrite the stored viewport.
 const ViewportFitter = ({ flowId, hasNodes, storedViewport }: { flowId: string; hasNodes: boolean; storedViewport: Viewport }) => {
-  const { fitView, setViewport } = useReactFlow();
+  const { setViewport } = useReactFlow();
+  const { activeFlow } = useWorkspace();
   const fittedFlow = useRef<string | null>(null);
   useEffect(() => {
     if (!hasNodes || fittedFlow.current === flowId) return;
@@ -99,9 +104,22 @@ const ViewportFitter = ({ flowId, hasNodes, storedViewport }: { flowId: string; 
       // canvas) preserves each flow's saved view.
       setViewport(storedViewport, { duration: 0 });
     } else {
-      fitView({ maxZoom: 0.5, padding: 0.3 });
+      // Natural-size default camera at zoom 1: center the flow's first node
+      // horizontally and place it ~80px from the top, independent of monitor
+      // size. Node width is measured from the rendered card, with a fixed
+      // fallback matching the CSS card width when measurement is not ready.
+      const firstNode = activeFlow.nodes[0];
+      if (firstNode) {
+        const wrapper = document.querySelector<HTMLElement>(".react-flow");
+        const containerWidth = wrapper?.clientWidth ?? window.innerWidth;
+        const nodeEl = document.querySelector<HTMLElement>(".react-flow__node");
+        const nodeWidth = nodeEl?.offsetWidth || LAYOUT.nodeWidth;
+        const x = containerWidth / 2 - (firstNode.position.x + nodeWidth / 2);
+        const y = 80 - firstNode.position.y;
+        setViewport({ x, y, zoom: 1 }, { duration: 0 });
+      }
     }
     fittedFlow.current = flowId;
-  }, [flowId, hasNodes, storedViewport, fitView, setViewport]);
+  }, [flowId, hasNodes, storedViewport, activeFlow, setViewport]);
   return null;
 };
