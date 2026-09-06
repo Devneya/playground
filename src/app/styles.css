@@ -93,7 +93,7 @@ input:focus, textarea:focus { border-color: #b45309; box-shadow: 0 0 0 3px #b453
 .node-textarea { display: block; height: 110px; border: 0; background: transparent; resize: none; outline: none; }
 .node-field { margin: 6px 14px 0; color: #526179; font-size: .7rem; }
 .instruction-textarea { height: 52px; min-height: 52px; margin: 0; font-size: .78rem; }
-.node-gent-action { padding: 0 14px 10px; }
+.node-gent-action { display: flex; flex-wrap: wrap; gap: 10px; padding: 0 14px 10px; }
 .small-button { border: 0; background: none; color: #8a5a00; padding: 0; font-size: .68rem; font-weight: 750; }
 .field-label { margin-bottom: 6px; color: #526179; font-size: .7rem; font-weight: 750; }
 .input-order, .model-picker { margin: 6px 12px 0; padding-top: 0; }

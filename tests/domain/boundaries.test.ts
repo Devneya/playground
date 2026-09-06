@@ -31,7 +31,7 @@ describe("workspace boundaries", () => {
     const workspace = createStarterWorkspace(() => crypto.randomUUID(), clock);
     const flow = workspace.flows[0]!;
     const prompt = flow.nodes.find((node) => isGenerationNode(node))!;
-    expect(placeNewResultNodes(flow, prompt.id, 2)).toEqual([{ x: 440, y: 120 }, { x: 440, y: 380 }]);
+    expect(placeNewResultNodes(flow, prompt.id, 2)).toEqual([{ x: 440, y: 120 }, { x: 800, y: 120 }]);
     expect(placeNewResultNodes(flow, "missing", 2)).toEqual([]);
     expect(placeNewResultNodes(flow, prompt.id, 0)).toEqual([]);
   });
