@@ -61,7 +61,7 @@ const WorkspaceScreen = () => {
   const [accountOpen, setAccountOpen] = useState(false);
   return <main className="app-shell canvas-first">
     {loading ? <div className="canvas-loading">Loading this browser's workspace…</div> : <>
-      <div className="canvas-topbar"><span className="brand-dot" /><h1 className="flow-title">{activeFlow.name}</h1><span className={`save-status ${saving ? "saving" : ""}`}>{saving ? "Saving locally…" : lastSavedAt ? "Saved locally" : "Not saved yet"}</span><span className="catalog-status">{modelsStatus === "ready" ? "Live model catalog" : modelsStatus === "loading" ? "Loading models…" : "Model catalog unavailable"}</span></div>
+      <div className="canvas-topbar"><span className="brand-dot" /><h1 className="flow-title">{activeFlow.name}</h1><span className={`save-status ${saving ? "saving" : ""}`}>{saving ? "Saving locally…" : lastSavedAt ? "Saved locally" : "Not saved yet"}</span>{modelsStatus === "ready" ? <span className="catalog-dot live" role="img" title="Live model catalog" aria-label="Catalog ready" /> : <span className="catalog-status">{modelsStatus === "loading" ? "Loading models…" : "Model catalog unavailable"}</span>}</div>
       <div className="canvas-account">
         <button type="button" className="avatar-button" aria-label="Account" aria-expanded={accountOpen} onClick={() => { setAccountOpen((value) => !value); setCanvasesOpen(false); }}>{(user?.email ?? "?").slice(0, 1).toUpperCase()}</button>
         {accountOpen && <>
@@ -74,15 +74,15 @@ const WorkspaceScreen = () => {
         </>}
       </div>
       <div className="canvas-toolbar-floating" role="toolbar" aria-label="Canvas">
-        <button type="button" onClick={() => addNewNode("text")}>+ Text</button>
-        <button type="button" onClick={() => addNewNode("generation")}>+ Generation</button>
-        <button type="button" onClick={undo} disabled={!canUndo} aria-label="Undo last change">Undo</button>
-        <button type="button" onClick={redo} disabled={!canRedo} aria-label="Redo last change">Redo</button>
-        <button type="button" aria-label="Canvases" aria-expanded={canvasesOpen} onClick={() => { setCanvasesOpen((value) => !value); setAccountOpen(false); }}>Canvases</button>
-        <button type="button" onClick={exportWorkspace}>Export workspace</button>
-        <button type="button" onClick={() => importRef.current?.click()}>Import workspace</button>
+        <button type="button" aria-label="+ Text" onClick={() => addNewNode("text")}><span className="tool-glyph" aria-hidden="true">＋</span><span className="tool-caption">Text</span></button>
+        <button type="button" aria-label="+ Generation" onClick={() => addNewNode("generation")}><span className="tool-glyph" aria-hidden="true">✦</span><span className="tool-caption">Prompt</span></button>
+        <button type="button" onClick={undo} disabled={!canUndo} aria-label="Undo last change"><span className="tool-glyph" aria-hidden="true">↶</span><span className="tool-caption">Undo</span></button>
+        <button type="button" onClick={redo} disabled={!canRedo} aria-label="Redo last change"><span className="tool-glyph" aria-hidden="true">↷</span><span className="tool-caption">Redo</span></button>
+        <button type="button" aria-label="Canvases" aria-expanded={canvasesOpen} onClick={() => { setCanvasesOpen((value) => !value); setAccountOpen(false); }}><span className="tool-glyph" aria-hidden="true">▤</span><span className="tool-caption">Canvases</span></button>
+        <button type="button" aria-label="Export workspace" onClick={exportWorkspace}><span className="tool-glyph" aria-hidden="true">⤓</span><span className="tool-caption">Export</span></button>
+        <button type="button" aria-label="Import workspace" onClick={() => importRef.current?.click()}><span className="tool-glyph" aria-hidden="true">⤒</span><span className="tool-caption">Import</span></button>
         <input ref={importRef} className="visually-hidden" type="file" aria-label="Workspace JSON file" accept="application/json,.json" onChange={(event) => void handleImport(event.target.files?.[0])} />
-        <button type="button" className="danger-link" onClick={() => { if (window.confirm("Clear this browser's saved workspace? Export first if you need a copy.")) void clearLocalWorkspace(); }}>Clear local workspace</button>
+        <button type="button" className="danger-link" aria-label="Clear local workspace" onClick={() => { if (window.confirm("Clear this browser's saved workspace? Export first if you need a copy.")) void clearLocalWorkspace(); }}><span className="tool-glyph" aria-hidden="true">🗑</span><span className="tool-caption">Clear</span></button>
       </div>
       {canvasesOpen && <>
         <button type="button" className="popover-backdrop" aria-label="Close canvases" onClick={() => setCanvasesOpen(false)} />

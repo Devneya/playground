@@ -75,7 +75,7 @@ const signIn = async (page: Page, email?: string, password?: string, accountInde
   await page.getByLabel("Password").fill(credentials.password);
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page.locator(".canvas-shell")).toBeVisible({ timeout: 60_000 });
-  await expect(page.getByText("Live model catalog")).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator(".catalog-dot.live")).toBeVisible({ timeout: 60_000 });
   await expect(page.getByText("Loading this browser's workspace…")).toBeHidden({ timeout: 60_000 });
   await expect(generation(page).getByRole("button", { name: "Run generation" })).toBeVisible({ timeout: 60_000 });
 };
@@ -210,7 +210,7 @@ test.describe("real-server functional E2E", () => {
     await captureCheckpoint(page, "account-" + (accountIndex + 1) + "-confirmed-login");
     await activateWithTestCheckout(page, account, (name, checkoutPage) => captureCheckpoint(checkoutPage, name));
     await captureCheckpoint(page, "account-" + (accountIndex + 1) + "-activated");
-    await expect(page.getByText("Live model catalog")).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator(".catalog-dot.live")).toBeVisible({ timeout: 60_000 });
     await page.evaluate(() => history.replaceState({}, "", "/"));
     await signOut(page);
   };

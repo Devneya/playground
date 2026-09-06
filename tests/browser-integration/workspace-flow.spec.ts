@@ -209,7 +209,7 @@ test.describe("mocked workspace flows", () => {
     await expect(page.getByLabel("Text 1 text")).toHaveValue("USER_A_PRIVATE_TEXT");
     await waitForStoredText(page, "USER_A_PRIVATE_TEXT");
     await page.reload({ waitUntil: "domcontentloaded" });
-    await expect(page.getByText("Live model catalog")).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator(".catalog-dot.live")).toBeVisible({ timeout: 15_000 });
     await expect(page.getByLabel("Text 1 text")).toHaveValue("USER_A_PRIVATE_TEXT", { timeout: 15_000 });
   await page.getByRole("button", { name: "Account" }).click();
     await page.getByRole("button", { name: "Sign out" }).click();
@@ -281,7 +281,7 @@ test.describe("mocked workspace flows", () => {
     await waitForStoredText(page, "PERSISTED_AFTER_RELOAD");
     await page.reload({ waitUntil: "domcontentloaded" });
     await expect(page.locator(".canvas-shell")).toBeVisible();
-    await expect(page.getByText("Live model catalog")).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator(".catalog-dot.live")).toBeVisible({ timeout: 15_000 });
     await expect(page.getByLabel("Text 1 text")).toHaveValue("PERSISTED_AFTER_RELOAD", { timeout: 15_000 });
   });
 
@@ -329,7 +329,7 @@ test("connects a new Text node with the pointer and restores the edge after relo
   await waitForSave(page);
   await waitForStoredInputCount(page, 2);
   await page.reload({ waitUntil: "domcontentloaded" });
-  await expect(page.getByText("Live model catalog")).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator(".catalog-dot.live")).toBeVisible({ timeout: 15_000 });
   await expect(generation(page)).toContainText("Inputs (2)", { timeout: 15_000 });
 });
 
@@ -443,7 +443,7 @@ test("recovers from one catalog and account-key failure", async ({ page }) => {
   await signIn(page);
   await expect(page.getByText("Model catalog unavailable")).toBeVisible();
   await generation(page).getByRole("button", { name: "Retry" }).click();
-  await expect(page.getByText("Live model catalog")).toBeVisible();
+  await expect(page.locator(".catalog-dot.live")).toBeVisible();
 
   await page.getByRole("button", { name: "Account" }).click();
   await page.getByRole("button", { name: "Sign out" }).click();

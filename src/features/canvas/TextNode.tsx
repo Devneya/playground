@@ -35,9 +35,6 @@ export const TextNode = ({ id, data }: NodeProps<TextFlowNode>) => {
     {generated ? <div className={`node-content generated-content ${expanded ? "expanded" : ""}`} onClick={() => setExpanded((value) => !value)} role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") setExpanded((value) => !value); }}>
       {data.text || "Waiting for model output…"}
     </div> : <textarea className="node-textarea" aria-label={`${data.title} text`} value={data.text} onChange={(event) => dispatch({ type: "node/edit-text", flowId: activeFlow.id, nodeId: id, text: event.target.value })} placeholder="Write text to pass into a Generation node…" />}
-    <footer className="node-footer">
-      <span className="muted">{data.text.length.toLocaleString()} chars</span>
-      {generated && <button type="button" className="small-button" onClick={makeEditable}>Make editable</button>}
-    </footer>
+    {generated && <div className="node-gent-action"><button type="button" className="small-button" onClick={makeEditable}>Make editable</button></div>}
   </article>;
 };
