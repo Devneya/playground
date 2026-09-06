@@ -4,6 +4,7 @@ import { canAddInputConnection, getOrderedInputEdges } from "../../domain/graph"
 import { randomIdFactory } from "../../domain/ids";
 import { isTextNode, type GenerationData, type InputEdge } from "../../domain/types";
 import { useWorkspace } from "../workspace/useWorkspace";
+import { ModelPicker } from "./ModelPicker";
 
 type GenerationFlowNode = Node<GenerationData, "generation">;
 
@@ -78,13 +79,9 @@ export const GenerationNode = ({ id, data }: NodeProps<GenerationFlowNode>) => {
         </span>
       </div>)}
     </div>
+    <ModelPicker title={data.title} modelIds={data.modelIds} models={models} status={modelsStatus} error={modelsError} onReload={reloadModels} onToggle={toggleModel} />
     <div className="model-picker">
-      <div className="field-label">Models <span className="muted">({data.modelIds.length}/4)</span></div>
-      {modelsStatus === "loading" && <span className="muted">Loading live catalog…</span>}
-      {modelsStatus === "error" && <span className="form-error">{modelsError} <button type="button" className="small-button" onClick={reloadModels}>Retry</button></span>}
-      {modelsStatus === "ready" && models.map((model) => <label className="model-option" key={model.id}><input type="checkbox" aria-label={`${data.title} model ${model.id}`} checked={selected.has(model.id)} onChange={() => toggleModel(model.id)} disabled={!selected.has(model.id) && data.modelIds.length >= 4} /> <span>{model.id}</span></label>)}
       {data.modelIds.filter((modelId) => !models.some((model) => model.id === modelId)).map((modelId) => <span className="model-option stale-model" key={modelId}><span>✓ {modelId}</span><button type="button" className="icon-button" onClick={() => toggleModel(modelId)} aria-label={`Remove ${modelId}`}>×</button></span>)}
-      {modelsStatus === "ready" && models.length === 0 && <span className="muted">No models are currently available.</span>}
     </div>
     {(runError || !virtualKey) && <p className="form-error node-error">{runError || keyError || (keyStatus === "loading" ? "Account key is loading; sign in to run." : "Account key is not ready yet.")} {keyStatus === "error" && <button type="button" className="small-button" onClick={reloadKey}>Retry account key</button>}</p>}
     <button type="button" className="primary-button run-button" onClick={runningBatchId ? () => cancelRun(runningBatchId) : run} disabled={!runningBatchId && (!virtualKey || data.modelIds.length === 0)}>{runningBatchId ? "Cancel run" : "Run generation"}</button>

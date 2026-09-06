@@ -72,8 +72,9 @@ input:focus, textarea:focus { border-color: #b45309; box-shadow: 0 0 0 3px #b453
 .canvas-loading { display: grid; flex: 1; min-height: 600px; place-items: center; color: #5f6b7a; }
 .canvas-notice { position: absolute; z-index: 5; bottom: 18px; left: 50%; display: flex; gap: 12px; align-items: center; max-width: 440px; transform: translateX(-50%); padding: 9px 12px; border: 1px solid #f1d58b; border-radius: 7px; background: #fff9e7; color: #805b00; font-size: .76rem; box-shadow: 0 8px 24px #42506a1c; }
 .canvas-notice button { border: 0; background: none; color: inherit; }
-.flow-node { width: 300px; overflow: hidden; border: 1px solid #dbe2ee; border-radius: 12px; background: #fff; box-shadow: 0 9px 25px #42506a14; }
+.flow-node { position: relative; width: 300px; overflow: hidden; border: 1px solid #dbe2ee; border-radius: 12px; background: #fff; box-shadow: 0 9px 25px #42506a14; }
 .flow-node:hover { box-shadow: 0 11px 28px #42506a22; }
+.flow-node.popover-open { overflow: visible; z-index: 30; }
 .node-header { display: flex; align-items: center; gap: 7px; padding: 11px 13px; border-bottom: 1px solid #edf0f5; }
 .node-header strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .85rem; }
 .node-kind { color: #0f766e; font-size: .66rem; font-weight: 850; letter-spacing: .07em; text-transform: uppercase; }
@@ -96,6 +97,14 @@ input:focus, textarea:focus { border-color: #b45309; box-shadow: 0 0 0 3px #b453
 .input-row select { flex: 1; }
 .input-row { padding: 3px 0; }
 .model-picker { max-height: 105px; overflow: auto; }
+.model-picker-root { position: relative; margin: 10px 12px 0; }
+.model-pill { display: flex; align-items: center; gap: 7px; max-width: 100%; border: 0; border-radius: 999px; background: #1c1c1e; color: #fff; padding: 6px 12px; font-size: .7rem; font-weight: 700; cursor: pointer; }
+.model-pill:hover { background: #333336; }
+.model-pill-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.model-pill-count { color: #ffc400; font-weight: 800; }
+.model-popover { position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 40; max-height: 220px; overflow: auto; border: 1px solid #dbe2ee; border-radius: 12px; background: #fff; box-shadow: 0 14px 34px #42506a30; padding: 8px 10px; }
+.model-search { margin-bottom: 6px; }
+.model-status-line { display: block; margin: 6px 2px 0; font-size: .72rem; }
 .model-option { justify-content: flex-start; padding: 3px 0; }
 .model-option input { width: auto; }
 .stale-model { justify-content: space-between; color: #805b00; }

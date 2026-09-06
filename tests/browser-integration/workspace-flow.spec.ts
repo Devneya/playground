@@ -68,10 +68,12 @@ const waitForStoredInputCount = async (page: Page, count: number) => {
 
 const selectModels = async (page: Page, modelIds: string[]) => {
   const node = generation(page);
+  await node.getByRole("button", { name: "Generation 1 model picker" }).click();
   for (const modelId of modelIds) {
     const checkbox = node.getByRole("checkbox", { name: `Generation 1 model ${modelId}` });
     if (!(await checkbox.isChecked())) await checkbox.check();
   }
+  await page.keyboard.press("Escape");
   await fitCanvas(page);
 };
 
@@ -341,6 +343,20 @@ test("removes an input edge from its hover midpoint control", async ({ page }) =
   await expect(page.locator(".react-flow__edge")).toHaveCount(0);
 });
 
+test("selects models through the pill picker with search", async ({ page }) => {
+  await prepare(page, "four-models");
+  await signIn(page);
+  await fitCanvas(page);
+  const picker = page.getByRole("button", { name: "Generation 1 model picker" });
+  await expect(picker).toContainText("Select models");
+  await picker.click();
+  await page.getByLabel("Generation 1 model search").fill("model-c");
+  await expect(page.getByRole("checkbox", { name: "Generation 1 model model-a" })).toBeHidden();
+  await page.getByRole("checkbox", { name: "Generation 1 model model-c" }).check();
+  await page.keyboard.press("Escape");
+  await expect(picker).toContainText("model-c (1/4)");
+});
+
 test("rejects an accessible cycle attempt with a visible reason", async ({ page }) => {
   await prepare(page, "default");
   await signIn(page);
@@ -354,7 +370,9 @@ test("rejects an accessible cycle attempt with a visible reason", async ({ page 
   await fitCanvas(page);
   await second.getByRole("combobox", { name: `${secondTitle} input source` }).selectOption({ label: "model-a" });
   await second.getByRole("button", { name: "Add input" }).click();
+  await second.getByRole("button", { name: `${secondTitle} model picker` }).click();
   await second.getByRole("checkbox", { name: `${secondTitle} model model-a` }).check();
+  await page.keyboard.press("Escape");
   await second.getByRole("button", { name: "Run generation" }).click();
   await expect(page.locator(".generated-node")).toHaveCount(2, { timeout: 15_000 });
   const firstInput = generation(page).first().getByLabel("Reconnect input 1");
@@ -381,7 +399,9 @@ test("merges two upstream paths into a second generation", async ({ page }) => {
   await fitCanvas(page);
   await second.getByRole("combobox", { name: `${secondTitle} input source` }).selectOption({ label: "Text 3" });
   await second.getByRole("button", { name: "Add input" }).click();
+  await second.getByRole("button", { name: `${secondTitle} model picker` }).click();
   await second.getByRole("checkbox", { name: `${secondTitle} model model-a` }).check();
+  await page.keyboard.press("Escape");
   await second.getByLabel(`${secondTitle} instruction`).fill("Repeat both branch labels.");
   await second.getByRole("button", { name: "Run generation" }).click();
   await expect(page.locator(".generated-node")).toHaveCount(1, { timeout: 15_000 });
