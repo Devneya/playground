@@ -58,6 +58,7 @@ export const GenerationNode = ({ id, data }: NodeProps<GenerationFlowNode>) => {
       <span className="node-kind generation-kind">Generation</span>
       <strong title={data.title}>{data.title}</strong>
     </header>
+    <ModelPicker title={data.title} modelIds={data.modelIds} models={models} status={modelsStatus} error={modelsError} onReload={reloadModels} onToggle={toggleModel} />
     <label className="node-field">Instruction<textarea className="node-textarea instruction-textarea" aria-label={`${data.title} instruction`} value={data.instruction} onChange={(event) => dispatch({ type: "node/edit-instruction", flowId: activeFlow.id, nodeId: id, instruction: event.target.value })} placeholder="Optional instruction for the model…" /></label>
     <div className="input-order" aria-label="Generation inputs">
       {connectionError && <div className="canvas-notice" role="status">{connectionError}<button type="button" onClick={() => setConnectionError(null)} aria-label="Dismiss connection notice">×</button></div>}
@@ -79,7 +80,6 @@ export const GenerationNode = ({ id, data }: NodeProps<GenerationFlowNode>) => {
         </span>
       </div>)}
     </div>
-    <ModelPicker title={data.title} modelIds={data.modelIds} models={models} status={modelsStatus} error={modelsError} onReload={reloadModels} onToggle={toggleModel} />
     <div className="model-picker">
       {data.modelIds.filter((modelId) => !models.some((model) => model.id === modelId)).map((modelId) => <span className="model-option stale-model" key={modelId}><span>✓ {modelId}</span><button type="button" className="icon-button" onClick={() => toggleModel(modelId)} aria-label={`Remove ${modelId}`}>×</button></span>)}
     </div>
