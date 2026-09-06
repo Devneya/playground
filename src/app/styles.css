@@ -89,13 +89,13 @@ input:focus, textarea:focus { border-color: #b45309; box-shadow: 0 0 0 3px #b453
 .node-content.expanded { max-height: 360px; overflow: auto; }
 .generated-content { min-height: 0; }
 .node-textarea { display: block; height: 110px; border: 0; background: transparent; resize: none; outline: none; }
-.node-field { margin: 4px 14px 0; color: #526179; font-size: .7rem; }
-.instruction-textarea { height: 70px; min-height: 70px; margin: 0; font-size: .74rem; }
+.node-field { margin: 6px 14px 0; color: #526179; font-size: .7rem; }
+.instruction-textarea { height: 52px; min-height: 52px; margin: 0; font-size: .78rem; }
 .node-gent-action { padding: 0 14px 10px; }
 .small-button { border: 0; background: none; color: #8a5a00; padding: 0; font-size: .68rem; font-weight: 750; }
 .field-label { margin-bottom: 6px; color: #526179; font-size: .7rem; font-weight: 750; }
-.input-order, .model-picker { margin: 8px 12px; padding-top: 2px; }
-.input-adder { display: flex; align-items: center; gap: 6px; margin: 7px 0; }
+.input-order, .model-picker { margin: 6px 12px 0; padding-top: 0; }
+.input-adder { display: flex; align-items: center; gap: 6px; margin: 5px 0 1px; }
 .input-adder select, .input-row select { min-width: 0; border: 1px solid #d7dfeb; border-radius: 6px; background: #fff; color: #526179; padding: 4px 5px; font-size: .68rem; }
 .input-adder select { flex: 1; }
 .input-row, .model-option { display: flex; align-items: center; justify-content: space-between; gap: 6px; color: #566274; font-size: .68rem; }
