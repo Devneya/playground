@@ -79,7 +79,7 @@ const selectModels = async (page: Page, modelIds: string[]) => {
 
 const runAndWaitForOutputs = async (page: Page, expectedCount: number) => {
   await fitCanvas(page);
-  await generation(page).getByRole("button", { name: "Run generation" }).click();
+  await generation(page).first().getByRole("button", { name: "Run generation" }).click();
   await expect(page.locator(".generated-node")).toHaveCount(expectedCount, { timeout: 15_000 });
   await expect(page.locator(".generated-content").filter({ hasText: "Mock result" }).first()).toHaveCount(1, { timeout: 15_000 });
   await fitCanvas(page);
@@ -154,12 +154,12 @@ test.describe("mocked workspace flows", () => {
     const secondResult = page.locator(".generated-node").nth(1).locator(".react-flow__handle.source");
     await secondResult.dragTo(second.locator(".react-flow__handle.target"));
     await expect(page.getByRole("status")).toContainText("at most 1 input");
-    await expect(page.locator(".react-flow__edge")).toHaveCount(3);
+  await expect(page.locator(".react-flow__edge")).toHaveCount(4);
     await page.locator(".react-flow__edge-managed.input-edge").first().hover();
     await page.getByRole("button", { name: "Remove connection" }).click();
     await secondResult.dragTo(second.locator(".react-flow__handle.target"));
     await expect(second).toContainText("model-b");
-    await expect(page.locator(".react-flow__edge")).toHaveCount(3);
+  await expect(page.locator(".react-flow__edge")).toHaveCount(4);
   });
 
   test("runs all four selected models and preserves result siblings", async ({ page }) => {
