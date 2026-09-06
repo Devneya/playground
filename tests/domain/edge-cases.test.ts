@@ -14,17 +14,17 @@ const id = (() => { let n = 0; return () => `edge-${n++}`; })();
 const generatedFixture = () => {
   const workspace = createStarterWorkspace(id, clock);
   const flow = workspace.flows[0]!;
-  const prompt = flow.nodes.find((node) => node.data.kind === "prompt")!;
+  const prompt = flow.nodes.find((node) => node.data.kind === "generation")!;
   const output: PlaygroundNode = {
     id: "generated",
     position: { x: 900, y: 120 },
-    data: { kind: "content", origin: "generated", title: "model-a", text: "result", modelId: "model-a", batchId: "batch", executionId: "execution" },
+    data: { kind: "text", origin: "generated", title: "model-a", text: "result", batchId: "batch", executionId: "execution" },
     createdAt: clock.now().toISOString(),
     updatedAt: clock.now().toISOString(),
   };
   const batch: ExecutionBatch = {
     id: "batch",
-    promptNodeId: prompt.id,
+    generationNodeId: prompt.id,
     startedAt: clock.now().toISOString(),
     promptFormatVersion: 1,
     instruction: "",
@@ -38,7 +38,7 @@ describe("domain edge cases", () => {
   it("places a later result column after occupied rectangles", () => {
     const workspace = createStarterWorkspace(id, clock);
     const flow = workspace.flows[0]!;
-    const prompt = flow.nodes.find((node) => node.data.kind === "prompt")!;
+    const prompt = flow.nodes.find((node) => node.data.kind === "generation")!;
     const occupied: PlaygroundNode = { ...flow.nodes[0]!, id: "occupied", position: { x: 860, y: 120 } };
     expect(placeNewResultNodes({ ...flow, nodes: [...flow.nodes, occupied] }, prompt.id, 1)).toEqual([{ x: 440, y: 120 }]);
   });
@@ -62,7 +62,7 @@ describe("domain edge cases", () => {
     const { flow, prompt, output, batch } = generatedFixture();
     const withOutput = { ...flow, nodes: [...flow.nodes, output], edges: [...flow.edges, { id: "result-edge", kind: "result" as const, source: prompt.id, target: output.id }], batches: [batch] };
     const duplicate = duplicateFlowWithFreshIds(withOutput, id, clock);
-    const duplicatedOutput = duplicate.nodes.find((node) => node.data.kind === "content" && node.data.origin === "generated");
+    const duplicatedOutput = duplicate.nodes.find((node) => node.data.kind === "text" && node.data.origin === "generated");
     const duplicatedBatch = duplicate.batches[0];
     expect(duplicatedOutput?.data).toMatchObject({ batchId: duplicatedBatch?.id, executionId: duplicatedBatch?.executions[0]?.id });
     expect(duplicatedBatch?.executions[0]?.outputNodeId).toBe(duplicatedOutput?.id);
@@ -70,7 +70,7 @@ describe("domain edge cases", () => {
 
   it("allows successful generated results and rejects pending ones", () => {
     const { workspace, flow, output, batch } = generatedFixture();
-    const prompt = flow.nodes.find((node) => node.data.kind === "prompt")!;
+    const prompt = flow.nodes.find((node) => node.data.kind === "generation")!;
     const readyFlow = { ...flow, nodes: [...flow.nodes, output], edges: flow.edges.filter((edge) => edge.kind !== "input"), batches: [batch] };
     expect(canAddInputConnection(readyFlow, output.id, prompt.id)).toEqual({ allowed: true });
     const pendingFlow = { ...readyFlow, batches: [{ ...batch, executions: [{ ...batch.executions[0]!, status: "pending" as const }] }] };
@@ -84,7 +84,7 @@ describe("domain edge cases", () => {
     const workspace = createStarterWorkspace(id, clock);
     const flow = workspace.flows[0]!;
     const prompt = flow.nodes[0]!;
-    const invalid = { ...workspace, flows: [{ ...flow, nodes: [...flow.nodes, { ...prompt }], edges: [{ id: "bad", kind: "input" as const, source: "missing", target: prompt.id, order: 5 }], batches: [{ id: "orphan", promptNodeId: "missing", startedAt: clock.now().toISOString(), promptFormatVersion: 1 as const, instruction: "", inputs: [], executions: [] }] }] };
+    const invalid = { ...workspace, flows: [{ ...flow, nodes: [...flow.nodes, { ...prompt }], edges: [{ id: "bad", kind: "input" as const, source: "missing", target: prompt.id, order: 5 }], batches: [{ id: "orphan", generationNodeId: "missing", startedAt: clock.now().toISOString(), promptFormatVersion: 1 as const, instruction: "", inputs: [], executions: [] }] }] };
     const errors = validateWorkspaceInvariants(invalid);
     expect(errors).toEqual(expect.arrayContaining([expect.stringContaining("duplicate node"), expect.stringContaining("missing endpoint"), expect.stringContaining("missing source")]));
   });

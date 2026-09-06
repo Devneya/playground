@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import { toBifrostVirtualKey } from "../../src/api/credentials";
-import { startPromptRun } from "../../src/features/execution/executeGeneration";
+import { startGenerationRun } from "../../src/features/execution/executeGeneration";
 import { createStarterWorkspace } from "../../src/domain/workspaceFactory";
 import type { Clock } from "../../src/domain/types";
 import type { WorkspaceAction } from "../../src/domain/workspaceReducer";
@@ -23,13 +23,13 @@ describe("execution lifecycle guard", () => {
   it("drops completion actions after the owning workspace is gone", async () => {
     const workspace = createStarterWorkspace(() => crypto.randomUUID(), clock);
     const flow = workspace.flows[0]!;
-    const prompt = flow.nodes.find((node) => node.data.kind === "prompt")!;
-    const runFlow = { ...flow, nodes: flow.nodes.map((node) => node.id === prompt.id && node.data.kind === "prompt" ? { ...node, data: { ...node.data, modelIds: ["model-a"] } } : node) };
+    const prompt = flow.nodes.find((node) => node.data.kind === "generation")!;
+    const runFlow = { ...flow, nodes: flow.nodes.map((node) => node.id === prompt.id && node.data.kind === "generation" ? { ...node, data: { ...node.data, modelIds: ["model-a"] } } : node) };
     const actions: WorkspaceAction[] = [];
     let mounted = true;
-    const run = startPromptRun({
+    const run = startGenerationRun({
       flow: runFlow,
-      promptNodeId: prompt.id,
+      generationNodeId: prompt.id,
       virtualKey: toBifrostVirtualKey("sk-bf-test"),
       idFactory: () => crypto.randomUUID(),
       clock,

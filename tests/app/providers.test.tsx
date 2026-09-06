@@ -87,11 +87,11 @@ const staticAuthActions: AuthActions = {
 const WorkspaceProbe = () => {
   const workspace = useWorkspace();
   const flow = workspace.activeFlow;
-  const prompt = flow.nodes.find((node) => node.data.kind === "prompt");
+  const prompt = flow.nodes.find((node) => node.data.kind === "generation");
   const addNode: PlaygroundNode = {
     id: "component-content",
     position: { x: 900, y: 120 },
-    data: { kind: "content", origin: "imported", title: "Component content", text: "" },
+    data: { kind: "text", origin: "manual", title: "Component content", text: "" },
     createdAt: new Date(0).toISOString(),
     updatedAt: new Date(0).toISOString(),
   };
@@ -111,9 +111,9 @@ const WorkspaceProbe = () => {
     <output data-testid="save-status">{workspace.saving ? "saving" : workspace.lastSavedAt ? "saved" : "unsaved"}</output>
     <output data-testid="flow-count">{workspace.workspace.flows.length}</output>
     <output data-testid="batch-count">{flow.batches.length}</output>
-    <output data-testid="text-value">{prompt?.data.kind === "prompt" ? prompt.data.prompt : "missing"}</output>
+    <output data-testid="text-value">{prompt?.data.kind === "generation" ? prompt.data.instruction : "missing"}</output>
     <output data-testid="error">{workspace.error || workspace.modelsError || workspace.keyError || ""}</output>
-    <button type="button" onClick={() => prompt && workspace.dispatch({ type: "node/edit-prompt", flowId: flow.id, nodeId: prompt.id, prompt: "component text" })}>edit</button>
+    <button type="button" onClick={() => prompt && workspace.dispatch({ type: "node/edit-instruction", flowId: flow.id, nodeId: prompt.id, instruction: "component text" })}>edit</button>
     <button type="button" onClick={() => prompt && workspace.dispatch({ type: "node/set-models", flowId: flow.id, nodeId: prompt.id, modelIds: ["model-a"] })}>select</button>
     <button type="button" onClick={() => prompt && void workspace.runPrompt(prompt.id).completed}>run</button>
     <button type="button" onClick={() => workspace.addNode(addNode)}>add</button>
@@ -223,7 +223,7 @@ describe("WorkspaceProvider", () => {
     await waitFor(() => expect(screen.getByTestId("save-status")).toHaveTextContent("saved"));
     await waitFor(async () => {
       const saved = await repository.load("user-a");
-      expect(saved?.flows[0]?.nodes.some((node) => node.data.kind === "prompt" && node.data.prompt === "component text")).toBe(true);
+      expect(saved?.flows[0]?.nodes.some((node) => node.data.kind === "generation" && node.data.instruction === "component text")).toBe(true);
     });
     await user.click(screen.getByRole("button", { name: "run" }));
     await waitFor(() => expect(screen.getByTestId("batch-count")).toHaveTextContent("1"));
@@ -295,14 +295,14 @@ describe("WorkspaceProvider", () => {
     await user.click(screen.getByRole("button", { name: "import-large" }));
     await waitFor(() => expect(screen.getByTestId("action-error")).toHaveTextContent(/too large/i));
     await user.click(screen.getByRole("button", { name: "run-invalid" }));
-    await waitFor(() => expect(screen.getByTestId("action-error")).toHaveTextContent(/prompt node/i));
+    await waitFor(() => expect(screen.getByTestId("action-error")).toHaveTextContent(/generation node/i));
   });
 
   it("restores an existing workspace and reports a failed save", async () => {
     const repository = new InMemoryWorkspaceRepository();
     const saved = createStarterWorkspace(() => crypto.randomUUID());
-    const firstPrompt = saved.flows[0]?.nodes.find((node) => node.data.kind === "prompt");
-    if (firstPrompt?.data.kind === "prompt") firstPrompt.data.prompt = "restored text";
+    const firstPrompt = saved.flows[0]?.nodes.find((node) => node.data.kind === "generation");
+    if (firstPrompt?.data.kind === "generation") firstPrompt.data.instruction = "restored text";
     await repository.save("user-a", saved);
     render(<AuthContext.Provider value={signedInValue(makeSession())}><WorkspaceProvider repository={repository}><WorkspaceProbe /></WorkspaceProvider></AuthContext.Provider>);
     await waitFor(() => expect(screen.getByTestId("text-value")).toHaveTextContent("restored text"));

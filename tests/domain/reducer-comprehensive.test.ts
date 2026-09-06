@@ -12,11 +12,11 @@ const context = { idFactory: ids, clock };
 
 const starter = () => createStarterWorkspace(ids, clock);
 const flowOf = (workspace: WorkspaceDocument) => workspace.flows[0]!;
-const nodeOf = (workspace: WorkspaceDocument, kind: "prompt" | "content") => flowOf(workspace).nodes.find((node) => node.data.kind === kind)!;
+const nodeOf = (workspace: WorkspaceDocument, kind: "generation" | "text") => flowOf(workspace).nodes.find((node) => node.data.kind === kind)!;
 const manualNode = (id: string, title: string, x = 40): PlaygroundNode => ({
   id,
   position: { x, y: 360 },
-  data: { kind: "content", origin: "imported", title, text: `${title} content` },
+  data: { kind: "text", origin: "manual", title, text: `${title} content` },
   createdAt: clock.now().toISOString(),
   updatedAt: clock.now().toISOString(),
 });
@@ -25,20 +25,20 @@ describe("comprehensive domain transitions", () => {
   it("edits every mutable node field while preserving generated immutability", () => {
     let workspace = starter();
     const flow = flowOf(workspace);
-    const prompt = nodeOf(workspace, "prompt");
+    const prompt = nodeOf(workspace, "generation");
     const added = manualNode("extra-text", "Extra");
     workspace = reduceWorkspace(workspace, { type: "node/add", flowId: flow.id, node: added }, context);
     workspace = reduceWorkspace(workspace, { type: "node/move", flowId: flow.id, nodeId: added.id, position: { x: 900, y: 200 } }, context);
     workspace = reduceWorkspace(workspace, { type: "node/rename", flowId: flow.id, nodeId: added.id, title: "Renamed" }, context);
-    workspace = reduceWorkspace(workspace, { type: "node/edit-prompt", flowId: flow.id, nodeId: prompt.id, prompt: "Do the thing" }, context);
+    workspace = reduceWorkspace(workspace, { type: "node/edit-instruction", flowId: flow.id, nodeId: prompt.id, instruction: "Do the thing" }, context);
     workspace = reduceWorkspace(workspace, { type: "node/set-models", flowId: flow.id, nodeId: prompt.id, modelIds: ["one", "two"] }, context);
     const updated = flowOf(workspace).nodes.find((node) => node.id === added.id)!;
     const updatedPrompt = flowOf(workspace).nodes.find((node) => node.id === prompt.id)!;
     expect(updated.position).toEqual({ x: 900, y: 200 });
-    expect(updated.data).toEqual({ kind: "content", origin: "imported", title: "Renamed", text: "Extra content" });
-    expect(updatedPrompt.data).toMatchObject({ kind: "prompt", prompt: "Do the thing", modelIds: ["one", "two"] });
-    expect(prompt.data.kind).toBe("prompt");
-    const generated: PlaygroundNode = { ...manualNode("gen-output", "model-a"), data: { kind: "content", origin: "generated", title: "model-a", text: "out", modelId: "model-a", batchId: "b", executionId: "e" } };
+    expect(updated.data).toEqual({ kind: "text", origin: "manual", title: "Renamed", text: "Extra content" });
+    expect(updatedPrompt.data).toMatchObject({ kind: "generation", instruction: "Do the thing", modelIds: ["one", "two"] });
+    expect(prompt.data.kind).toBe("generation");
+    const generated: PlaygroundNode = { ...manualNode("gen-output", "model-a"), data: { kind: "text", origin: "generated", title: "model-a", text: "out", batchId: "b", executionId: "e" } };
     workspace = reduceWorkspace(workspace, { type: "node/add", flowId: flow.id, node: generated }, context);
     workspace = reduceWorkspace(workspace, { type: "node/rename", flowId: flow.id, nodeId: generated.id, title: "Hacked" }, context);
     expect(flowOf(workspace).nodes.find((node) => node.id === generated.id)?.data).toMatchObject({ title: "model-a" });
@@ -47,7 +47,7 @@ describe("comprehensive domain transitions", () => {
   it("replaces, reconnects, and removes the single input", () => {
     let workspace = starter();
     const flow = flowOf(workspace);
-    const prompt = nodeOf(workspace, "prompt");
+    const prompt = nodeOf(workspace, "generation");
     const first = manualNode("first-text", "First");
     const second = manualNode("second-text", "Second");
     const third = manualNode("third-text", "Third", 720);
@@ -70,12 +70,12 @@ describe("comprehensive domain transitions", () => {
   it("settles successful, failed, and cancelled results without removing siblings", () => {
     const workspace = starter();
     const flow = flowOf(workspace);
-    const prompt = nodeOf(workspace, "prompt");
+    const prompt = nodeOf(workspace, "generation");
     const batchId = "batch-1";
-    const outputNodes = ["out-1", "out-2", "out-3"].map((id, index) => ({ ...manualNode(id, ["alpha", "beta", "gamma"][index]!, 800), data: { kind: "content" as const, origin: "generated" as const, title: ["alpha", "beta", "gamma"][index]!, text: "", modelId: ["alpha", "beta", "gamma"][index]!, batchId, executionId: `exec-${index}` } }));
+    const outputNodes = ["out-1", "out-2", "out-3"].map((id, index) => ({ ...manualNode(id, ["alpha", "beta", "gamma"][index]!, 800), data: { kind: "text" as const, origin: "generated" as const, title: ["alpha", "beta", "gamma"][index]!, text: "", batchId, executionId: `exec-${index}` } }));
     const batch: ExecutionBatch = {
       id: batchId,
-      promptNodeId: prompt.id,
+      generationNodeId: prompt.id,
       startedAt: clock.now().toISOString(),
       promptFormatVersion: 1,
       instruction: "",
@@ -88,7 +88,7 @@ describe("comprehensive domain transitions", () => {
     next = reduceWorkspace(next, { type: "execution/failed", flowId: flow.id, batchId, executionId: "exec-1", error: { kind: "http", status: 503, message: "down" }, durationMs: 5 }, context);
     next = reduceWorkspace(next, { type: "execution/cancelled", flowId: flow.id, batchId, executionId: "exec-2", error: { kind: "cancelled", message: "stopped" }, durationMs: 6 }, context);
     next = reduceWorkspace(next, { type: "batch/completed", flowId: flow.id, batchId, completedAt: clock.now().toISOString() }, context);
-    expect(flowOf(next).nodes.filter((node) => node.data.kind === "content")).toHaveLength(3);
+    expect(flowOf(next).nodes.filter((node) => node.data.kind === "text")).toHaveLength(3);
     expect(flowOf(next).nodes.find((node) => node.id === "out-1")?.data).toMatchObject({ text: "success" });
     expect(flowOf(next).nodes.find((node) => node.id === "out-2")?.data).toMatchObject({ text: "Failed: down" });
     expect(flowOf(next).nodes.find((node) => node.id === "out-3")?.data).toMatchObject({ text: "Cancelled: stopped" });
@@ -98,9 +98,9 @@ describe("comprehensive domain transitions", () => {
   it("removes a result reference and prunes a now-empty batch", () => {
     const workspace = starter();
     const flow = flowOf(workspace);
-    const prompt = nodeOf(workspace, "prompt");
-    const output = { ...manualNode("output", "model-a", 800), data: { kind: "content" as const, origin: "generated" as const, title: "model-a", text: "result", modelId: "model-a", batchId: "batch", executionId: "execution" } };
-    const batch: ExecutionBatch = { id: "batch", promptNodeId: prompt.id, startedAt: clock.now().toISOString(), promptFormatVersion: 1, instruction: "", inputs: [], executions: [{ id: "execution", modelId: "model-a", status: "success", startedAt: clock.now().toISOString(), outputNodeId: output.id }] };
+    const prompt = nodeOf(workspace, "generation");
+    const output = { ...manualNode("output", "model-a", 800), data: { kind: "text" as const, origin: "generated" as const, title: "model-a", text: "result", batchId: "batch", executionId: "execution" } };
+    const batch: ExecutionBatch = { id: "batch", generationNodeId: prompt.id, startedAt: clock.now().toISOString(), promptFormatVersion: 1, instruction: "", inputs: [], executions: [{ id: "execution", modelId: "model-a", status: "success", startedAt: clock.now().toISOString(), outputNodeId: output.id }] };
     const started = reduceWorkspace(workspace, { type: "batch/started", flowId: flow.id, batch, outputNodes: [output], resultEdges: [{ id: "result-edge", kind: "result", source: prompt.id, target: output.id }] }, context);
     const removed = reduceWorkspace(started, { type: "node/delete", flowId: flow.id, nodeId: output.id }, context);
     expect(flowOf(removed).nodes.some((node) => node.id === output.id)).toBe(false);
@@ -110,9 +110,9 @@ describe("comprehensive domain transitions", () => {
   it("deleting a prompt removes its result batch and generated nodes", () => {
     const workspace = starter();
     const flow = flowOf(workspace);
-    const prompt = nodeOf(workspace, "prompt");
-    const output = { ...manualNode("output", "model-a", 800), data: { kind: "content" as const, origin: "generated" as const, title: "model-a", text: "", modelId: "model-a", batchId: "batch", executionId: "execution" } };
-    const batch: ExecutionBatch = { id: "batch", promptNodeId: prompt.id, startedAt: clock.now().toISOString(), promptFormatVersion: 1, instruction: "", inputs: [], executions: [{ id: "execution", modelId: "model-a", status: "pending", startedAt: clock.now().toISOString(), outputNodeId: output.id }] };
+    const prompt = nodeOf(workspace, "generation");
+    const output = { ...manualNode("output", "model-a", 800), data: { kind: "text" as const, origin: "generated" as const, title: "model-a", text: "", batchId: "batch", executionId: "execution" } };
+    const batch: ExecutionBatch = { id: "batch", generationNodeId: prompt.id, startedAt: clock.now().toISOString(), promptFormatVersion: 1, instruction: "", inputs: [], executions: [{ id: "execution", modelId: "model-a", status: "pending", startedAt: clock.now().toISOString(), outputNodeId: output.id }] };
     const started = reduceWorkspace(workspace, { type: "batch/started", flowId: flow.id, batch, outputNodes: [output], resultEdges: [{ id: "result-edge", kind: "result", source: prompt.id, target: output.id }] }, context);
     const removed = reduceWorkspace(started, { type: "node/delete", flowId: flow.id, nodeId: prompt.id }, context);
     expect(flowOf(removed).nodes.some((node) => node.id === prompt.id || node.id === output.id)).toBe(false);
@@ -122,7 +122,7 @@ describe("comprehensive domain transitions", () => {
   it("rejects direct and multi-hop cycles and normalizes input order", () => {
     const workspace = starter();
     const flow = flowOf(workspace);
-    const prompt = nodeOf(workspace, "prompt");
+    const prompt = nodeOf(workspace, "generation");
     const second = manualNode("second", "Second");
     const third = manualNode("third", "Third");
     const graph = { ...flow, nodes: [...flow.nodes, second, third], edges: [
@@ -141,9 +141,9 @@ describe("comprehensive domain transitions", () => {
   it("normalizes pending generated output as interrupted", () => {
     const workspace = starter();
     const flow = flowOf(workspace);
-    const prompt = nodeOf(workspace, "prompt");
-    const output = { ...manualNode("output", "model-a", 800), data: { kind: "content" as const, origin: "generated" as const, title: "model-a", text: "", modelId: "model-a", batchId: "batch", executionId: "execution" } };
-    const batch: ExecutionBatch = { id: "batch", promptNodeId: prompt.id, startedAt: clock.now().toISOString(), promptFormatVersion: 1, instruction: "", inputs: [], executions: [{ id: "execution", modelId: "model-a", status: "pending", startedAt: clock.now().toISOString(), outputNodeId: output.id }] };
+    const prompt = nodeOf(workspace, "generation");
+    const output = { ...manualNode("output", "model-a", 800), data: { kind: "text" as const, origin: "generated" as const, title: "model-a", text: "", batchId: "batch", executionId: "execution" } };
+    const batch: ExecutionBatch = { id: "batch", generationNodeId: prompt.id, startedAt: clock.now().toISOString(), promptFormatVersion: 1, instruction: "", inputs: [], executions: [{ id: "execution", modelId: "model-a", status: "pending", startedAt: clock.now().toISOString(), outputNodeId: output.id }] };
     const next = normalizeInterruptedBatches({ ...workspace, flows: [{ ...flow, nodes: [...flow.nodes, output], batches: [batch] }] }, clock);
     expect(next.flows[0]?.batches[0]?.executions[0]?.error?.kind).toBe("interrupted");
     expect(next.flows[0]?.nodes.find((node) => node.id === output.id)?.data).toMatchObject({ text: "Failed: This run was interrupted when the page closed." });

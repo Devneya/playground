@@ -20,7 +20,7 @@ const expectedBrowserErrors = new WeakMap<Page, Set<string>>();
 const expectedNetworkFailures = new WeakMap<Page, Set<string>>();
 const managedAccounts: RealTestAccount[] = [];
 
-const generation = (page: Page) => page.locator(".prompt-node");
+const generation = (page: Page) => page.locator(".generation-node");
 const fitCanvas = async (page: Page) => page.getByRole("button", { name: "fit view" }).click();
 
 const resetBrowserWorkspace = async (page: Page) => {
@@ -94,11 +94,11 @@ const signOut = async (page: Page) => {
 
 const selectRealModel = async (page: Page): Promise<string> => {
   const node = generation(page);
-  await node.getByRole("button", { name: "Prompt 1 model picker" }).click();
-  const available = await node.locator('input[type="checkbox"]').evaluateAll((inputs) => inputs.map((input) => input.getAttribute("aria-label")?.replace(/^Prompt 1 model /, "")));
+  await node.getByRole("button", { name: "Generation 1 model picker" }).click();
+  const available = await node.locator('input[type="checkbox"]').evaluateAll((inputs) => inputs.map((input) => input.getAttribute("aria-label")?.replace(/^Generation 1 model /, "")));
   const model = configuredModel ?? ["gpt-oss-20b", "gpt-oss-120b"].find((candidate) => available.includes(candidate));
   if (!model || !available.includes(model)) throw new Error("No configured release-test model is available. Available models: " + available.join(", "));
-  await node.getByRole("checkbox", { name: "Prompt 1 model " + model }).check();
+  await node.getByRole("checkbox", { name: "Generation 1 model " + model }).check();
   await page.keyboard.press("Escape");
   await fitCanvas(page);
   return model;
@@ -106,7 +106,7 @@ const selectRealModel = async (page: Page): Promise<string> => {
 
 const runAndExpect = async (page: Page, token: string, expectedCount: number) => {
   await fitCanvas(page);
-  await generation(page).getByRole("button", { name: "Run prompt" }).click();
+  await generation(page).getByRole("button", { name: "Run generation" }).click();
   const result = page.locator(".generated-content").filter({ hasText: token }).first();
   await expect(result).toBeVisible({ timeout: 120_000 });
   await expect(page.locator(".generated-node")).toHaveCount(expectedCount);
@@ -228,7 +228,7 @@ test.describe("real-server functional E2E", () => {
 
   test("real server: authenticates, discovers a model, and completes a generation", async ({ page }) => {
     await signIn(page);
-    await page.getByLabel("Prompt 1 prompt").fill("Release smoke input one. Reply with the token DEVNEYA_SMOKE_ONE and no sensitive information.");
+    await page.getByLabel("Generation 1 instruction").fill("Release smoke input one. Reply with the token DEVNEYA_SMOKE_ONE and no sensitive information.");
     const model = await selectRealModel(page);
     await runAndExpect(page, "DEVNEYA_SMOKE_ONE", 1);
     await expect(page.locator(".generated-node")).toContainText(model);
@@ -236,7 +236,7 @@ test.describe("real-server functional E2E", () => {
 
   test("real server: preserves prompt text and reload persistence", async ({ page }) => {
     await signIn(page);
-    await page.getByLabel("Prompt 1 prompt").fill("Repeat the label ALPHA back verbatim with no sensitive information.");
+    await page.getByLabel("Generation 1 instruction").fill("Repeat the label ALPHA back verbatim with no sensitive information.");
     await selectRealModel(page);
     const result = await runAndExpect(page, "ALPHA", 1);
     const output = await result.textContent();
@@ -244,16 +244,16 @@ test.describe("real-server functional E2E", () => {
     await page.reload({ waitUntil: "domcontentloaded" });
     await expect(page.locator(".canvas-shell")).toBeVisible({ timeout: 60_000 });
     await waitForWorkspaceLoaded(page);
-    await expect(page.getByLabel("Prompt 1 prompt")).toHaveValue("Repeat the label ALPHA back verbatim with no sensitive information.", { timeout: 60_000 });
+    await expect(page.getByLabel("Generation 1 instruction")).toHaveValue("Repeat the label ALPHA back verbatim with no sensitive information.", { timeout: 60_000 });
     await expect(page.locator(".generated-content")).toContainText("ALPHA");
   });
 
   test("real server: preserves the old result across a rerun and export", async ({ page }) => {
     await signIn(page);
-    await page.getByLabel("Prompt 1 prompt").fill("Rerun release smoke input. Reply with DEVNEYA_SMOKE_FIRST and no sensitive information.");
+    await page.getByLabel("Generation 1 instruction").fill("Rerun release smoke input. Reply with DEVNEYA_SMOKE_FIRST and no sensitive information.");
     await selectRealModel(page);
     await runAndExpect(page, "DEVNEYA_SMOKE_FIRST", 1);
-    await page.getByLabel("Prompt 1 prompt").fill("Rerun release smoke input. Reply with DEVNEYA_SMOKE_RERUN and no sensitive information.");
+    await page.getByLabel("Generation 1 instruction").fill("Rerun release smoke input. Reply with DEVNEYA_SMOKE_RERUN and no sensitive information.");
     await runAndExpect(page, "DEVNEYA_SMOKE_RERUN", 2);
     await expect(page.locator(".generated-content").filter({ hasText: "DEVNEYA_SMOKE_FIRST" }).first()).toBeVisible();
     const exported = await exportWorkspace(page);
@@ -269,30 +269,30 @@ test.describe("real-server functional E2E", () => {
 
   test("real server: clears the workspace and logs out", async ({ page }) => {
     await signIn(page);
-    await page.getByLabel("Prompt 1 prompt").fill("REAL_CLEAR_MARKER");
+    await page.getByLabel("Generation 1 instruction").fill("REAL_CLEAR_MARKER");
     await waitForStoredText(page, "REAL_CLEAR_MARKER");
     page.once("dialog", (dialog) => void dialog.accept());
     await page.getByRole("button", { name: "Clear local workspace" }).click();
-    await expect(page.getByLabel("Prompt 1 prompt")).toHaveValue("");
+    await expect(page.getByLabel("Generation 1 instruction")).toHaveValue("");
     await expect.poll(async () => (await storedWorkspaceJson(page)).includes("REAL_CLEAR_MARKER"), { timeout: 30_000 }).toBe(false);
     await page.reload({ waitUntil: "domcontentloaded" });
     await waitForWorkspaceLoaded(page);
-    await expect(page.getByLabel("Prompt 1 prompt")).toHaveValue("");
+    await expect(page.getByLabel("Generation 1 instruction")).toHaveValue("");
     await signOut(page);
   });
 
   test("real server: isolates two release-test accounts", async ({ page }) => {
     await signIn(page, undefined, undefined, 0);
-    await page.getByLabel("Prompt 1 prompt").fill("REAL_USER_A_MARKER");
+    await page.getByLabel("Generation 1 instruction").fill("REAL_USER_A_MARKER");
     await waitForStoredText(page, "REAL_USER_A_MARKER");
     await signOut(page);
     await signIn(page, undefined, undefined, 1);
-    await expect(page.getByLabel("Prompt 1 prompt")).not.toHaveValue("REAL_USER_A_MARKER");
-    await page.getByLabel("Prompt 1 prompt").fill("REAL_USER_B_MARKER");
+    await expect(page.getByLabel("Generation 1 instruction")).not.toHaveValue("REAL_USER_A_MARKER");
+    await page.getByLabel("Generation 1 instruction").fill("REAL_USER_B_MARKER");
     await waitForStoredText(page, "REAL_USER_B_MARKER");
     await signOut(page);
     await signIn(page, undefined, undefined, 0);
-    await expect(page.getByLabel("Prompt 1 prompt")).toHaveValue("REAL_USER_A_MARKER");
+    await expect(page.getByLabel("Generation 1 instruction")).toHaveValue("REAL_USER_A_MARKER");
     await signOut(page);
   });
 

@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import { toBifrostVirtualKey } from "../../src/api/credentials";
-import { startPromptRun } from "../../src/features/execution/executeGeneration";
+import { startGenerationRun } from "../../src/features/execution/executeGeneration";
 import { createStarterWorkspace } from "../../src/domain/workspaceFactory";
 import type { Clock } from "../../src/domain/types";
 import type { WorkspaceAction } from "../../src/domain/workspaceReducer";
@@ -25,27 +25,27 @@ describe("prompt execution", () => {
   const makeRunOptions = (modelIds: string[]) => {
     const workspace = createStarterWorkspace(() => crypto.randomUUID(), clock);
     const flow = workspace.flows[0]!;
-    const prompt = flow.nodes.find((node) => node.data.kind === "prompt")!;
-    const runFlow = { ...flow, nodes: flow.nodes.map((node) => node.id === prompt.id && node.data.kind === "prompt" ? { ...node, data: { ...node.data, modelIds } } : node) };
+    const prompt = flow.nodes.find((node) => node.data.kind === "generation")!;
+    const runFlow = { ...flow, nodes: flow.nodes.map((node) => node.id === prompt.id && node.data.kind === "generation" ? { ...node, data: { ...node.data, modelIds } } : node) };
     return { flow: runFlow, prompt, virtualKey: toBifrostVirtualKey("sk-bf-test"), idFactory: () => crypto.randomUUID(), clock, dispatch: () => {} };
   };
 
   it("rejects invalid run inputs before dispatching a batch", () => {
     const valid = makeRunOptions(["model-a"]);
-    expect(() => startPromptRun({ ...valid, promptNodeId: "missing" })).toThrow("Choose a prompt node");
+    expect(() => startGenerationRun({ ...valid, generationNodeId: "missing" })).toThrow("Choose a Generation node to run.");
     const empty = makeRunOptions([]);
-    expect(() => startPromptRun({ ...empty, promptNodeId: empty.prompt.id })).toThrow("at least one model");
+    expect(() => startGenerationRun({ ...empty, generationNodeId: empty.prompt.id })).toThrow("Choose at least one model before running.");
     const tooMany = makeRunOptions(["a", "b", "c", "d", "e"]);
-    expect(() => startPromptRun({ ...tooMany, promptNodeId: tooMany.prompt.id })).toThrow("no more than 4 models");
-    const oversized = { ...valid, flow: { ...valid.flow, nodes: valid.flow.nodes.map((node) => node.data.kind === "prompt" ? { ...node, data: { ...node.data, prompt: "x".repeat(256 * 1024 + 1) } } : node) } };
-    expect(() => startPromptRun({ ...oversized, promptNodeId: valid.prompt.id })).toThrow("prompt is too large");
+    expect(() => startGenerationRun({ ...tooMany, generationNodeId: tooMany.prompt.id })).toThrow("Choose no more than 4 models.");
+    const oversized = { ...valid, flow: { ...valid.flow, nodes: valid.flow.nodes.map((node) => node.data.kind === "generation" ? { ...node, data: { ...node.data, instruction: "x".repeat(256 * 1024 + 1) } } : node) } };
+    expect(() => startGenerationRun({ ...oversized, generationNodeId: valid.prompt.id })).toThrow("The instruction is too large.");
   });
 
   it("records malformed provider responses as invalid-response failures", async () => {
     server.use(http.post("https://api.devneya.com/llm/v1/chat/completions", () => HttpResponse.json({ choices: [] })));
     const actions: WorkspaceAction[] = [];
     const options = makeRunOptions(["model-invalid"]);
-    const run = startPromptRun({ ...options, promptNodeId: options.prompt.id, dispatch: (action) => actions.push(action) });
+    const run = startGenerationRun({ ...options, generationNodeId: options.prompt.id, dispatch: (action) => actions.push(action) });
     await run.completed;
     const failed = actions.find((action) => action.type === "execution/failed");
     expect(failed?.type).toBe("execution/failed");
@@ -55,10 +55,10 @@ describe("prompt execution", () => {
   it("runs selected models concurrently and records each settlement", async () => {
     const workspace = createStarterWorkspace(() => crypto.randomUUID(), clock);
     const flow = workspace.flows[0]!;
-    const prompt = flow.nodes.find((node) => node.data.kind === "prompt")!;
-    const runFlow = { ...flow, nodes: flow.nodes.map((node) => node.id === prompt.id && node.data.kind === "prompt" ? { ...node, data: { ...node.data, modelIds: ["model-ok", "model-fails"] } } : node) };
+    const prompt = flow.nodes.find((node) => node.data.kind === "generation")!;
+    const runFlow = { ...flow, nodes: flow.nodes.map((node) => node.id === prompt.id && node.data.kind === "generation" ? { ...node, data: { ...node.data, modelIds: ["model-ok", "model-fails"] } } : node) };
     const actions: WorkspaceAction[] = [];
-    const run = startPromptRun({ flow: runFlow, promptNodeId: prompt.id, virtualKey: toBifrostVirtualKey("sk-bf-test"), idFactory: () => crypto.randomUUID(), clock, dispatch: (action) => actions.push(action) });
+    const run = startGenerationRun({ flow: runFlow, generationNodeId: prompt.id, virtualKey: toBifrostVirtualKey("sk-bf-test"), idFactory: () => crypto.randomUUID(), clock, dispatch: (action) => actions.push(action) });
     await run.completed;
     const started = actions.find((action) => action.type === "batch/started");
     expect(started?.type).toBe("batch/started");
@@ -75,7 +75,7 @@ describe("prompt execution", () => {
     server.use(http.post("https://api.devneya.com/llm/v1/chat/completions", () => HttpResponse.error()));
     const actions: WorkspaceAction[] = [];
     const options = makeRunOptions(["model-network"]);
-    const run = startPromptRun({ ...options, promptNodeId: options.prompt.id, dispatch: (action) => actions.push(action) });
+    const run = startGenerationRun({ ...options, generationNodeId: options.prompt.id, dispatch: (action) => actions.push(action) });
     await run.completed;
     const failed = actions.find((action) => action.type === "execution/failed");
     expect(failed?.type).toBe("execution/failed");
@@ -86,7 +86,7 @@ describe("prompt execution", () => {
     server.use(http.post("https://api.devneya.com/llm/v1/chat/completions", () => HttpResponse.json({ error: "plain failure" }, { status: 500 })));
     const actions: WorkspaceAction[] = [];
     const options = makeRunOptions(["model-http"]);
-    const run = startPromptRun({ ...options, promptNodeId: options.prompt.id, dispatch: (action) => actions.push(action) });
+    const run = startGenerationRun({ ...options, generationNodeId: options.prompt.id, dispatch: (action) => actions.push(action) });
     await run.completed;
     const failed = actions.find((action) => action.type === "execution/failed");
     expect(failed?.type).toBe("execution/failed");
@@ -100,10 +100,10 @@ describe("prompt execution", () => {
     }));
     const workspace = createStarterWorkspace(() => crypto.randomUUID(), clock);
     const flow = workspace.flows[0]!;
-    const prompt = flow.nodes.find((node) => node.data.kind === "prompt")!;
-    const runFlow = { ...flow, nodes: flow.nodes.map((node) => node.id === prompt.id && node.data.kind === "prompt" ? { ...node, data: { ...node.data, modelIds: ["slow-model"] } } : node) };
+    const prompt = flow.nodes.find((node) => node.data.kind === "generation")!;
+    const runFlow = { ...flow, nodes: flow.nodes.map((node) => node.id === prompt.id && node.data.kind === "generation" ? { ...node, data: { ...node.data, modelIds: ["slow-model"] } } : node) };
     const actions: WorkspaceAction[] = [];
-    const run = startPromptRun({ flow: runFlow, promptNodeId: prompt.id, virtualKey: toBifrostVirtualKey("sk-bf-test"), idFactory: () => crypto.randomUUID(), clock, dispatch: (action) => actions.push(action) });
+    const run = startGenerationRun({ flow: runFlow, generationNodeId: prompt.id, virtualKey: toBifrostVirtualKey("sk-bf-test"), idFactory: () => crypto.randomUUID(), clock, dispatch: (action) => actions.push(action) });
     run.cancel();
     await run.completed;
     expect(actions.filter((action) => action.type === "execution/cancelled")).toHaveLength(1);
