@@ -12,6 +12,15 @@ export const getInputSnapshots = (flow: FlowDocument, generationNodeId: string):
     const node = getNode(flow, edge.source);
     return isTextNode(node) ? [{ nodeId: node.id, title: node.data.title, text: node.data.text }] : [];
   });
+export const nextGenerationIndex = (flow: FlowDocument): number => {
+  const indices = flow.nodes
+    .filter(isGenerationNode)
+    .map((node) => {
+      const match = /^Generation\s+(\d+)$/.exec(node.data.title);
+      return match ? Number(match[1]) : 0;
+    });
+  return indices.length === 0 ? 1 : Math.max(...indices) + 1;
+};
 
 export const hasDirectedPath = (flow: FlowDocument, fromId: string, toId: string, ignoredEdgeId?: string) => {
   if (fromId === toId) return true;

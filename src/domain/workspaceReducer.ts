@@ -1,5 +1,5 @@
-import type { Clock, ExecutionBatch, ExecutionError, FlowDocument, IdFactory, PlaygroundEdge, PlaygroundNode, WorkspaceDocument } from "./types";
-import { canAddInputConnection, getOrderedInputEdges, normalizeInputOrder } from "./graph";
+import type { Clock, ExecutionBatch, ExecutionError, FlowDocument, IdFactory, InputEdge, PlaygroundEdge, PlaygroundNode, WorkspaceDocument } from "./types";
+import { canAddInputConnection, getOrderedInputEdges, nextGenerationIndex, normalizeInputOrder } from "./graph";
 import { createBlankFlow } from "./workspaceFactory";
 import { isGeneratedTextNode, isGenerationNode, isManualTextNode } from "./types";
 
@@ -18,6 +18,7 @@ export type WorkspaceAction =
   | { type: "node/delete"; flowId: string; nodeId: string }
   | { type: "node/make-editable"; flowId: string; node: PlaygroundNode }
   | { type: "node/duplicate"; flowId: string; node: PlaygroundNode }
+  | { type: "generation/continue"; flowId: string; sourceNodeId: string }
   | { type: "input/add"; flowId: string; edge: PlaygroundEdge }
   | { type: "input/reconnect"; flowId: string; edgeId: string; source: string; target: string }
   | { type: "input/remove"; flowId: string; edgeId: string }
@@ -81,6 +82,31 @@ export const reduceWorkspace = (workspace: WorkspaceDocument, action: WorkspaceA
     case "node/delete": return updateFlow(workspace, action.flowId, context, (flow) => removePromptTree(flow, action.nodeId));
     case "node/make-editable": return updateFlow(workspace, action.flowId, context, (flow) => ({ ...flow, nodes: [...flow.nodes, action.node] }));
     case "node/duplicate": return updateFlow(workspace, action.flowId, context, (flow) => ({ ...flow, nodes: [...flow.nodes, action.node] }));
+    case "generation/continue": {
+      const flow = workspace.flows.find((candidate) => candidate.id === action.flowId);
+      if (!flow) return workspace;
+      const source = flow.nodes.find((node) => node.id === action.sourceNodeId);
+      if (!isGeneratedTextNode(source)) return workspace;
+      const batch = flow.batches.find((candidate) => candidate.id === source.data.batchId);
+      const execution = batch?.executions.find((candidate) => candidate.id === source.data.executionId);
+      if (!execution || execution.status !== "success") return workspace;
+      const parent = batch ? flow.nodes.find((node) => node.id === batch.generationNodeId) : undefined;
+      const modelIds = isGenerationNode(parent) ? [...parent.data.modelIds] : [];
+      const newId = context.idFactory();
+      const now = context.clock.now().toISOString();
+      // Continuation nodes stack below the result, reading top→down like a chat.
+      const stack = flow.edges.filter((edge) => edge.kind === "input" && edge.source === source.id).length;
+      const position = { x: source.position.x, y: source.position.y + 260 * (stack + 1) };
+      const newGeneration: PlaygroundNode = {
+        id: newId,
+        position,
+        data: { kind: "generation", title: `Generation ${nextGenerationIndex(flow)}`, instruction: "", modelIds },
+        createdAt: now,
+        updatedAt: now,
+      };
+      const edge: InputEdge = { id: context.idFactory(), kind: "input", source: source.id, target: newId, order: getOrderedInputEdges(flow, newId).length };
+      return updateFlow(workspace, action.flowId, context, (targetFlow) => ({ ...targetFlow, nodes: [...targetFlow.nodes, newGeneration], edges: normalizeInputOrder([...targetFlow.edges, edge], newId) }));
+    }
     case "viewport/update": return updateFlow(workspace, action.flowId, context, (flow) => ({ ...flow, viewport: { ...action.viewport } }));
     case "input/add": {
       return updateFlow(workspace, action.flowId, context, (flow) => {
