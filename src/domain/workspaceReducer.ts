@@ -99,9 +99,19 @@ export const reduceWorkspace = (workspace: WorkspaceDocument, action: WorkspaceA
       // answer thread readable top→down. The branch index is the number of
       // existing continuation edges already descending from this result.
       const branchIndex = flow.edges.filter((edge) => edge.kind === "input" && edge.source === source.id).length;
+      // The continuation row sits one stride below the result. Never land on a
+      // column that already holds a node at that row — scan outward from the
+      // branch index for the first free slot. A 2-model run leaves each model's
+      // auto-continuation one column over, so a parallel fork from the first
+      // result would otherwise drop exactly on top of its sibling.
+      const continuationY = source.position.y + RESULT_TO_CONTINUATION_STRIDE;
+      let branchColumn = branchIndex;
+      while (flow.nodes.some((node) => node.position.x === source.position.x + branchColumn * RESULT_COL_STRIDE && node.position.y === continuationY)) {
+        branchColumn += 1;
+      }
       const position = {
-        x: source.position.x + branchIndex * RESULT_COL_STRIDE,
-        y: source.position.y + RESULT_TO_CONTINUATION_STRIDE,
+        x: source.position.x + branchColumn * RESULT_COL_STRIDE,
+        y: continuationY,
       };
       const newId = context.idFactory();
       const now = context.clock.now().toISOString();

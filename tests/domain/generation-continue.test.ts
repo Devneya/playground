@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { reduceWorkspace } from "../../src/domain/workspaceReducer";
 import { emptyHistory, isHistoryAction, pushHistory } from "../../src/domain/workspaceHistory";
 import type { Clock, IdFactory, WorkspaceDocument } from "../../src/domain/types";
+import { RESULT_COL_STRIDE, RESULT_TO_CONTINUATION_STRIDE } from "../../src/domain/resultPlacement";
 
 const ids = (() => { let index = 0; return () => `id-${index++}`; })();
 const clock: Clock = { now: () => new Date("2026-01-01T00:00:00.000Z") };
@@ -115,4 +116,71 @@ describe("generation/continue", () => {
     expect(secondGen.position).toEqual({ x: 620, y: 260 });
     expect(second.flows[0]!.edges).toHaveLength(2);
   });
+  it("never overlaps a sibling auto-continuation when forking a 2-model result", () => {
+    // Mirrors the user's natural 2-model flow: a Generation with two models
+    // produces two side-by-side results (model-a @ col 0, model-b @ col 1) and
+    // two auto-continuations (gen-a below model-a, gen-b below model-b). The
+    // model-a result already carries one input edge (to gen-a), so branchIndex
+    // is 1 and the naive placement would drop the fork at model-a.x + 520 =
+    // model-b.x — exactly on top of gen-b. The scan must skip to the next free
+    // column.
+    const initial = buildTwoModelWorkspace();
+    const result = reduceWorkspace(initial, { type: "generation/continue", flowId: "flow-1", sourceNodeId: "res-a" }, context);
+    const flow = result.flows[0]!;
+
+    const newGen = flow.nodes.find((node) => !["gen-1", "res-a", "res-b", "gen-a", "gen-b"].includes(node.id))!;
+    // source res-a at x:0; branchIndex 1 collides with gen-b at x:520; the first
+    // free column is k=2 → x 1040, still on the continuation row (y 460).
+    expect(newGen.position).toEqual({ x: 0 + 2 * RESULT_COL_STRIDE, y: 300 + RESULT_TO_CONTINUATION_STRIDE });
+
+    // No two nodes share a (x, y) slot.
+    const slots = new Set(flow.nodes.map((node) => `${node.position.x},${node.position.y}`));
+    expect(slots.size).toBe(flow.nodes.length);
+
+    // The branchIndex-only placement would have collided with gen-b. If someone
+    // reverts the scan, newGen.x === 520 and two nodes share (520, 460), so this
+    // pair of assertions fails — proving the test guards the fix.
+    const collisionX = 0 + 1 * RESULT_COL_STRIDE;
+    expect(flow.nodes.some((node) => node.position.x === collisionX && node.position.y === 300 + RESULT_TO_CONTINUATION_STRIDE)).toBe(true);
+    expect(newGen.position.x).not.toBe(collisionX);
+  });
+});
+
+const buildTwoModelWorkspace = (): WorkspaceDocument => ({
+  schemaVersion: 3,
+  activeFlowId: "flow-1",
+  createdAt: clock.now().toISOString(),
+  updatedAt: clock.now().toISOString(),
+  flows: [{
+    id: "flow-1",
+    name: "Flow",
+    nodes: [
+      { id: "gen-1", position: { x: 0, y: 0 }, data: { kind: "generation", title: "Generation 1", instruction: "", modelIds: ["model-a", "model-b"] }, createdAt: clock.now().toISOString(), updatedAt: clock.now().toISOString() },
+      { id: "res-a", position: { x: 0, y: 300 }, data: { kind: "text", origin: "generated", title: "model-a", text: "a", batchId: "batch-1", executionId: "exec-a" }, createdAt: clock.now().toISOString(), updatedAt: clock.now().toISOString() },
+      { id: "res-b", position: { x: 520, y: 300 }, data: { kind: "text", origin: "generated", title: "model-b", text: "b", batchId: "batch-1", executionId: "exec-b" }, createdAt: clock.now().toISOString(), updatedAt: clock.now().toISOString() },
+      { id: "gen-a", position: { x: 0, y: 460 }, data: { kind: "generation", title: "Generation 2", instruction: "", modelIds: ["model-a", "model-b"] }, createdAt: clock.now().toISOString(), updatedAt: clock.now().toISOString() },
+      { id: "gen-b", position: { x: 520, y: 460 }, data: { kind: "generation", title: "Generation 3", instruction: "", modelIds: ["model-a", "model-b"] }, createdAt: clock.now().toISOString(), updatedAt: clock.now().toISOString() },
+    ],
+    edges: [
+      { id: "re-a", kind: "result", source: "gen-1", target: "res-a", sourceHandle: "flow-bottom", targetHandle: "flow-top" },
+      { id: "re-b", kind: "result", source: "gen-1", target: "res-b", sourceHandle: "flow-bottom", targetHandle: "flow-top" },
+      { id: "ie-a", kind: "input", source: "res-a", target: "gen-a", sourceHandle: "flow-bottom", targetHandle: "flow-top", order: 0 },
+      { id: "ie-b", kind: "input", source: "res-b", target: "gen-b", sourceHandle: "flow-bottom", targetHandle: "flow-top", order: 0 },
+    ],
+    batches: [{
+      id: "batch-1",
+      generationNodeId: "gen-1",
+      startedAt: clock.now().toISOString(),
+      promptFormatVersion: 1,
+      instruction: "",
+      inputs: [],
+      executions: [
+        { id: "exec-a", modelId: "model-a", status: "success", startedAt: clock.now().toISOString(), completedAt: clock.now().toISOString(), durationMs: 1, outputNodeId: "res-a" },
+        { id: "exec-b", modelId: "model-b", status: "success", startedAt: clock.now().toISOString(), completedAt: clock.now().toISOString(), durationMs: 1, outputNodeId: "res-b" },
+      ],
+    }],
+    viewport: { x: 0, y: 0, zoom: 1 },
+    createdAt: clock.now().toISOString(),
+    updatedAt: clock.now().toISOString(),
+  }],
 });
