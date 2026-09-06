@@ -153,7 +153,7 @@ test.describe("mocked workspace flows", () => {
     await expect(second).toContainText("model-a");
     const secondResult = page.locator(".generated-node").nth(1).locator(".react-flow__handle.source");
     await secondResult.dragTo(second.locator(".react-flow__handle.target"));
-    await expect(page.getByRole("status")).toContainText("at most 1 inputs");
+    await expect(page.getByRole("status")).toContainText("at most 1 input");
     await expect(page.locator(".react-flow__edge")).toHaveCount(3);
     await page.locator(".react-flow__edge-managed.input-edge").first().hover();
     await page.getByRole("button", { name: "Remove connection" }).click();

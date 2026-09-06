@@ -80,7 +80,7 @@ describe("workspace invariant branch matrix", () => {
     const first = manual("first");
     const connected = { ...flow, nodes: [...flow.nodes, first], edges: [...flow.edges, { id: "first-input", kind: "input" as const, source: first.id, target: prompt.id, order: 0 }] };
     const extra = manual("source-extra");
-    expect(canAddInputConnection({ ...connected, nodes: [...connected.nodes, extra] }, extra.id, prompt.id)).toMatchObject({ allowed: false, reason: "A Generation node can have at most 1 inputs." });
+    expect(canAddInputConnection({ ...connected, nodes: [...connected.nodes, extra] }, extra.id, prompt.id)).toMatchObject({ allowed: false, reason: "A Generation node can have at most 1 input." });
     expect(canAddInputConnection(connected, first.id, prompt.id)).toMatchObject({ allowed: false, reason: "That Text node is already connected." });
     const fresh = manual("fresh");
     expect(canAddInputConnection({ ...flow, nodes: [...flow.nodes, fresh] }, fresh.id, prompt.id)).toEqual({ allowed: true });

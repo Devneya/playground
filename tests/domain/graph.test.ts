@@ -32,7 +32,7 @@ describe("graph invariants", () => {
     const connected = { ...withContent, edges: [...withContent.edges, { id: "e1", kind: "input" as const, source: "c1", target: prompt.id, order: 0 }] };
     expect(canAddInputConnection(connected, "c1", prompt.id)).toEqual({ allowed: false, reason: "That Text node is already connected." });
     const extra = { ...connected, nodes: [...connected.nodes, content("c2", "Other")] };
-    expect(canAddInputConnection(extra, "c2", prompt.id)).toEqual({ allowed: false, reason: "A Generation node can have at most 1 inputs." });
+    expect(canAddInputConnection(extra, "c2", prompt.id)).toEqual({ allowed: false, reason: "A Generation node can have at most 1 input." });
   });
 
   it("rejects a cycle and unavailable generated result as an input", () => {
