@@ -28,6 +28,11 @@ export const ManagedEdge = ({ id, sourceX, sourceY, targetX, targetY, sourcePosi
     hideTimer.current = setTimeout(() => setHovered(false), HIDE_DELAY_MS);
   };
   const [edgePath, labelX, labelY] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition });
+  const dx = targetX - sourceX;
+  const dy = targetY - sourceY;
+  const len = Math.hypot(dx, dy) || 1;
+  const zoneX = labelX + (-dy / len) * 34;
+  const zoneY = labelY + (dx / len) * 34;
   const removable = (data as { kind?: string } | undefined)?.kind === "input";
   const remove = (event: React.MouseEvent) => {
     event.stopPropagation();
@@ -39,7 +44,8 @@ export const ManagedEdge = ({ id, sourceX, sourceY, targetX, targetY, sourcePosi
       <BaseEdge id={id} path={edgePath} markerStart={markerStart ?? ""} markerEnd={markerEnd ?? ""} />
     </g>
     <EdgeLabelRenderer>
-      {hovered && removable && <div className="managed-edge-control nodrag nopan" style={{ left: labelX, top: labelY }} onMouseEnter={show} onMouseLeave={scheduleHide}>
+      {removable && <div className="managed-edge-hoverzone nodrag nopan" style={{ left: zoneX, top: zoneY }} onMouseEnter={show} onMouseLeave={scheduleHide} aria-hidden="true" />}
+      {hovered && removable && <div className="managed-edge-control nodrag nopan" style={{ left: zoneX, top: zoneY }} onMouseEnter={show} onMouseLeave={scheduleHide}>
         <button type="button" aria-label="Remove connection" onClick={remove}>×</button>
       </div>}
     </EdgeLabelRenderer>

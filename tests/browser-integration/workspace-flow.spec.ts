@@ -155,7 +155,7 @@ test.describe("mocked workspace flows", () => {
     await secondResult.dragTo(second.locator(".react-flow__handle.target"));
     await expect(page.getByRole("status")).toContainText("at most 1 input");
   await expect(page.locator(".react-flow__edge")).toHaveCount(5);
-    await page.locator(".react-flow__edge-managed.input-edge").last().hover();
+    await page.locator(".managed-edge-hoverzone").last().hover();
     await page.getByRole("button", { name: "Remove connection" }).click();
     await secondResult.dragTo(second.locator(".react-flow__handle.target"));
     await expect(second).toContainText("model-b");
@@ -350,7 +350,7 @@ test("removes an input edge from its hover midpoint control", async ({ page }) =
   await page.locator(".generated-node").first().locator(".react-flow__handle.source").dragTo(second.locator(".react-flow__handle.target"));
   const removeButton = page.getByRole("button", { name: "Remove connection" });
   await expect(removeButton).toBeHidden();
-  await page.locator(".react-flow__edge-managed.input-edge").last().hover();
+  await page.locator(".managed-edge-hoverzone").last().hover();
   await expect(removeButton).toBeVisible();
   await removeButton.click();
   await expect(second).toContainText("Context (0)");
@@ -382,7 +382,7 @@ test("threads a result into a second prompt and refuses the cycle back", async (
   const outputHandle = page.locator(".generated-node").first().locator(".react-flow__handle.source");
   await outputHandle.dragTo(second.locator(".react-flow__handle.target"));
   await expect(second).toContainText("model-a");
-  await page.locator(".react-flow__edge-managed.input-edge").first().hover();
+  await page.locator(".managed-edge-hoverzone").first().hover();
   await page.getByRole("button", { name: "Remove connection" }).click();
   await page.locator(".generated-node").first().locator(".react-flow__handle.source").dragTo(generation(page).first().locator(".react-flow__handle.target"));
   await expect(page.getByRole("status")).toContainText("cycle");
