@@ -9,6 +9,12 @@ export const TextNode = ({ id, data }: NodeProps<TextFlowNode>) => {
   const { activeFlow, dispatch } = useWorkspace();
   const generated = data.origin === "generated";
   const [expanded, setExpanded] = useState(false);
+  const executionSucceeded = data.origin === "generated" && (() => {
+    const batch = activeFlow.batches.find((candidate) => candidate.id === data.batchId);
+    const execution = batch?.executions.find((candidate) => candidate.id === data.executionId);
+    return execution?.status === "success";
+  })();
+  const continueGeneration = () => dispatch({ type: "generation/continue", flowId: activeFlow.id, sourceNodeId: id });
   const makeEditable = () => {
     const source = activeFlow.nodes.find((node) => node.id === id);
     const position = source?.position ?? { x: 0, y: 0 };
@@ -38,6 +44,6 @@ export const TextNode = ({ id, data }: NodeProps<TextFlowNode>) => {
     {generated ? <div className={`node-content generated-content ${expanded ? "expanded" : ""}`} onClick={() => setExpanded((value) => !value)} role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") setExpanded((value) => !value); }}>
       {data.text || "Waiting for model output…"}
     </div> : <textarea className="node-textarea manual-textarea" aria-label={`${data.title} text`} value={data.text} onChange={(event) => dispatch({ type: "node/edit-text", flowId: activeFlow.id, nodeId: id, text: event.target.value })} placeholder="Write text to pass into a Generation node…" />}
-    {generated && <div className="node-gent-action"><button type="button" className="small-button" onClick={makeEditable}>Make editable</button></div>}
+    {generated && <div className="node-gent-action"><button type="button" className="small-button" onClick={makeEditable}>Make editable</button>{executionSucceeded && <button type="button" className="small-button" onClick={continueGeneration}>Continue</button>}</div>}
   </article>;
 };
