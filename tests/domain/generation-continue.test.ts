@@ -45,8 +45,10 @@ describe("generation/continue", () => {
 
     const newGen = flow.nodes.find((node) => node.id !== "gen-1" && node.id !== "res-1")!;
     expect(newGen.data).toMatchObject({ kind: "generation", title: "Generation 2", instruction: "", modelIds: ["m1", "m2"] });
-    // Continuation stacks directly below the result, reading top→down like a chat.
-    expect(newGen.position).toEqual({ x: 100, y: 360 });
+    // First continuation descends directly below the result; later Continues
+    // from the same result fork into a parallel column (the branch index).
+    // res at (100,100); RESULT_TO_CONTINUATION_STRIDE = 160 → y 260.
+    expect(newGen.position).toEqual({ x: 100, y: 260 });
 
     const edge = flow.edges[0]!;
     expect(edge).toMatchObject({ kind: "input", source: "res-1", target: newGen.id });
@@ -99,5 +101,18 @@ describe("generation/continue", () => {
     // An imported workspace is left untouched — no continuation spawn.
     const imported = reduceWorkspace(initial, { type: "workspace/imported", workspace: initial }, context);
     expect(imported.flows[0]!.nodes).toHaveLength(2);
+  });
+  it("forks a second continuation from the same result into a parallel column", () => {
+    const initial = buildWorkspace();
+    const first = reduceWorkspace(initial, { type: "generation/continue", flowId: "flow-1", sourceNodeId: "res-1" }, context);
+    const firstGen = first.flows[0]!.nodes.find((node) => node.id !== "gen-1" && node.id !== "res-1")!;
+    // First continuation sits directly below the result (res at x:100,y:100, stride 160).
+    expect(firstGen.position).toEqual({ x: 100, y: 260 });
+
+    const second = reduceWorkspace(first, { type: "generation/continue", flowId: "flow-1", sourceNodeId: "res-1" }, context);
+    const secondGen = second.flows[0]!.nodes.find((node) => node.id !== "gen-1" && node.id !== "res-1" && node.id !== firstGen.id)!;
+    // Second continuation forks one column to the right (RESULT_COL_STRIDE = 520), sharing the first's y.
+    expect(secondGen.position).toEqual({ x: 620, y: 260 });
+    expect(second.flows[0]!.edges).toHaveLength(2);
   });
 });

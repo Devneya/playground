@@ -27,11 +27,14 @@ describe("workspace boundaries", () => {
     expect(uniqueFlowName(["Untitled flow", "Untitled flow 2"])).toBe("Untitled flow 3");
   });
 
-  it("places result nodes in a free column and handles invalid placement requests", () => {
+  it("places result nodes in a horizontal row below the generation and handles invalid placement requests", () => {
     const workspace = createStarterWorkspace(() => crypto.randomUUID(), clock);
     const flow = workspace.flows[0]!;
     const prompt = flow.nodes.find((node) => isGenerationNode(node))!;
-    expect(placeNewResultNodes(flow, prompt.id, 2)).toEqual([{ x: 440, y: 120 }, { x: 800, y: 120 }]);
+    // Results stack in a row directly below the generation (gen at x:80,y:120);
+    // result_i is one column to the right (RESULT_COL_STRIDE = 520), each at
+    // gen.y + GEN_TO_RESULT_STRIDE (300).
+    expect(placeNewResultNodes(flow, prompt.id, 2)).toEqual([{ x: 80, y: 420 }, { x: 600, y: 420 }]);
     expect(placeNewResultNodes(flow, "missing", 2)).toEqual([]);
     expect(placeNewResultNodes(flow, prompt.id, 0)).toEqual([]);
   });

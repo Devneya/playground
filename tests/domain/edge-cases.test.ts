@@ -35,12 +35,14 @@ const generatedFixture = () => {
 };
 
 describe("domain edge cases", () => {
-  it("places a later result column after occupied rectangles", () => {
+  it("shifts a result row below an occupied rectangle", () => {
     const workspace = createStarterWorkspace(id, clock);
     const flow = workspace.flows[0]!;
     const prompt = flow.nodes.find((node) => node.data.kind === "generation")!;
-    const occupied: PlaygroundNode = { ...flow.nodes[0]!, id: "occupied", position: { x: 860, y: 120 } };
-    expect(placeNewResultNodes({ ...flow, nodes: [...flow.nodes, occupied] }, prompt.id, 1)).toEqual([{ x: 440, y: 120 }]);
+    // The first result row would land at (80,420); an occupied node there
+    // forces the row one stride down to (80,880).
+    const occupied: PlaygroundNode = { ...flow.nodes[0]!, id: "occupied", position: { x: 80, y: 420 } };
+    expect(placeNewResultNodes({ ...flow, nodes: [...flow.nodes, occupied] }, prompt.id, 1)).toEqual([{ x: 80, y: 880 }]);
   });
 
   it("covers identity, size, and naming helpers", () => {
