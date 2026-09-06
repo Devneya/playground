@@ -69,6 +69,11 @@ export const WorkspaceCanvas = () => {
       <Controls position="bottom-left" />
       <ViewportFitter flowId={activeFlow.id} hasNodes={nodes.length > 0} storedViewport={activeFlow.viewport} />
     </ReactFlow>
+    {activeFlow.nodes.length === 0 && (
+      <div className="canvas-empty" role="status">
+        <p>Write an instruction and run it. Each answer gets its own prompt box below — keep the thread going or fork it with Continue.</p>
+      </div>
+    )}
     {notice && <div className="canvas-notice" role="status">{notice}<button type="button" onClick={() => setNotice(null)} aria-label="Dismiss notice">×</button></div>}
   </section>;
 };

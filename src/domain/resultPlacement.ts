@@ -10,8 +10,11 @@ export const placeNewResultNodes = (flow: FlowDocument, generationNodeId: string
   if (!generation || count < 1) return [];
   const occupied = flow.nodes.filter((node) => node.id !== generationNodeId).map((node) => rectFor(node.position));
   for (let column = 1; column < 1000; column += 1) {
-    const positions = Array.from({ length: count }, (_, index) => ({ x: generation.position.x + column * LAYOUT.horizontalStride, y: generation.position.y + index * LAYOUT.verticalStride }));
+    const xBase = generation.position.x + column * LAYOUT.horizontalStride;
+    // Sibling results sit side by side in a horizontal row so each one can
+    // continue its own thread straight downward (the fork point).
+    const positions = Array.from({ length: count }, (_, index) => ({ x: xBase + index * LAYOUT.horizontalStride, y: generation.position.y }));
     if (positions.every((position) => !occupied.some((existing) => overlaps(rectFor(position), existing)))) return positions;
   }
-  return Array.from({ length: count }, (_, index) => ({ x: generation.position.x + 1000 * LAYOUT.horizontalStride, y: generation.position.y + index * LAYOUT.verticalStride }));
+  return Array.from({ length: count }, (_, index) => ({ x: generation.position.x + 1000 * LAYOUT.horizontalStride + index * LAYOUT.horizontalStride, y: generation.position.y }));
 };
