@@ -37,8 +37,13 @@ const makeSession = (identity: MockIdentity): Session => ({
 
 export const MockAuthProvider = ({ children }: PropsWithChildren) => {
   const [state, setState] = useState<AuthState>(() => {
-    const storedEmail = globalThis.localStorage?.getItem("devneya-mock-auth-email");
+    const storedEmail =
+      globalThis.localStorage?.getItem("devneya-mock-auth-email") ??
+      globalThis.sessionStorage?.getItem("devneya-mock-auth-email");
     if (!storedEmail) return { session: null, user: null, initializing: false, recovery: false };
+    // An already-open tab may still hold the old session in sessionStorage; copy
+    // it into localStorage so its next reload does not log the user out again.
+    globalThis.localStorage?.setItem("devneya-mock-auth-email", storedEmail);
     const session = makeSession(identityForEmail(storedEmail));
     return { session, user: session.user, initializing: false, recovery: false };
   });
