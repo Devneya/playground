@@ -164,9 +164,9 @@ input:focus, textarea:focus { border-color: #b45309; box-shadow: 0 0 0 3px #b453
   .canvas-topbar .flow-title { max-width: 125px; }
   .canvas-topbar .save-status { font-size: 10px; }
   .spatial-chat .canvas-shell { padding-left: 0; margin-bottom: 84px; }
-  .spatial-chat .canvas-toolbar-floating { top: auto; bottom: 0; left: 0; right: 0; transform: none; flex-direction: row; flex-wrap: wrap; justify-content: center; border-radius: 0; padding: 2px; }
-  .spatial-chat .canvas-toolbar-floating button { min-width: 0; padding: 4px 8px; }
-  .spatial-chat .canvas-navigation { flex-basis: 100%; margin-top: 1px; padding-top: 1px; }
+  .spatial-chat .canvas-toolbar-floating { top: auto; bottom: 0; left: 0; right: 0; transform: none; display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 0; border-radius: 0; padding: 2px; }
+  .spatial-chat .canvas-toolbar-floating button { min-width: 0; padding: 4px 0; }
+  .spatial-chat .canvas-navigation { grid-column: 1 / -1; margin-top: 1px; padding-top: 1px; }
   .spatial-chat .canvas-navigation .react-flow__controls { display: flex; flex-direction: row; justify-content: center; gap: 12px; }
   .flows-popover { left: 15px; width: min(270px, calc(100vw - 30px)); }
 }
