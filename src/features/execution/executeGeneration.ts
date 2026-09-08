@@ -1,10 +1,11 @@
 import { createChatCompletion } from "../../api/completions";
 import type { BifrostVirtualKey } from "../../api/credentials";
 import { normalizeApiError } from "../../api/errors";
-import { buildCompletionMessagesV1 } from "../../domain/completion";
+import { buildConversationMessages, getConversationPath } from "../../domain/conversation";
 import { getInputSnapshots, getNode } from "../../domain/graph";
 import { LIMITS, utf8ByteLength } from "../../domain/limits";
-import { placeNewResultNodes } from "../../domain/resultPlacement";
+import { placeNewResultNodes, RESULT_COL_STRIDE } from "../../domain/resultPlacement";
+import { cardHeight } from "../../domain/spatialLayout";
 import type { Clock, ExecutionBatch, ExecutionError, FlowDocument, IdFactory, PlaygroundEdge, PlaygroundNode, Usage } from "../../domain/types";
 import { isGenerationNode } from "../../domain/types";
 import type { WorkspaceAction } from "../../domain/workspaceReducer";
@@ -48,19 +49,21 @@ export const startGenerationRun = (options: RunOptions): GenerationRun => {
   const emit = (action: WorkspaceAction) => {
     if (canDispatch()) dispatch(action);
   };
-  const generation = getNode(flow, generationNodeId);
-  if (!isGenerationNode(generation)) throw new Error("Choose a Generation node to run.");
-  const modelIds = [...generation.data.modelIds];
+  const prompt = getNode(flow, generationNodeId);
+  if (!isGenerationNode(prompt)) throw new Error("Choose a prompt to send.");
+  const modelIds = [...prompt.data.modelIds];
   if (modelIds.length === 0) throw new Error("Choose at least one model before running.");
   if (modelIds.length > LIMITS.maxModelsPerBatch) throw new Error(`Choose no more than ${LIMITS.maxModelsPerBatch} models.`);
-  const inputs = getInputSnapshots(flow, generation.id);
-  const instruction = generation.data.instruction;
-  const messages = buildCompletionMessagesV1(inputs, instruction);
-  if (utf8ByteLength(messages[0]?.content ?? "") > LIMITS.maxPromptBytes) throw new Error("The generated prompt is too large.");
+  const inputs = getInputSnapshots(flow, prompt.id);
+  const instruction = prompt.data.instruction;
+  if (utf8ByteLength(instruction) > LIMITS.maxTextBytes) throw new Error("The instruction is too large.");
+  const context = getConversationPath(flow, prompt.id);
+  const messages = buildConversationMessages(flow, prompt.id, context);
+  if (utf8ByteLength(JSON.stringify(messages)) > LIMITS.maxPromptBytes) throw new Error("This conversation is too large to send. Start a new conversation with a shorter summary.");
 
   const batchId = idFactory();
   const startedAt = clock.now().toISOString();
-  const positions = placeNewResultNodes(flow, generation.id, modelIds.length);
+  const positions = placeNewResultNodes(flow, prompt.id, modelIds.length);
   const executions = modelIds.map((modelId, index) => ({
     id: idFactory(),
     modelId,
@@ -69,21 +72,30 @@ export const startGenerationRun = (options: RunOptions): GenerationRun => {
     outputNodeId: idFactory(),
     position: positions[index],
   }));
-  const outputNodes: PlaygroundNode[] = executions.map((execution) => ({
+  const descendants = new Set(flow.edges.filter((edge) => edge.kind === "result" && edge.source === prompt.id).map((edge) => edge.target));
+  for (let pass = 0; pass < flow.nodes.length; pass += 1) {
+    const before = descendants.size;
+    flow.edges.forEach((edge) => { if (descendants.has(edge.source)) descendants.add(edge.target); });
+    if (descendants.size === before) break;
+  }
+  const anchor = flow.nodes.filter((node) => descendants.has(node.id)).reduce((lowest, node) => node.position.y + cardHeight(node) > lowest.position.y + cardHeight(lowest) ? node : lowest, prompt);
+  const outputNodes: PlaygroundNode[] = executions.map((execution, index) => ({
     id: execution.outputNodeId,
-    position: execution.position ?? { x: generation.position.x + 360, y: generation.position.y },
+    position: execution.position ?? { x: prompt.position.x + 360, y: prompt.position.y },
+    placement: { anchorId: anchor.id, offsetX: prompt.position.x + index * RESULT_COL_STRIDE - anchor.position.x, direction: "below" },
     data: { kind: "text", origin: "generated", title: execution.modelId, text: "", batchId, executionId: execution.id },
     createdAt: startedAt,
     updatedAt: startedAt,
   }));
-  const resultEdges: PlaygroundEdge[] = executions.map((execution) => ({ id: idFactory(), kind: "result", source: generation.id, target: execution.outputNodeId }));
+  const resultEdges: PlaygroundEdge[] = executions.map((execution) => ({ id: idFactory(), kind: "result", source: prompt.id, target: execution.outputNodeId, sourceHandle: "flow-bottom", targetHandle: "flow-top" }));
   const batch: ExecutionBatch = {
     id: batchId,
-    generationNodeId: generation.id,
+    generationNodeId: prompt.id,
     startedAt,
-    promptFormatVersion: 1,
+    promptFormatVersion: context.some((entry) => entry.role === "assistant") ? 2 : 1,
     instruction,
     inputs,
+    context,
     executions: executions.map(({ id, modelId, status, startedAt: executionStartedAt, outputNodeId }) => ({ id, modelId, status, startedAt: executionStartedAt, outputNodeId })),
   };
   const controller = new AbortController();
@@ -93,12 +105,13 @@ export const startGenerationRun = (options: RunOptions): GenerationRun => {
   // The start action is synchronous with the user gesture and establishes the run UI.
   // Late settlement actions remain lifecycle-guarded below.
   dispatch({ type: "batch/started", flowId: flow.id, batch, outputNodes, resultEdges });
-
+  const succeededOutputs: string[] = [];
   const completed = Promise.allSettled(executions.map(async (execution) => {
     const started = performance.now();
     try {
       const result = await createChatCompletion(virtualKey, { model: execution.modelId, messages, stream: false }, controller.signal);
       const usage = result.usage as Usage | undefined;
+      succeededOutputs.push(execution.outputNodeId);
       emit({ type: "execution/succeeded", flowId: flow.id, batchId, executionId: execution.id, text: result.content, durationMs: duration(started), ...(usage ? { usage } : {}) });
     } catch (error) {
       const failure = executionError(error);
@@ -108,6 +121,10 @@ export const startGenerationRun = (options: RunOptions): GenerationRun => {
     }
   })).then(() => {
     externalAbort?.removeEventListener("abort", abortExternal);
+    // Auto-continuation: the moment each answer lands, drop an empty prompt box
+    // below it so the thread can keep going. This is the live execution path
+    // only — aborted or epoch-stale runs are skipped by `emit`'s canDispatch guard.
+    for (const outputNodeId of succeededOutputs) emit({ type: "generation/continue", flowId: flow.id, sourceNodeId: outputNodeId });
     emit({ type: "batch/completed", flowId: flow.id, batchId, completedAt: clock.now().toISOString() });
   });
 

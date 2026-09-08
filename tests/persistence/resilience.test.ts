@@ -116,16 +116,20 @@ describe("workspace save queue", () => {
       const first = createStarterWorkspace(() => crypto.randomUUID());
       const second = { ...first, updatedAt: "2026-08-19T00:00:01.000Z" };
       const saved: string[] = [];
+      const scheduled = vi.fn();
       const request = (workspace: typeof first) => ({
         userId: "user-a",
         workspace,
         save: async (_userId: string, document: typeof first) => { saved.push(document.updatedAt); },
         isCurrent: () => true,
         onStart: vi.fn(),
+        onScheduled: scheduled,
         onSettled: vi.fn(),
       });
       queue.schedule(request(first), 20);
       queue.schedule(request(second), 20);
+      expect(scheduled).toHaveBeenCalledTimes(2);
+      expect(saved).toEqual([]);
       await vi.advanceTimersByTimeAsync(20);
       await queue.flush();
       expect(saved).toEqual([second.updatedAt]);

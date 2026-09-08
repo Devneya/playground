@@ -23,13 +23,13 @@ describe("execution lifecycle guard", () => {
   it("drops completion actions after the owning workspace is gone", async () => {
     const workspace = createStarterWorkspace(() => crypto.randomUUID(), clock);
     const flow = workspace.flows[0]!;
-    const generation = flow.nodes.find((node) => node.data.kind === "generation")!;
-    const runFlow = { ...flow, nodes: flow.nodes.map((node) => node.id === generation.id && node.data.kind === "generation" ? { ...node, data: { ...node.data, modelIds: ["model-a"] } } : node) };
+    const prompt = flow.nodes.find((node) => node.data.kind === "generation")!;
+    const runFlow = { ...flow, nodes: flow.nodes.map((node) => node.id === prompt.id && node.data.kind === "generation" ? { ...node, data: { ...node.data, modelIds: ["model-a"] } } : node) };
     const actions: WorkspaceAction[] = [];
     let mounted = true;
     const run = startGenerationRun({
       flow: runFlow,
-      generationNodeId: generation.id,
+      generationNodeId: prompt.id,
       virtualKey: toBifrostVirtualKey("sk-bf-test"),
       idFactory: () => crypto.randomUUID(),
       clock,

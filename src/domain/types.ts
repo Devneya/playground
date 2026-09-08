@@ -15,6 +15,7 @@ export type ManualTextData = {
   origin: "manual";
   title: string;
   text: string;
+  source?: { nodeId: EntityId; batchId: EntityId; executionId: EntityId; modelId: string; instruction: string; text: string };
 };
 
 export type GeneratedTextData = {
@@ -31,13 +32,19 @@ export type GenerationData = {
   title: string;
   instruction: string;
   modelIds: string[];
+  context?: ConversationEntry[];
+  branchedFrom?: { nodeId: string; batchId: string };
 };
 
-export type NodeData = ManualTextData | GeneratedTextData | GenerationData;
+export type TextNodeData = ManualTextData | GeneratedTextData;
+
+export type NodeData = TextNodeData | GenerationData;
 
 export type PlaygroundNode = {
   id: EntityId;
   position: Position;
+  measuredHeight?: number;
+  placement?: { anchorId: string; offsetX: number; direction: "below" | "right" | "above" };
   data: NodeData;
   createdAt: string;
   updatedAt: string;
@@ -48,6 +55,8 @@ export type InputEdge = {
   kind: "input";
   source: EntityId;
   target: EntityId;
+  sourceHandle?: string | null;
+  targetHandle?: string | null;
   order: number;
 };
 
@@ -56,6 +65,8 @@ export type ResultEdge = {
   kind: "result";
   source: EntityId;
   target: EntityId;
+  sourceHandle?: string | null;
+  targetHandle?: string | null;
 };
 
 export type PlaygroundEdge = InputEdge | ResultEdge;
@@ -66,7 +77,9 @@ export type InputSnapshot = {
   text: string;
 };
 
-export type CompletionMessage = { role: "user"; content: string };
+export type CompletionMessage = { role: "user" | "assistant"; content: string };
+
+export type ConversationEntry = CompletionMessage & { nodeId: EntityId; modelId?: string };
 
 export type ExecutionError = {
   kind: "cancelled" | "network" | "http" | "invalid_response" | "interrupted";
@@ -92,9 +105,10 @@ export type ExecutionBatch = {
   generationNodeId: EntityId;
   startedAt: string;
   completedAt?: string;
-  promptFormatVersion: 1;
+  promptFormatVersion: 1 | 2;
   instruction: string;
   inputs: InputSnapshot[];
+  context?: ConversationEntry[];
   executions: ModelExecution[];
 };
 
@@ -110,7 +124,7 @@ export type FlowDocument = {
 };
 
 export type WorkspaceDocument = {
-  schemaVersion: 1;
+  schemaVersion: 3;
   activeFlowId: EntityId;
   flows: FlowDocument[];
   createdAt: string;
@@ -129,7 +143,7 @@ export type IdFactory = () => EntityId;
 
 export const isTextNode = (
   node: PlaygroundNode | undefined,
-): node is PlaygroundNode & { data: ManualTextData | GeneratedTextData } =>
+): node is PlaygroundNode & { data: TextNodeData } =>
   node?.data.kind === "text";
 
 export const isGenerationNode = (
@@ -137,15 +151,15 @@ export const isGenerationNode = (
 ): node is PlaygroundNode & { data: GenerationData } =>
   node?.data.kind === "generation";
 
-export const isGeneratedTextNode = (
-  node: PlaygroundNode | undefined,
-): node is PlaygroundNode & { data: GeneratedTextData } =>
-  node?.data.kind === "text" && node.data.origin === "generated";
-
 export const isManualTextNode = (
   node: PlaygroundNode | undefined,
 ): node is PlaygroundNode & { data: ManualTextData } =>
   node?.data.kind === "text" && node.data.origin === "manual";
+
+export const isGeneratedTextNode = (
+  node: PlaygroundNode | undefined,
+): node is PlaygroundNode & { data: GeneratedTextData } =>
+  node?.data.kind === "text" && node.data.origin === "generated";
 
 export const isFinitePosition = (position: Position) =>
   Number.isFinite(position.x) && Number.isFinite(position.y);

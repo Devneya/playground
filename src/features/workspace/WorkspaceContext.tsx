@@ -16,7 +16,7 @@ import { ResilientWorkspaceRepository } from "../../persistence/ResilientWorkspa
 import { WorkspaceSaveQueue } from "../../persistence/WorkspaceSaveQueue";
 import type { WorkspaceRepository } from "../../persistence/WorkspaceRepository";
 import { startGenerationRun, type GenerationRun } from "../execution/executeGeneration";
-import { emptyHistory, pushHistory, redoHistory, undoHistory, type HistoryState } from "../../domain/workspaceHistory";
+import { emptyHistory, isHistoryAction, pushHistory, redoHistory, undoHistory, type HistoryState } from "../../domain/workspaceHistory";
 
 type AsyncStatus = "idle" | "loading" | "ready" | "error";
 type WorkspaceProviderProps = PropsWithChildren<{ repository?: WorkspaceRepository }>;
@@ -76,12 +76,7 @@ export const WorkspaceProvider = ({ children, repository: injectedRepository }: 
   const [history, setHistory] = useState<HistoryState>(emptyHistory);
   const lastHistoryActionRef = useRef<string | null>(null);
   const dispatch = useCallback((action: WorkspaceAction) => {
-    const isHistoryAction = !action.type.startsWith("batch/")
-      && !action.type.startsWith("execution/")
-      && action.type !== "workspace/reset"
-      && action.type !== "workspace/imported"
-      && action.type !== "viewport/update";
-    if (isHistoryAction) {
+    if (isHistoryAction(action)) {
       const actionKey = JSON.stringify(action);
       const previousWorkspace = workspaceRef.current;
       if (lastHistoryActionRef.current !== actionKey) setHistory((current) => pushHistory(current, previousWorkspace));
@@ -163,6 +158,7 @@ export const WorkspaceProvider = ({ children, repository: injectedRepository }: 
       workspace,
       save: (userId, document) => repository.save(userId, document),
       isCurrent: (_queueVersion, userId) => generation === saveGenerationRef.current && userId === user.id && epoch === lifecycleEpochRef.current,
+      onScheduled: () => setSaving(true),
       onStart: () => setSaving(true),
       onSettled: (_queueVersion, userId, saveError) => {
         if (generation !== saveGenerationRef.current || userId !== user.id || epoch !== lifecycleEpochRef.current) return;
@@ -189,6 +185,14 @@ export const WorkspaceProvider = ({ children, repository: injectedRepository }: 
       setModelsError(normalizeApiError(modelsError).message);
     });
   }, []);
+
+  useEffect(() => {
+    const defaultModel = models[0]?.id;
+    if (loadStatus !== "ready" || modelsStatus !== "ready" || !defaultModel) return;
+    if (workspace.flows.some((flow) => flow.nodes.some((node) => node.data.kind === "generation" && !node.data.modelIds.length && !flow.batches.some((batch) => batch.generationNodeId === node.id)))) {
+      dispatch({ type: "workspace/default-model", modelId: defaultModel });
+    }
+  }, [dispatch, loadStatus, models, modelsStatus, workspace]);
 
   useEffect(() => {
     setModels([]);
@@ -279,7 +283,7 @@ export const WorkspaceProvider = ({ children, repository: injectedRepository }: 
     const runEpoch = lifecycleEpochRef.current;
     const run = startGenerationRun({
       flow: workspace.flows.find((flow) => flow.id === workspace.activeFlowId) ?? workspace.flows[0]!,
-      generationNodeId,
+      generationNodeId: generationNodeId,
       virtualKey,
       idFactory: reducerContext.idFactory,
       clock: reducerContext.clock,

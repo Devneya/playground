@@ -74,8 +74,8 @@ const signIn = async (page: Page, email?: string, password?: string, accountInde
   await page.getByLabel("Email").fill(credentials.email);
   await page.getByLabel("Password").fill(credentials.password);
   await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page.getByRole("heading", { name: "Compose a flow" })).toBeVisible({ timeout: 60_000 });
-  await expect(page.getByText("Live model catalog")).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator(".canvas-shell")).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator(".catalog-dot.live")).toBeVisible({ timeout: 60_000 });
   await expect(page.getByText("Loading this browser's workspace…")).toBeHidden({ timeout: 60_000 });
   await expect(generation(page).getByRole("button", { name: "Run generation" })).toBeVisible({ timeout: 60_000 });
 };
@@ -87,16 +87,19 @@ const waitForWorkspaceLoaded = async (page: Page) => {
 
 const signOut = async (page: Page) => {
   expectedNetworkFailures.get(page)?.add("POST https://api.devneya.com/auth/logout: net::ERR_ABORTED");
+  await page.getByRole("button", { name: "Account" }).click();
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page.getByLabel("Email")).toBeVisible({ timeout: 60_000 });
 };
 
 const selectRealModel = async (page: Page): Promise<string> => {
   const node = generation(page);
+  await node.getByRole("button", { name: "Generation 1 model picker" }).click();
   const available = await node.locator('input[type="checkbox"]').evaluateAll((inputs) => inputs.map((input) => input.getAttribute("aria-label")?.replace(/^Generation 1 model /, "")));
   const model = configuredModel ?? ["gpt-oss-20b", "gpt-oss-120b"].find((candidate) => available.includes(candidate));
   if (!model || !available.includes(model)) throw new Error("No configured release-test model is available. Available models: " + available.join(", "));
   await node.getByRole("checkbox", { name: "Generation 1 model " + model }).check();
+  await page.keyboard.press("Escape");
   await fitCanvas(page);
   return model;
 };
@@ -192,7 +195,7 @@ test.describe("real-server functional E2E", () => {
     await page.getByLabel("Password").fill(account.password);
     await page.getByRole("button", { name: "Sign in" }).click();
     await expect(page.getByRole("alert")).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByRole("heading", { name: "Compose a flow" })).not.toBeVisible();
+    await expect(page.locator(".canvas-shell")).not.toBeVisible();
     await clearSensitiveFields(page);
 
     const confirmationUrl = await waitForSignupConfirmation(account, baseUrl);
@@ -200,17 +203,17 @@ test.describe("real-server functional E2E", () => {
     await page.goto(confirmationUrl, { waitUntil: "domcontentloaded" });
     await expect.poll(() => new URL(page.url()).origin, { timeout: 60_000 }).toBe(new URL(baseUrl).origin);
     await expect.poll(async () => {
-      if (await page.getByRole("heading", { name: "Compose a flow" }).isVisible().catch(() => false)) return "confirmed";
+      if (await page.locator(".canvas-shell").isVisible().catch(() => false)) return "confirmed";
       if (await page.getByLabel("Email").isVisible().catch(() => false)) return "login";
       return "loading";
     }, { timeout: 60_000 }).toMatch(/confirmed|login/);
-    const confirmedSession = await page.getByRole("heading", { name: "Compose a flow" }).isVisible();
+    const confirmedSession = await page.locator(".canvas-shell").isVisible();
     if (!confirmedSession) await signIn(page, account.address, account.password, accountIndex);
     account.accessToken = await sessionAccessToken(page);
     await captureCheckpoint(page, "account-" + (accountIndex + 1) + "-confirmed-login");
     await activateWithTestCheckout(page, account, (name, checkoutPage) => captureCheckpoint(checkoutPage, name));
     await captureCheckpoint(page, "account-" + (accountIndex + 1) + "-activated");
-    await expect(page.getByText("Live model catalog")).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator(".catalog-dot.live")).toBeVisible({ timeout: 60_000 });
     await page.evaluate(() => history.replaceState({}, "", "/"));
     await signOut(page);
   };
@@ -225,46 +228,32 @@ test.describe("real-server functional E2E", () => {
 
   test("real server: authenticates, discovers a model, and completes a generation", async ({ page }) => {
     await signIn(page);
-    await page.getByLabel("Text 1 text").fill("Release smoke input one.");
-    await page.getByLabel("Generation 1 instruction").fill("Reply with the token DEVNEYA_SMOKE_ONE and no sensitive information.");
+    await page.getByLabel("Generation 1 instruction").fill("Release smoke input one. Reply with the token DEVNEYA_SMOKE_ONE and no sensitive information.");
     const model = await selectRealModel(page);
     await runAndExpect(page, "DEVNEYA_SMOKE_ONE", 1);
     await expect(page.locator(".generated-node")).toContainText(model);
   });
 
-  test("real server: preserves ordered inputs and reload persistence", async ({ page }) => {
+  test("real server: preserves prompt text and reload persistence", async ({ page }) => {
     await signIn(page);
-    await page.getByLabel("Text 1 text").fill("ALPHA");
-    await page.getByRole("button", { name: "+ Text" }).click();
-    await fitCanvas(page);
-    await page.getByLabel("Text 3 text").fill("BETA");
-    const node = generation(page);
-    await node.getByRole("button", { name: "Add input" }).click();
-    await expect(node.getByLabel("Reconnect input 2")).toHaveCount(1);
-    await node.getByLabel("Generation 1 instruction").fill("Repeat the labels exactly in received order: ALPHA then BETA.");
+    await page.getByLabel("Generation 1 instruction").fill("Repeat the label ALPHA back verbatim with no sensitive information.");
     await selectRealModel(page);
-    await waitForStoredText(page, "ALPHA");
-    await waitForStoredText(page, "BETA");
     const result = await runAndExpect(page, "ALPHA", 1);
     const output = await result.textContent();
     expect(output).toContain("ALPHA");
-    expect(output).toContain("BETA");
-    expect(output!.indexOf("ALPHA")).toBeLessThan(output!.indexOf("BETA"));
     await page.reload({ waitUntil: "domcontentloaded" });
-    await expect(page.getByRole("heading", { name: "Compose a flow" })).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator(".canvas-shell")).toBeVisible({ timeout: 60_000 });
     await waitForWorkspaceLoaded(page);
-    await expect(page.getByLabel("Text 1 text")).toHaveValue("ALPHA");
-    await expect(page.getByLabel("Text 3 text")).toHaveValue("BETA");
+    await expect(page.getByLabel("Generation 1 instruction")).toHaveValue("Repeat the label ALPHA back verbatim with no sensitive information.", { timeout: 60_000 });
     await expect(page.locator(".generated-content")).toContainText("ALPHA");
   });
 
   test("real server: preserves the old result across a rerun and export", async ({ page }) => {
     await signIn(page);
-    await page.getByLabel("Text 1 text").fill("Rerun release smoke input.");
-    await page.getByLabel("Generation 1 instruction").fill("Reply with DEVNEYA_SMOKE_FIRST and no sensitive information.");
+    await page.getByLabel("Generation 1 instruction").fill("Rerun release smoke input. Reply with DEVNEYA_SMOKE_FIRST and no sensitive information.");
     await selectRealModel(page);
     await runAndExpect(page, "DEVNEYA_SMOKE_FIRST", 1);
-    await page.getByLabel("Generation 1 instruction").fill("Reply with DEVNEYA_SMOKE_RERUN and no sensitive information.");
+    await page.getByLabel("Generation 1 instruction").fill("Rerun release smoke input. Reply with DEVNEYA_SMOKE_RERUN and no sensitive information.");
     await runAndExpect(page, "DEVNEYA_SMOKE_RERUN", 2);
     await expect(page.locator(".generated-content").filter({ hasText: "DEVNEYA_SMOKE_FIRST" }).first()).toBeVisible();
     const exported = await exportWorkspace(page);
@@ -280,30 +269,30 @@ test.describe("real-server functional E2E", () => {
 
   test("real server: clears the workspace and logs out", async ({ page }) => {
     await signIn(page);
-    await page.getByLabel("Text 1 text").fill("REAL_CLEAR_MARKER");
+    await page.getByLabel("Generation 1 instruction").fill("REAL_CLEAR_MARKER");
     await waitForStoredText(page, "REAL_CLEAR_MARKER");
     page.once("dialog", (dialog) => void dialog.accept());
     await page.getByRole("button", { name: "Clear local workspace" }).click();
-    await expect(page.getByLabel("Text 1 text")).toHaveValue("");
+    await expect(page.getByLabel("Generation 1 instruction")).toHaveValue("");
     await expect.poll(async () => (await storedWorkspaceJson(page)).includes("REAL_CLEAR_MARKER"), { timeout: 30_000 }).toBe(false);
     await page.reload({ waitUntil: "domcontentloaded" });
     await waitForWorkspaceLoaded(page);
-    await expect(page.getByLabel("Text 1 text")).toHaveValue("");
+    await expect(page.getByLabel("Generation 1 instruction")).toHaveValue("");
     await signOut(page);
   });
 
   test("real server: isolates two release-test accounts", async ({ page }) => {
     await signIn(page, undefined, undefined, 0);
-    await page.getByLabel("Text 1 text").fill("REAL_USER_A_MARKER");
+    await page.getByLabel("Generation 1 instruction").fill("REAL_USER_A_MARKER");
     await waitForStoredText(page, "REAL_USER_A_MARKER");
     await signOut(page);
     await signIn(page, undefined, undefined, 1);
-    await expect(page.getByLabel("Text 1 text")).not.toHaveValue("REAL_USER_A_MARKER");
-    await page.getByLabel("Text 1 text").fill("REAL_USER_B_MARKER");
+    await expect(page.getByLabel("Generation 1 instruction")).not.toHaveValue("REAL_USER_A_MARKER");
+    await page.getByLabel("Generation 1 instruction").fill("REAL_USER_B_MARKER");
     await waitForStoredText(page, "REAL_USER_B_MARKER");
     await signOut(page);
     await signIn(page, undefined, undefined, 0);
-    await expect(page.getByLabel("Text 1 text")).toHaveValue("REAL_USER_A_MARKER");
+    await expect(page.getByLabel("Generation 1 instruction")).toHaveValue("REAL_USER_A_MARKER");
     await signOut(page);
   });
 

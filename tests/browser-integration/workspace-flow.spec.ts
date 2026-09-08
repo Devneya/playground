@@ -40,8 +40,8 @@ const signIn = async (page: Page, email = "user-a@example.test") => {
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill("password123");
   await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page.getByRole("heading", { name: "Compose a flow" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Run generation" })).toBeVisible();
+  await expect(page.locator(".canvas-shell")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Send prompt" })).toBeVisible();
 };
 
 const generation = (page: Page) => page.locator(".generation-node");
@@ -60,7 +60,7 @@ const storedWorkspaceJson = async (page: Page) => page.evaluate(() => new Promis
   };
 }));
 const waitForStoredText = async (page: Page, text: string) => {
-  await expect.poll(async () => (await storedWorkspaceJson(page)).includes(`"text":"${text}"`), { timeout: 15_000 }).toBe(true);
+  await expect.poll(async () => (await storedWorkspaceJson(page)).includes(`"instruction":"${text}"`), { timeout: 15_000 }).toBe(true);
 };
 const waitForStoredInputCount = async (page: Page, count: number) => {
   await expect.poll(async () => ((await storedWorkspaceJson(page)).match(/"kind":"input"/g) ?? []).length, { timeout: 15_000 }).toBe(count);
@@ -68,16 +68,20 @@ const waitForStoredInputCount = async (page: Page, count: number) => {
 
 const selectModels = async (page: Page, modelIds: string[]) => {
   const node = generation(page);
+  await node.getByRole("button", { name: "Prompt 1 model picker" }).click();
   for (const modelId of modelIds) {
-    const checkbox = node.getByRole("checkbox", { name: `Generation 1 model ${modelId}` });
+    const checkbox = node.getByRole("checkbox", { name: `Prompt 1 model ${modelId}` });
     if (!(await checkbox.isChecked())) await checkbox.check();
   }
+  await page.keyboard.press("Escape");
   await fitCanvas(page);
 };
 
-const runAndWaitForOutputs = async (page: Page, expectedCount: number) => {
+const runAndWaitForOutputs = async (page: Page, expectedCount: number, node = generation(page).first()) => {
   await fitCanvas(page);
-  await generation(page).getByRole("button", { name: "Run generation" }).click();
+  const instruction = node.getByLabel(/instruction/);
+  if ((await instruction.inputValue()).trim() === "") await instruction.fill("Run the mock instruction.");
+  await node.getByRole("button", { name: "Send prompt" }).click();
   await expect(page.locator(".generated-node")).toHaveCount(expectedCount, { timeout: 15_000 });
   await expect(page.locator(".generated-content").filter({ hasText: "Mock result" }).first()).toHaveCount(1, { timeout: 15_000 });
   await fitCanvas(page);
@@ -129,7 +133,7 @@ test.describe("mocked workspace flows", () => {
   test("edits a text input, selects a model, and runs one completion", async ({ page }) => {
     await prepare(page, "default");
     await signIn(page);
-    await page.getByLabel("Text 1 text").fill("A short internal product brief.");
+    await page.getByLabel("Prompt 1 instruction").fill("A short internal product brief.");
     await selectModels(page, ["model-a"]);
     await expect(page.getByText("Saved locally")).toBeVisible();
     await runAndWaitForOutputs(page, 1);
@@ -138,22 +142,52 @@ test.describe("mocked workspace flows", () => {
     await expect(page.locator(".generated-node")).toContainText("model-a");
   });
 
-  test("adds, reconnects, reorders, and removes a second input", async ({ page }) => {
+  test("keeps generation disabled for whitespace instructions until valid text is entered", async ({ page }) => {
     await prepare(page, "default");
     await signIn(page);
-    await page.getByRole("button", { name: "+ Text" }).click();
+    await selectModels(page, ["model-a"]);
+    const instruction = page.getByLabel("Prompt 1 instruction");
+    const runButton = generation(page).first().getByRole("button", { name: "Send prompt" });
+    await instruction.fill("   \n\t");
+    await expect(runButton).toBeDisabled();
+    await instruction.fill("Run the mock instruction.");
+    await expect(runButton).toBeEnabled();
+  });
+
+  test("auto-creates a continuation and exposes Branch on successful results", async ({ page }) => {
+    await prepare(page, "default");
+    await signIn(page);
+    await selectModels(page, ["model-a"]);
+    await runAndWaitForOutputs(page, 1);
+    const result = page.locator(".generated-node").first();
+    await expect(result.getByRole("button", { name: "Branch", exact: true })).toBeVisible();
+    await expect(generation(page)).toHaveCount(2);
+    await expect(generation(page).nth(1).getByLabel("Prompt 2 instruction")).toHaveValue("");
+    await result.getByRole("button", { name: "Branch", exact: true }).click();
+    await expect(generation(page)).toHaveCount(3);
+    await expect(page.locator(".react-flow__edge")).toHaveCount(3);
+  });
+
+  test("refuses a second input with a visible reason", async ({ page }) => {
+    await prepare(page, "four-models");
+    await signIn(page);
+    await selectModels(page, ["model-a", "model-b"]);
+    await runAndWaitForOutputs(page, 2);
+    await page.getByRole("button", { name: "+ Prompt" }).click();
     await fitCanvas(page);
-    await page.getByLabel("Text 3 text").fill("Second input");
-    const node = generation(page);
-    await node.getByRole("button", { name: "Add input" }).click();
-    await expect(node.getByLabel("Reconnect input 2")).toHaveCount(1);
-    await fitCanvas(page);
-    await node.getByLabel("Generation 1 input 2 move up").click();
-    await expect(node.getByLabel("Reconnect input 1")).toHaveValue(/.+/);
-    await node.getByLabel("Generation 1 input 1 move down").click();
-    await node.getByLabel("Remove input 2").click();
-    await expect(node.getByLabel("Reconnect input 2")).toHaveCount(0);
-    await expect(node).toContainText("Inputs (1)");
+    const second = page.locator(".generation-node").last();
+    const firstResult = page.locator(".generated-node").first().locator(".react-flow__handle.user-handle");
+    await firstResult.dragTo(second.locator(".react-flow__handle.user-handle"));
+    await expect(second).toContainText("model-a");
+    const secondResult = page.locator(".generated-node").nth(1).locator(".react-flow__handle.user-handle");
+    await secondResult.dragTo(second.locator(".react-flow__handle.user-handle"));
+    await expect(page.getByRole("status")).toContainText("at most 1 input");
+    await expect(page.locator(".react-flow__edge")).toHaveCount(5);
+    await page.locator(".managed-edge-hoverzone").last().hover();
+    await page.getByRole("button", { name: "Remove connection" }).click();
+    await secondResult.dragTo(second.locator(".react-flow__handle.user-handle"));
+    await expect(second).toContainText("model-b");
+    await expect(page.locator(".react-flow__edge")).toHaveCount(5);
   });
 
   test("runs all four selected models and preserves result siblings", async ({ page }) => {
@@ -191,10 +225,13 @@ test.describe("mocked workspace flows", () => {
         });
       };
     });
-    await generation(page).getByRole("button", { name: "Run generation" }).click();
+    await generation(page).first().getByLabel(/instruction/).fill("Run the mock instruction.");
+    await generation(page).first().getByRole("button", { name: "Send prompt" }).click();
     await expect(generation(page).getByRole("button", { name: "Cancel run" })).toBeVisible({ timeout: 15_000 });
-    await generation(page).getByRole("button", { name: "Cancel run" }).click();
-    await expect(generation(page).getByRole("button", { name: "Run generation" })).toBeVisible();
+    await fitCanvas(page);
+    await generation(page).first().getByRole("button", { name: "Cancel run" }).click();
+    await expect(generation(page).first().getByRole("button", { name: "Branch", exact: true })).toBeVisible();
+    await expect(generation(page).first().getByRole("button", { name: "Send prompt" })).toHaveCount(0);
     await expect(page.locator(".generated-node")).toContainText("Cancelled: The run was cancelled.");
     await expect(page.locator(".generated-content").filter({ hasText: "Mock result" })).toHaveCount(0);
   });
@@ -202,31 +239,33 @@ test.describe("mocked workspace flows", () => {
   test("keeps separate browser workspaces isolated by user", async ({ page }) => {
     await prepare(page, "default");
     await signIn(page, "user-a@example.test");
-    await page.getByLabel("Text 1 text").fill("USER_A_PRIVATE_TEXT");
+    await page.getByLabel("Prompt 1 instruction").fill("USER_A_PRIVATE_TEXT");
     await expect(page.getByText("Saved locally")).toBeVisible();
-    await expect(page.getByLabel("Text 1 text")).toHaveValue("USER_A_PRIVATE_TEXT");
+    await expect(page.getByLabel("Prompt 1 instruction")).toHaveValue("USER_A_PRIVATE_TEXT");
     await waitForStoredText(page, "USER_A_PRIVATE_TEXT");
     await page.reload({ waitUntil: "domcontentloaded" });
-    await expect(page.getByText("Live model catalog")).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByLabel("Text 1 text")).toHaveValue("USER_A_PRIVATE_TEXT", { timeout: 15_000 });
+    await expect(page.locator(".catalog-dot.live")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByLabel("Prompt 1 instruction")).toHaveValue("USER_A_PRIVATE_TEXT", { timeout: 15_000 });
+  await page.getByRole("button", { name: "Account" }).click();
     await page.getByRole("button", { name: "Sign out" }).click();
     await expect(page.getByLabel("Email")).toBeVisible();
 
     await signIn(page, "user-b@example.test");
-    await expect(page.getByLabel("Text 1 text")).toHaveValue("");
-    await page.getByLabel("Text 1 text").fill("USER_B_PRIVATE_TEXT");
+    await expect(page.getByLabel("Prompt 1 instruction")).toHaveValue("");
+    await page.getByLabel("Prompt 1 instruction").fill("USER_B_PRIVATE_TEXT");
     await expect(page.getByText("Saved locally")).toBeVisible();
+  await page.getByRole("button", { name: "Account" }).click();
     await page.getByRole("button", { name: "Sign out" }).click();
 
     await signIn(page, "user-a@example.test");
-    await expect(page.getByLabel("Text 1 text")).toHaveValue("USER_A_PRIVATE_TEXT");
-    await expect(page.getByLabel("Text 1 text")).not.toHaveValue("USER_B_PRIVATE_TEXT");
+    await expect(page.getByLabel("Prompt 1 instruction")).toHaveValue("USER_A_PRIVATE_TEXT");
+    await expect(page.getByLabel("Prompt 1 instruction")).not.toHaveValue("USER_B_PRIVATE_TEXT");
   });
 
   test("exports without credentials, clears, and imports a workspace", async ({ page }) => {
     await prepare(page, "default");
     await signIn(page);
-    await page.getByLabel("Text 1 text").fill("EXPORTABLE_TEXT");
+    await page.getByLabel("Prompt 1 instruction").fill("EXPORTABLE_TEXT");
     await expect(page.getByText("Saved locally")).toBeVisible();
     const downloadPromise = page.waitForEvent("download");
     await page.getByRole("button", { name: "Export workspace" }).click();
@@ -240,9 +279,9 @@ test.describe("mocked workspace flows", () => {
 
     page.once("dialog", (dialog) => void dialog.accept());
     await page.getByRole("button", { name: "Clear local workspace" }).click();
-    await expect(page.getByLabel("Text 1 text")).toHaveValue("");
+    await expect(page.getByLabel("Prompt 1 instruction")).toHaveValue("");
     await page.locator('input[type="file"]').setInputFiles({ name: "restore.json", mimeType: "application/json", buffer: Buffer.from(exported) });
-    await expect(page.getByLabel("Text 1 text")).toHaveValue("EXPORTABLE_TEXT");
+    await expect(page.getByLabel("Prompt 1 instruction")).toHaveValue("EXPORTABLE_TEXT");
   });
 
   test("reports catalog and account-key failures in the workspace", async ({ page }) => {
@@ -251,33 +290,41 @@ test.describe("mocked workspace flows", () => {
     await expect(page.getByText("Model catalog unavailable")).toBeVisible();
     await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
 
+  await page.getByRole("button", { name: "Account" }).click();
     await page.getByRole("button", { name: "Sign out" }).click();
     await prepare(page, "key-error");
     await signIn(page);
-    await expect(page.getByRole("alert")).toContainText("The account key is unavailable.");
-    await expect(generation(page).getByRole("button", { name: "Run generation" })).toBeDisabled();
+    await expect(page.locator(".overlay-alert[role=alert]")).toContainText("The account key is unavailable.");
+    await expect(generation(page).getByRole("button", { name: "Send prompt" })).toBeDisabled();
   });
 
-  test("reruns a generation while preserving the previous result batch", async ({ page }) => {
+  test("duplicates a sent prompt, edits the copy, and preserves the previous result batch", async ({ page }) => {
     await prepare(page, "default");
     await signIn(page);
     await selectModels(page, ["model-a"]);
     await runAndWaitForOutputs(page, 1);
-    await generation(page).getByLabel("Generation 1 instruction").fill("Run this again with the revised instruction.");
-    await runAndWaitForOutputs(page, 2);
+    const originalResult = page.locator(".generated-node").first();
+    await expect(originalResult).toContainText("Mock result");
+    await generation(page).first().getByRole("button", { name: "Branch", exact: true }).click();
+    await expect(generation(page)).toHaveCount(3);
+    const duplicate = generation(page).last();
+    await expect(duplicate.getByLabel("Prompt 3 instruction")).toHaveValue("Run the mock instruction.");
+    await duplicate.getByLabel("Prompt 3 instruction").fill("Run this again with the revised instruction.");
+    await runAndWaitForOutputs(page, 2, duplicate);
     await expect(page.locator(".generated-content").filter({ hasText: "Mock result" })).toHaveCount(2);
+    await expect(originalResult).toContainText("Mock result");
   });
 
   test("reloads the authenticated workspace from browser persistence", async ({ page }) => {
     await prepare(page, "default");
     await signIn(page);
-    await page.getByLabel("Text 1 text").fill("PERSISTED_AFTER_RELOAD");
+    await page.getByLabel("Prompt 1 instruction").fill("PERSISTED_AFTER_RELOAD");
     await expect(page.getByText("Saved locally")).toBeVisible();
     await waitForStoredText(page, "PERSISTED_AFTER_RELOAD");
     await page.reload({ waitUntil: "domcontentloaded" });
-    await expect(page.getByRole("heading", { name: "Compose a flow" })).toBeVisible();
-    await expect(page.getByText("Live model catalog")).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByLabel("Text 1 text")).toHaveValue("PERSISTED_AFTER_RELOAD", { timeout: 15_000 });
+    await expect(page.locator(".canvas-shell")).toBeVisible();
+    await expect(page.locator(".catalog-dot.live")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByLabel("Prompt 1 instruction")).toHaveValue("PERSISTED_AFTER_RELOAD", { timeout: 15_000 });
   });
 
   test("renders the offline completion recovery state", async ({ page }) => {
@@ -285,7 +332,8 @@ test.describe("mocked workspace flows", () => {
     await signIn(page);
     await selectModels(page, ["model-a"]);
     await fitCanvas(page);
-    await generation(page).getByRole("button", { name: "Run generation" }).click();
+    await generation(page).first().getByLabel(/instruction/).fill("Run the mock instruction.");
+    await generation(page).first().getByRole("button", { name: "Send prompt" }).click();
     await expect(page.locator(".generated-node")).toContainText("Failed: The completion request failed.");
   });
 });
@@ -296,7 +344,8 @@ for (const status of [401, 402, 403]) {
     await signIn(page);
     await selectModels(page, ["model-a"]);
     await fitCanvas(page);
-    await generation(page).getByRole("button", { name: "Run generation" }).click();
+    await generation(page).first().getByLabel(/instruction/).fill("Run the mock instruction.");
+    await generation(page).first().getByRole("button", { name: "Send prompt" }).click();
     await expect(page.locator(".generated-node")).toContainText("Failed: The completion request failed.");
   });
 }
@@ -306,86 +355,111 @@ test("renders an invalid completion payload as a failed result", async ({ page }
   await signIn(page);
   await selectModels(page, ["model-a"]);
   await fitCanvas(page);
-  await generation(page).getByRole("button", { name: "Run generation" }).click();
+  await generation(page).first().getByLabel(/instruction/).fill("Run the mock instruction.");
+  await generation(page).first().getByRole("button", { name: "Send prompt" }).click();
   await expect(page.locator(".generated-node")).toContainText("Failed: The completion did not contain usable text.");
 });
 
 
-test("connects a new Text node with the pointer and restores the edge after reload", async ({ page }) => {
-  await prepare(page, "default");
-  await signIn(page);
-  await page.getByRole("button", { name: "+ Text" }).click();
-  await fitCanvas(page);
-  const source = page.locator(".react-flow__node-text").filter({ hasText: "Text 3" }).locator(".react-flow__handle.source");
-  const target = generation(page).locator(".react-flow__handle.target");
-  await source.dragTo(target);
-  await expect(generation(page)).toContainText("Inputs (2)");
-  await expect(page.locator(".react-flow__edge")).toHaveCount(2);
-  await waitForSave(page);
-  await waitForStoredInputCount(page, 2);
-  await page.reload({ waitUntil: "domcontentloaded" });
-  await expect(page.getByText("Live model catalog")).toBeVisible({ timeout: 15_000 });
-  await expect(generation(page)).toContainText("Inputs (2)", { timeout: 15_000 });
-});
-
-test("rejects an accessible cycle attempt with a visible reason", async ({ page }) => {
+test("connects a result into a new prompt with the pointer and restores the edge after reload", async ({ page }) => {
   await prepare(page, "default");
   await signIn(page);
   await selectModels(page, ["model-a"]);
   await runAndWaitForOutputs(page, 1);
-  await page.getByRole("button", { name: "+ Generation" }).click();
+  await page.getByRole("button", { name: "+ Prompt" }).click();
   await fitCanvas(page);
-  const second = page.locator(".generation-node").nth(1);
-  const secondTitle = (await second.locator(".node-header strong").textContent())!;
-  await second.getByRole("button", { name: "Add input" }).click();
-  await fitCanvas(page);
-  await second.getByRole("combobox", { name: `${secondTitle} input source` }).selectOption({ label: "model-a" });
-  await second.getByRole("button", { name: "Add input" }).click();
-  await second.getByRole("checkbox", { name: `${secondTitle} model model-a` }).check();
-  await second.getByRole("button", { name: "Run generation" }).click();
-  await expect(page.locator(".generated-node")).toHaveCount(2, { timeout: 15_000 });
-  const firstInput = generation(page).first().getByLabel("Reconnect input 1");
-  const outputOption = firstInput.locator("option").nth(2);
-  const outputId = await outputOption.getAttribute("value");
-  expect(outputId).toBeTruthy();
-  await firstInput.selectOption(outputId!);
-  await expect(page.getByRole("status")).toContainText("cycle");
-  await expect(firstInput).not.toHaveValue(outputId!);
+  const source = page.locator(".generated-node").first().locator(".react-flow__handle.user-handle");
+  const second = page.locator(".generation-node").last();
+  await source.dragTo(second.locator(".react-flow__handle.user-handle"));
+  await expect(second).toContainText("model-a");
+  await expect(page.locator(".react-flow__edge")).toHaveCount(3);
+  await waitForSave(page);
+  await waitForStoredInputCount(page, 2);
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect(page.locator(".canvas-shell")).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator(".catalog-dot.live")).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator(".generation-node").last()).toContainText("model-a", { timeout: 15_000 });
 });
 
-test("merges two upstream paths into a second generation", async ({ page }) => {
+test("removes an input edge from its hover midpoint control", async ({ page }) => {
   await prepare(page, "default");
   await signIn(page);
-  await page.getByLabel("Text 1 text").fill("BRANCH_ALPHA");
-  await page.getByRole("button", { name: "+ Text" }).click();
+  await selectModels(page, ["model-a"]);
+  await runAndWaitForOutputs(page, 1);
+  await page.getByRole("button", { name: "+ Prompt" }).click();
   await fitCanvas(page);
-  await page.getByLabel("Text 3 text").fill("BRANCH_BETA");
-  await page.getByRole("button", { name: "+ Generation" }).click();
+  const second = page.locator(".generation-node").last();
+  await page.locator(".generated-node").first().locator(".react-flow__handle.user-handle").dragTo(second.locator(".react-flow__handle.user-handle"));
+  const removeButton = page.getByRole("button", { name: "Remove connection" });
+  await expect(removeButton).toBeHidden();
+  await page.locator(".managed-edge-hoverzone").last().hover();
+  await expect(removeButton).toBeVisible();
+  await removeButton.click();
+  await expect(second).toContainText("Context (0)");
+  await expect(page.locator(".react-flow__edge")).toHaveCount(2);
+});
+
+test("selects models through the pill picker with search", async ({ page }) => {
+  await prepare(page, "four-models");
+  await signIn(page);
   await fitCanvas(page);
-  const second = page.locator(".generation-node").nth(1);
-  const secondTitle = (await second.locator(".node-header strong").textContent())!;
-  await second.getByRole("button", { name: "Add input" }).click();
+  const picker = page.getByRole("button", { name: "Prompt 1 model picker" });
+  await expect(picker).toContainText("model-a");
+  await picker.click();
+  await page.getByLabel("Prompt 1 model search").fill("model-c");
+  await expect(page.getByRole("checkbox", { name: "Prompt 1 model model-a" })).toBeHidden();
+  await page.getByRole("checkbox", { name: "Prompt 1 model model-c" }).check();
+  await page.keyboard.press("Escape");
+  await expect(picker).toContainText("model-a +1 (2/4)");
+});
+
+test("threads a result into a second prompt and refuses the cycle back", async ({ page }) => {
+  await prepare(page, "default");
+  await signIn(page);
+  await selectModels(page, ["model-a"]);
+  await runAndWaitForOutputs(page, 1);
+  await page.getByRole("button", { name: "+ Prompt" }).click();
   await fitCanvas(page);
-  await second.getByRole("combobox", { name: `${secondTitle} input source` }).selectOption({ label: "Text 3" });
-  await second.getByRole("button", { name: "Add input" }).click();
+  const second = page.locator(".generation-node").last();
+  const outputHandle = page.locator(".generated-node").first().locator(".react-flow__handle.user-handle");
+  await outputHandle.dragTo(second.locator(".react-flow__handle.user-handle"));
+  await expect(second).toContainText("model-a");
+  await page.locator(".managed-edge-hoverzone").last().hover();
+  await page.getByRole("button", { name: "Remove connection" }).click();
+  await page.locator(".generated-node").first().locator(".react-flow__handle.user-handle").dragTo(generation(page).first().locator(".react-flow__handle.user-handle"));
+  await expect(page.getByRole("status")).toContainText("cycle");
+  await expect(page.locator(".react-flow__edge")).toHaveCount(2);
+});
+
+test("runs a threaded generation from a result input", async ({ page }) => {
+  await prepare(page, "default");
+  await signIn(page);
+  await selectModels(page, ["model-a"]);
+  await runAndWaitForOutputs(page, 1);
+  await page.getByRole("button", { name: "+ Prompt" }).click();
+  await fitCanvas(page);
+  const second = page.locator(".generation-node").last();
+  const secondTitle = (await second.locator(".node-header > strong[title]").textContent())!;
+  await page.locator(".generated-node").first().locator(".react-flow__handle.user-handle").dragTo(second.locator(".react-flow__handle.user-handle"));
+  await second.getByRole("button", { name: `${secondTitle} model picker` }).click();
   await second.getByRole("checkbox", { name: `${secondTitle} model model-a` }).check();
-  await second.getByLabel(`${secondTitle} instruction`).fill("Repeat both branch labels.");
-  await second.getByRole("button", { name: "Run generation" }).click();
-  await expect(page.locator(".generated-node")).toHaveCount(1, { timeout: 15_000 });
-  await expect(page.locator(".generated-content")).toContainText("Mock result");
-  await expect(second).toContainText("Inputs (2)");
+  await page.keyboard.press("Escape");
+  await second.getByLabel(`${secondTitle} instruction`).fill("Continue the mock thread.");
+  await second.getByRole("button", { name: "Send prompt" }).click();
+  await expect(page.locator(".generated-node")).toHaveCount(2, { timeout: 15_000 });
 });
 
 test("supports flow creation, rename, duplication, activation, deletion, undo, and redo", async ({ page }) => {
   await prepare(page, "default");
   await signIn(page);
-  await page.getByLabel("Text 1 text").fill("UNDO_ME");
+  await page.getByLabel("Prompt 1 instruction").fill("UNDO_ME");
   const undoButton = page.getByRole("button", { name: "Undo last change" });
   await expect(undoButton).toBeEnabled();
   await undoButton.click();
-  await expect(page.getByLabel("Text 1 text")).toHaveValue("");
+  await expect(page.getByLabel("Prompt 1 instruction")).toHaveValue("");
   await page.getByRole("button", { name: "Redo last change" }).click();
-  await expect(page.getByLabel("Text 1 text")).toHaveValue("UNDO_ME");
+  await expect(page.getByLabel("Prompt 1 instruction")).toHaveValue("UNDO_ME");
+  await page.getByRole("button", { name: "Canvases" }).click();
   await page.getByRole("button", { name: "New flow" }).click();
   await expect(page.getByRole("button", { name: "Rename Untitled flow 2" })).toBeVisible();
   await page.getByRole("button", { name: "Rename Untitled flow 2" }).click();
@@ -398,7 +472,7 @@ test("supports flow creation, rename, duplication, activation, deletion, undo, a
   await page.getByRole("button", { name: "Delete Release flow 2" }).click();
   await expect(page.getByRole("button", { name: "Rename Release flow 2" })).toHaveCount(0);
   await page.getByRole("button", { name: "Untitled flow" }).click();
-  await expect(page.locator(".canvas-toolbar .eyebrow")).toHaveText("Untitled flow");
+  await expect(page.locator(".flow-title")).toHaveText("Untitled flow");
 });
 
 test("recovers from one catalog and account-key failure", async ({ page }) => {
@@ -406,15 +480,16 @@ test("recovers from one catalog and account-key failure", async ({ page }) => {
   await signIn(page);
   await expect(page.getByText("Model catalog unavailable")).toBeVisible();
   await generation(page).getByRole("button", { name: "Retry" }).click();
-  await expect(page.getByText("Live model catalog")).toBeVisible();
+  await expect(page.locator(".catalog-dot.live")).toBeVisible();
 
+  await page.getByRole("button", { name: "Account" }).click();
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page.getByLabel("Email")).toBeVisible();
   await prepare(page, "key-recover");
   await signIn(page);
   await expect(page.getByRole("button", { name: "Retry account key" })).toBeVisible();
   await page.getByRole("button", { name: "Retry account key" }).click();
-  await expect(generation(page).getByRole("button", { name: "Run generation" })).toBeDisabled();
+  await expect(generation(page).getByRole("button", { name: "Send prompt" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Retry account key" })).toHaveCount(0);
 });
 

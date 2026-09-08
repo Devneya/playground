@@ -5,7 +5,7 @@ export const LIMITS = {
   maxTextBytes: 64 * 1024,
   maxGeneratedBytes: 256 * 1024,
   maxPromptBytes: 256 * 1024,
-  maxInputsPerGeneration: 32,
+  maxInputsPerGeneration: 1,
   maxWorkspaceBytes: 10 * 1024 * 1024,
   maxImportBytes: 10 * 1024 * 1024,
   maxModelsPerBatch: 4,

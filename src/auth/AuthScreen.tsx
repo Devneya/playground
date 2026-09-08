@@ -12,6 +12,9 @@ export const AuthScreen = () => {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
+  // Mock mode only: the real GoTrue login should keep offering to save passwords.
+  const isMock = import.meta.env.MODE === "mock";
+
   useEffect(() => {
     if (recovery) setMode("reset");
   }, [recovery]);
@@ -50,9 +53,9 @@ export const AuthScreen = () => {
         <button type="button" onClick={() => void signInWithOAuth("github")} disabled={busy}>Continue with GitHub</button>
       </div>
       <div className="auth-divider"><span>or</span></div>
-      <form onSubmit={submit}>
+      <form onSubmit={submit} autoComplete={isMock ? "off" : undefined}>
         <label>Email<input value={email} onChange={(event) => setEmail(event.target.value)} type="email" autoComplete="email" required /></label>
-        {mode !== "recovery" && <label>Password<input value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} minLength={8} required /></label>}
+        {mode !== "recovery" && <label>Password<input value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete={isMock ? "new-password" : mode === "login" ? "current-password" : "new-password"} minLength={8} required /></label>}
         {error && <p className="form-error" role="alert">{error}</p>}
         {message && <p className="form-message" role="status">{message}</p>}
         <button className="primary-button" type="submit" disabled={busy}>{busy ? "Working…" : mode === "login" ? "Sign in" : mode === "signup" ? "Create account" : mode === "recovery" ? "Send recovery link" : "Update password"}</button>

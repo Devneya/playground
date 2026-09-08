@@ -7,6 +7,7 @@ type SaveRequest = {
   save(userId: string, workspace: WorkspaceDocument): Promise<void>;
   isCurrent(queueVersion: number, userId: string): boolean;
   onStart(): void;
+  onScheduled?(): void;
   onSettled(queueVersion: number, userId: string, error?: unknown): void;
 };
 
@@ -20,6 +21,7 @@ export class WorkspaceSaveQueue {
   public schedule(request: Omit<SaveRequest, "queueVersion">, delayMs = 350): void {
     const queueVersion = ++this.queueVersion;
     this.pending = { ...request, queueVersion };
+    request.onScheduled?.();
     if (this.timer !== null) clearTimeout(this.timer);
     this.timer = setTimeout(() => {
       this.timer = null;

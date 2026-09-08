@@ -21,31 +21,31 @@ beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
 afterEach(() => server.resetHandlers());
 afterAll(() => server.close());
 
-describe("generation execution", () => {
+describe("prompt execution", () => {
   const makeRunOptions = (modelIds: string[]) => {
     const workspace = createStarterWorkspace(() => crypto.randomUUID(), clock);
     const flow = workspace.flows[0]!;
-    const generation = flow.nodes.find((node) => node.data.kind === "generation")!;
-    const runFlow = { ...flow, nodes: flow.nodes.map((node) => node.id === generation.id && node.data.kind === "generation" ? { ...node, data: { ...node.data, modelIds } } : node) };
-    return { flow: runFlow, generation, virtualKey: toBifrostVirtualKey("sk-bf-test"), idFactory: () => crypto.randomUUID(), clock, dispatch: () => {} };
+    const prompt = flow.nodes.find((node) => node.data.kind === "generation")!;
+    const runFlow = { ...flow, nodes: flow.nodes.map((node) => node.id === prompt.id && node.data.kind === "generation" ? { ...node, data: { ...node.data, modelIds } } : node) };
+    return { flow: runFlow, prompt, virtualKey: toBifrostVirtualKey("sk-bf-test"), idFactory: () => crypto.randomUUID(), clock, dispatch: () => {} };
   };
 
   it("rejects invalid run inputs before dispatching a batch", () => {
     const valid = makeRunOptions(["model-a"]);
-    expect(() => startGenerationRun({ ...valid, generationNodeId: "missing" })).toThrow("Choose a Generation node");
+    expect(() => startGenerationRun({ ...valid, generationNodeId: "missing" })).toThrow("Choose a prompt to send.");
     const empty = makeRunOptions([]);
-    expect(() => startGenerationRun({ ...empty, generationNodeId: empty.generation.id })).toThrow("at least one model");
+    expect(() => startGenerationRun({ ...empty, generationNodeId: empty.prompt.id })).toThrow("Choose at least one model before running.");
     const tooMany = makeRunOptions(["a", "b", "c", "d", "e"]);
-    expect(() => startGenerationRun({ ...tooMany, generationNodeId: tooMany.generation.id })).toThrow("no more than 4 models");
-    const oversized = { ...valid, flow: { ...valid.flow, nodes: valid.flow.nodes.map((node) => node.data.kind === "generation" ? { ...node, data: { ...node.data, instruction: "x".repeat(256 * 1024) } } : node) } };
-    expect(() => startGenerationRun({ ...oversized, generationNodeId: valid.generation.id })).toThrow("prompt is too large");
+    expect(() => startGenerationRun({ ...tooMany, generationNodeId: tooMany.prompt.id })).toThrow("Choose no more than 4 models.");
+    const oversized = { ...valid, flow: { ...valid.flow, nodes: valid.flow.nodes.map((node) => node.data.kind === "generation" ? { ...node, data: { ...node.data, instruction: "x".repeat(256 * 1024 + 1) } } : node) } };
+    expect(() => startGenerationRun({ ...oversized, generationNodeId: valid.prompt.id })).toThrow("The instruction is too large.");
   });
 
   it("records malformed provider responses as invalid-response failures", async () => {
     server.use(http.post("https://api.devneya.com/llm/v1/chat/completions", () => HttpResponse.json({ choices: [] })));
     const actions: WorkspaceAction[] = [];
     const options = makeRunOptions(["model-invalid"]);
-    const run = startGenerationRun({ ...options, generationNodeId: options.generation.id, dispatch: (action) => actions.push(action) });
+    const run = startGenerationRun({ ...options, generationNodeId: options.prompt.id, dispatch: (action) => actions.push(action) });
     await run.completed;
     const failed = actions.find((action) => action.type === "execution/failed");
     expect(failed?.type).toBe("execution/failed");
@@ -55,10 +55,10 @@ describe("generation execution", () => {
   it("runs selected models concurrently and records each settlement", async () => {
     const workspace = createStarterWorkspace(() => crypto.randomUUID(), clock);
     const flow = workspace.flows[0]!;
-    const generation = flow.nodes.find((node) => node.data.kind === "generation")!;
-    const runFlow = { ...flow, nodes: flow.nodes.map((node) => node.id === generation.id && node.data.kind === "generation" ? { ...node, data: { ...node.data, modelIds: ["model-ok", "model-fails"] } } : node) };
+    const prompt = flow.nodes.find((node) => node.data.kind === "generation")!;
+    const runFlow = { ...flow, nodes: flow.nodes.map((node) => node.id === prompt.id && node.data.kind === "generation" ? { ...node, data: { ...node.data, modelIds: ["model-ok", "model-fails"] } } : node) };
     const actions: WorkspaceAction[] = [];
-    const run = startGenerationRun({ flow: runFlow, generationNodeId: generation.id, virtualKey: toBifrostVirtualKey("sk-bf-test"), idFactory: () => crypto.randomUUID(), clock, dispatch: (action) => actions.push(action) });
+    const run = startGenerationRun({ flow: runFlow, generationNodeId: prompt.id, virtualKey: toBifrostVirtualKey("sk-bf-test"), idFactory: () => crypto.randomUUID(), clock, dispatch: (action) => actions.push(action) });
     await run.completed;
     const started = actions.find((action) => action.type === "batch/started");
     expect(started?.type).toBe("batch/started");
@@ -67,7 +67,11 @@ describe("generation execution", () => {
     expect(actions.at(-1)?.type).toBe("batch/completed");
     const succeeded = actions.find((action) => action.type === "execution/succeeded");
     expect(succeeded).toMatchObject({ usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 } });
-    if (started?.type === "batch/started") expect(started.batch.executions).toHaveLength(2);
+    if (started?.type === "batch/started") {
+      expect(started.batch.executions).toHaveLength(2);
+      expect(started.resultEdges).toHaveLength(2);
+      expect(started.resultEdges[0]).toMatchObject({ kind: "result", sourceHandle: "flow-bottom", targetHandle: "flow-top" });
+    }
   });
 
 
@@ -75,7 +79,7 @@ describe("generation execution", () => {
     server.use(http.post("https://api.devneya.com/llm/v1/chat/completions", () => HttpResponse.error()));
     const actions: WorkspaceAction[] = [];
     const options = makeRunOptions(["model-network"]);
-    const run = startGenerationRun({ ...options, generationNodeId: options.generation.id, dispatch: (action) => actions.push(action) });
+    const run = startGenerationRun({ ...options, generationNodeId: options.prompt.id, dispatch: (action) => actions.push(action) });
     await run.completed;
     const failed = actions.find((action) => action.type === "execution/failed");
     expect(failed?.type).toBe("execution/failed");
@@ -86,7 +90,7 @@ describe("generation execution", () => {
     server.use(http.post("https://api.devneya.com/llm/v1/chat/completions", () => HttpResponse.json({ error: "plain failure" }, { status: 500 })));
     const actions: WorkspaceAction[] = [];
     const options = makeRunOptions(["model-http"]);
-    const run = startGenerationRun({ ...options, generationNodeId: options.generation.id, dispatch: (action) => actions.push(action) });
+    const run = startGenerationRun({ ...options, generationNodeId: options.prompt.id, dispatch: (action) => actions.push(action) });
     await run.completed;
     const failed = actions.find((action) => action.type === "execution/failed");
     expect(failed?.type).toBe("execution/failed");
@@ -100,10 +104,10 @@ describe("generation execution", () => {
     }));
     const workspace = createStarterWorkspace(() => crypto.randomUUID(), clock);
     const flow = workspace.flows[0]!;
-    const generation = flow.nodes.find((node) => node.data.kind === "generation")!;
-    const runFlow = { ...flow, nodes: flow.nodes.map((node) => node.id === generation.id && node.data.kind === "generation" ? { ...node, data: { ...node.data, modelIds: ["slow-model"] } } : node) };
+    const prompt = flow.nodes.find((node) => node.data.kind === "generation")!;
+    const runFlow = { ...flow, nodes: flow.nodes.map((node) => node.id === prompt.id && node.data.kind === "generation" ? { ...node, data: { ...node.data, modelIds: ["slow-model"] } } : node) };
     const actions: WorkspaceAction[] = [];
-    const run = startGenerationRun({ flow: runFlow, generationNodeId: generation.id, virtualKey: toBifrostVirtualKey("sk-bf-test"), idFactory: () => crypto.randomUUID(), clock, dispatch: (action) => actions.push(action) });
+    const run = startGenerationRun({ flow: runFlow, generationNodeId: prompt.id, virtualKey: toBifrostVirtualKey("sk-bf-test"), idFactory: () => crypto.randomUUID(), clock, dispatch: (action) => actions.push(action) });
     run.cancel();
     await run.completed;
     expect(actions.filter((action) => action.type === "execution/cancelled")).toHaveLength(1);

@@ -1,6 +1,6 @@
 import { LIMITS, codePointLength, utf8ByteLength } from "./limits";
 import type { FlowDocument, InputEdge, InputSnapshot, PlaygroundEdge, WorkspaceDocument } from "./types";
-import { isGeneratedTextNode, isGenerationNode, isTextNode } from "./types";
+import { isTextNode, isGeneratedTextNode, isGenerationNode } from "./types";
 
 export const getNode = (flow: FlowDocument, nodeId: string) => flow.nodes.find((node) => node.id === nodeId);
 
@@ -12,6 +12,15 @@ export const getInputSnapshots = (flow: FlowDocument, generationNodeId: string):
     const node = getNode(flow, edge.source);
     return isTextNode(node) ? [{ nodeId: node.id, title: node.data.title, text: node.data.text }] : [];
   });
+export const nextGenerationIndex = (flow: FlowDocument): number => {
+  const indices = flow.nodes
+    .filter(isGenerationNode)
+    .map((node) => {
+      const match = /^Generation\s+(\d+)$/.exec(node.data.title);
+      return match ? Number(match[1]) : 0;
+    });
+  return indices.length === 0 ? 1 : Math.max(...indices) + 1;
+};
 
 export const hasDirectedPath = (flow: FlowDocument, fromId: string, toId: string, ignoredEdgeId?: string) => {
   if (fromId === toId) return true;
@@ -40,7 +49,7 @@ export const canAddInputConnection = (flow: FlowDocument, sourceTextId: string, 
     if (!execution || execution.status !== "success") return { allowed: false, reason: "Only successful results can be used as inputs." };
   }
   if (getOrderedInputEdges(flow, target.id).some((edge) => edge.id !== ignoredEdgeId && edge.source === source.id)) return { allowed: false, reason: "That Text node is already connected." };
-  if (getOrderedInputEdges(flow, target.id).filter((edge) => edge.id !== ignoredEdgeId).length >= LIMITS.maxInputsPerGeneration) return { allowed: false, reason: `A Generation node can have at most ${LIMITS.maxInputsPerGeneration} inputs.` };
+  if (getOrderedInputEdges(flow, target.id).filter((edge) => edge.id !== ignoredEdgeId).length >= LIMITS.maxInputsPerGeneration) return { allowed: false, reason: `A Generation node can have at most ${LIMITS.maxInputsPerGeneration} input${LIMITS.maxInputsPerGeneration === 1 ? "" : "s"}.` };
   if (hasDirectedPath(flow, target.id, source.id, ignoredEdgeId)) return { allowed: false, reason: "That connection would create a cycle." };
   return { allowed: true };
 };
@@ -75,7 +84,7 @@ const hasAnyCycle = (flow: FlowDocument) => {
 
 export const validateWorkspaceInvariants = (workspace: WorkspaceDocument): string[] => {
   const errors: string[] = [];
-  if (workspace.schemaVersion !== 1) errors.push("Unsupported workspace schema version.");
+  if (workspace.schemaVersion !== 3) errors.push("Unsupported workspace schema version.");
   if (workspace.flows.length === 0) errors.push("Workspace must contain a flow.");
   if (!workspace.flows.some((flow) => flow.id === workspace.activeFlowId)) errors.push("Active flow does not exist.");
   if (workspace.flows.length > LIMITS.maxFlows) errors.push("Too many flows.");

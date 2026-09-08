@@ -87,12 +87,11 @@ const staticAuthActions: AuthActions = {
 const WorkspaceProbe = () => {
   const workspace = useWorkspace();
   const flow = workspace.activeFlow;
-  const text = flow.nodes.find((node) => node.data.kind === "text");
-  const generation = flow.nodes.find((node) => node.data.kind === "generation");
+  const prompt = flow.nodes.find((node) => node.data.kind === "generation");
   const addNode: PlaygroundNode = {
-    id: "component-text",
+    id: "component-content",
     position: { x: 900, y: 120 },
-    data: { kind: "text", origin: "manual", title: "Component text", text: "" },
+    data: { kind: "text", origin: "manual", title: "Component content", text: "" },
     createdAt: new Date(0).toISOString(),
     updatedAt: new Date(0).toISOString(),
   };
@@ -112,11 +111,11 @@ const WorkspaceProbe = () => {
     <output data-testid="save-status">{workspace.saving ? "saving" : workspace.lastSavedAt ? "saved" : "unsaved"}</output>
     <output data-testid="flow-count">{workspace.workspace.flows.length}</output>
     <output data-testid="batch-count">{flow.batches.length}</output>
-    <output data-testid="text-value">{text?.data.kind === "text" ? text.data.text : "missing"}</output>
+    <output data-testid="text-value">{prompt?.data.kind === "generation" ? prompt.data.instruction : "missing"}</output>
     <output data-testid="error">{workspace.error || workspace.modelsError || workspace.keyError || ""}</output>
-    <button type="button" onClick={() => text && workspace.dispatch({ type: "node/edit-text", flowId: flow.id, nodeId: text.id, text: "component text" })}>edit</button>
-    <button type="button" onClick={() => generation && workspace.dispatch({ type: "node/set-models", flowId: flow.id, nodeId: generation.id, modelIds: ["model-a"] })}>select</button>
-    <button type="button" onClick={() => generation && void workspace.runGeneration(generation.id).completed}>run</button>
+    <button type="button" onClick={() => prompt && workspace.dispatch({ type: "node/edit-instruction", flowId: flow.id, nodeId: prompt.id, instruction: "component text" })}>edit</button>
+    <button type="button" onClick={() => prompt && workspace.dispatch({ type: "node/set-models", flowId: flow.id, nodeId: prompt.id, modelIds: ["model-a"] })}>select</button>
+    <button type="button" onClick={() => prompt && void workspace.runGeneration(prompt.id).completed}>run</button>
     <button type="button" onClick={() => workspace.addNode(addNode)}>add</button>
     <button type="button" onClick={workspace.undo}>undo</button>
     <button type="button" onClick={workspace.redo}>redo</button>
@@ -129,7 +128,7 @@ const WorkspaceProbe = () => {
     <button type="button" onClick={() => workspace.duplicateFlow("missing-flow")}>duplicate-missing</button>
     <button type="button" onClick={() => workspace.activateFlow("missing-flow")}>activate-missing</button>
     <button type="button" onClick={() => workspace.deleteFlow("missing-flow")}>delete-missing</button>
-    <button type="button" onClick={() => invoke(() => workspace.runGeneration("missing-generation"))}>run-invalid</button>
+    <button type="button" onClick={() => invoke(() => workspace.runGeneration("missing-prompt"))}>run-invalid</button>
     <button type="button" onClick={() => workspace.cancelRun("missing-run")}>cancel-missing</button>
     <button type="button" onClick={() => invoke(() => workspace.exportWorkspace())}>export</button>
     <button type="button" onClick={() => invoke(() => workspace.importWorkspace(new File(["not-json"], "bad.json", { type: "application/json" })))}>import-invalid</button>
@@ -224,7 +223,7 @@ describe("WorkspaceProvider", () => {
     await waitFor(() => expect(screen.getByTestId("save-status")).toHaveTextContent("saved"));
     await waitFor(async () => {
       const saved = await repository.load("user-a");
-      expect(saved?.flows[0]?.nodes.some((node) => node.data.kind === "text" && node.data.text === "component text")).toBe(true);
+      expect(saved?.flows[0]?.nodes.some((node) => node.data.kind === "generation" && node.data.instruction === "component text")).toBe(true);
     });
     await user.click(screen.getByRole("button", { name: "run" }));
     await waitFor(() => expect(screen.getByTestId("batch-count")).toHaveTextContent("1"));
@@ -296,14 +295,14 @@ describe("WorkspaceProvider", () => {
     await user.click(screen.getByRole("button", { name: "import-large" }));
     await waitFor(() => expect(screen.getByTestId("action-error")).toHaveTextContent(/too large/i));
     await user.click(screen.getByRole("button", { name: "run-invalid" }));
-    await waitFor(() => expect(screen.getByTestId("action-error")).toHaveTextContent(/Generation node/i));
+    await waitFor(() => expect(screen.getByTestId("action-error")).toHaveTextContent(/choose a prompt/i));
   });
 
   it("restores an existing workspace and reports a failed save", async () => {
     const repository = new InMemoryWorkspaceRepository();
     const saved = createStarterWorkspace(() => crypto.randomUUID());
-    const firstText = saved.flows[0]?.nodes.find((node) => node.data.kind === "text");
-    if (firstText?.data.kind === "text") firstText.data.text = "restored text";
+    const firstPrompt = saved.flows[0]?.nodes.find((node) => node.data.kind === "generation");
+    if (firstPrompt?.data.kind === "generation") firstPrompt.data.instruction = "restored text";
     await repository.save("user-a", saved);
     render(<AuthContext.Provider value={signedInValue(makeSession())}><WorkspaceProvider repository={repository}><WorkspaceProbe /></WorkspaceProvider></AuthContext.Provider>);
     await waitFor(() => expect(screen.getByTestId("text-value")).toHaveTextContent("restored text"));

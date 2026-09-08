@@ -37,8 +37,13 @@ const makeSession = (identity: MockIdentity): Session => ({
 
 export const MockAuthProvider = ({ children }: PropsWithChildren) => {
   const [state, setState] = useState<AuthState>(() => {
-    const storedEmail = globalThis.sessionStorage?.getItem("devneya-mock-auth-email");
+    const storedEmail =
+      globalThis.localStorage?.getItem("devneya-mock-auth-email") ??
+      globalThis.sessionStorage?.getItem("devneya-mock-auth-email");
     if (!storedEmail) return { session: null, user: null, initializing: false, recovery: false };
+    // An already-open tab may still hold the old session in sessionStorage; copy
+    // it into localStorage so its next reload does not log the user out again.
+    globalThis.localStorage?.setItem("devneya-mock-auth-email", storedEmail);
     const session = makeSession(identityForEmail(storedEmail));
     return { session, user: session.user, initializing: false, recovery: false };
   });
@@ -47,7 +52,7 @@ export const MockAuthProvider = ({ children }: PropsWithChildren) => {
       if (!email || password.length < 8) throw new Error("Invalid credentials.");
       const identity = identityForEmail(email);
       const session = makeSession(identity);
-      globalThis.sessionStorage?.setItem("devneya-mock-auth-email", email);
+      globalThis.localStorage?.setItem("devneya-mock-auth-email", email);
       setState({ session, user: session.user, initializing: false, recovery: false });
     },
     async signup() {},
@@ -58,11 +63,11 @@ export const MockAuthProvider = ({ children }: PropsWithChildren) => {
     async signInWithOAuth(provider: "google" | "github") {
       const identity = identityForEmail(`${provider}@mock.devneya.test`);
       const session = makeSession(identity);
-      globalThis.sessionStorage?.setItem("devneya-mock-auth-email", identity.email);
+      globalThis.localStorage?.setItem("devneya-mock-auth-email", identity.email);
       setState({ session, user: session.user, initializing: false, recovery: false });
     },
     async signOut() {
-      globalThis.sessionStorage?.removeItem("devneya-mock-auth-email");
+      globalThis.localStorage?.removeItem("devneya-mock-auth-email");
       setState({ session: null, user: null, initializing: false, recovery: false });
     },
   }), []);
