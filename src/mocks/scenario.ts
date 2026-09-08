@@ -31,7 +31,7 @@ export type MockScenario = {
 
 const base = (name: MockScenarioName): MockScenario => ({
   name,
-  models: ["model-a"],
+  models: ["model-a", "model-b"],
   delayMs: 0,
   delays: {},
   failModels: [],

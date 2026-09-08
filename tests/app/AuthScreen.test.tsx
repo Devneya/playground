@@ -34,6 +34,26 @@ describe("AuthScreen", () => {
     expect(screen.getByRole("button", { name: /create account/i })).toBeInTheDocument();
   });
 
+  it("uses mock-safe autocomplete and can switch back from account creation", async () => {
+    vi.stubEnv("MODE", "mock");
+    try {
+      const user = userEvent.setup();
+      renderAuth();
+
+      expect(screen.getByLabelText("Email").closest("form")).toHaveAttribute("autocomplete", "off");
+      expect(screen.getByLabelText("Password")).toHaveAttribute("autocomplete", "new-password");
+
+      await user.click(screen.getByRole("button", { name: /create an account/i }));
+      expect(screen.getByRole("button", { name: /already have an account/i })).toBeInTheDocument();
+      expect(screen.getByLabelText("Password")).toHaveAttribute("autocomplete", "new-password");
+
+      await user.click(screen.getByRole("button", { name: /already have an account/i }));
+      expect(screen.getByRole("button", { name: /sign in/i })).toBeInTheDocument();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("submits recovery without exposing a password field", async () => {
     const user = userEvent.setup();
     renderAuth();

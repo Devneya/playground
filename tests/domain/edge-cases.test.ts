@@ -39,10 +39,10 @@ describe("domain edge cases", () => {
     const workspace = createStarterWorkspace(id, clock);
     const flow = workspace.flows[0]!;
     const prompt = flow.nodes.find((node) => node.data.kind === "generation")!;
-    // The first result row would land at (80,420); an occupied node there
-    // forces the row one stride down to (80,880).
-    const occupied: PlaygroundNode = { ...flow.nodes[0]!, id: "occupied", position: { x: 80, y: 420 } };
-    expect(placeNewResultNodes({ ...flow, nodes: [...flow.nodes, occupied] }, prompt.id, 1)).toEqual([{ x: 80, y: 880 }]);
+    // The first result row would land at (80,435); an occupied node there
+    // forces the row one stride down to (80,895).
+    const occupied: PlaygroundNode = { ...flow.nodes[0]!, id: "occupied", position: { x: 80, y: 435 } };
+    expect(placeNewResultNodes({ ...flow, nodes: [...flow.nodes, occupied] }, prompt.id, 1)).toEqual([{ x: 80, y: 895 }]);
   });
 
   it("covers identity, size, and naming helpers", () => {
@@ -68,6 +68,57 @@ describe("domain edge cases", () => {
     const duplicatedBatch = duplicate.batches[0];
     expect(duplicatedOutput?.data).toMatchObject({ batchId: duplicatedBatch?.id, executionId: duplicatedBatch?.executions[0]?.id });
     expect(duplicatedBatch?.executions[0]?.outputNodeId).toBe(duplicatedOutput?.id);
+  });
+
+  it("preserves unresolved and empty references while duplicating legacy nodes", () => {
+    const { flow, prompt } = generatedFixture();
+    const legacyGenerated: PlaygroundNode = {
+      id: "legacy-generated",
+      position: { x: 900, y: 400 },
+      data: { kind: "text", origin: "generated", title: "legacy-model", text: "legacy output", batchId: "", executionId: "" },
+      createdAt: clock.now().toISOString(),
+      updatedAt: clock.now().toISOString(),
+      placement: { anchorId: "removed-anchor", offsetX: 0, direction: "below" },
+    };
+    const legacyManual: PlaygroundNode = {
+      id: "legacy-manual",
+      position: { x: 1200, y: 400 },
+      data: {
+        kind: "text",
+        origin: "manual",
+        title: "Saved note",
+        text: "note",
+        source: { nodeId: "removed-node", batchId: "removed-batch", executionId: "removed-execution", modelId: "legacy-model", instruction: "old", text: "legacy output" },
+      },
+      createdAt: clock.now().toISOString(),
+      updatedAt: clock.now().toISOString(),
+    };
+    const branched: PlaygroundNode = {
+      ...prompt,
+      id: "legacy-branch",
+      data: {
+        kind: "generation",
+        title: "Legacy branch",
+        instruction: "",
+        modelIds: [],
+        context: [{ role: "user", content: "old context", nodeId: "removed-context" }],
+        branchedFrom: { nodeId: "removed-node", batchId: "removed-batch" },
+      },
+    };
+    const withLegacyNodes = { ...flow, nodes: [...flow.nodes, legacyGenerated, legacyManual, branched] };
+
+    const duplicate = duplicateFlowWithFreshIds(withLegacyNodes, id, clock);
+    const generated = duplicate.nodes.find((node) => node.data.kind === "text" && node.data.origin === "generated" && node.data.title === "legacy-model")!;
+    const manual = duplicate.nodes.find((node) => node.data.kind === "text" && node.data.origin === "manual" && node.data.title === "Saved note")!;
+    const branch = duplicate.nodes.find((node) => node.data.kind === "generation" && node.data.title === "Legacy branch")!;
+
+    expect(generated.data).toMatchObject({ batchId: "", executionId: "" });
+    expect(generated.placement?.anchorId).toBe("removed-anchor");
+    expect(manual.data).toMatchObject({ source: { nodeId: "removed-node", batchId: "removed-batch", executionId: "removed-execution" } });
+    expect(branch.data).toMatchObject({
+      context: [{ nodeId: "removed-context" }],
+      branchedFrom: { nodeId: "removed-node", batchId: "removed-batch" },
+    });
   });
 
   it("allows successful generated results and rejects pending ones", () => {

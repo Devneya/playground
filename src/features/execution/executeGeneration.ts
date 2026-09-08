@@ -1,10 +1,11 @@
 import { createChatCompletion } from "../../api/completions";
 import type { BifrostVirtualKey } from "../../api/credentials";
 import { normalizeApiError } from "../../api/errors";
-import { buildCompletionMessagesV1 } from "../../domain/completion";
+import { buildConversationMessages, getConversationPath } from "../../domain/conversation";
 import { getInputSnapshots, getNode } from "../../domain/graph";
 import { LIMITS, utf8ByteLength } from "../../domain/limits";
-import { placeNewResultNodes } from "../../domain/resultPlacement";
+import { placeNewResultNodes, RESULT_COL_STRIDE } from "../../domain/resultPlacement";
+import { cardHeight } from "../../domain/spatialLayout";
 import type { Clock, ExecutionBatch, ExecutionError, FlowDocument, IdFactory, PlaygroundEdge, PlaygroundNode, Usage } from "../../domain/types";
 import { isGenerationNode } from "../../domain/types";
 import type { WorkspaceAction } from "../../domain/workspaceReducer";
@@ -49,14 +50,16 @@ export const startGenerationRun = (options: RunOptions): GenerationRun => {
     if (canDispatch()) dispatch(action);
   };
   const prompt = getNode(flow, generationNodeId);
-  if (!isGenerationNode(prompt)) throw new Error("Choose a Generation node to run.");
+  if (!isGenerationNode(prompt)) throw new Error("Choose a prompt to send.");
   const modelIds = [...prompt.data.modelIds];
   if (modelIds.length === 0) throw new Error("Choose at least one model before running.");
   if (modelIds.length > LIMITS.maxModelsPerBatch) throw new Error(`Choose no more than ${LIMITS.maxModelsPerBatch} models.`);
   const inputs = getInputSnapshots(flow, prompt.id);
   const instruction = prompt.data.instruction;
   if (utf8ByteLength(instruction) > LIMITS.maxTextBytes) throw new Error("The instruction is too large.");
-  const messages = buildCompletionMessagesV1(inputs, instruction);
+  const context = getConversationPath(flow, prompt.id);
+  const messages = buildConversationMessages(flow, prompt.id, context);
+  if (utf8ByteLength(JSON.stringify(messages)) > LIMITS.maxPromptBytes) throw new Error("This conversation is too large to send. Start a new conversation with a shorter summary.");
 
   const batchId = idFactory();
   const startedAt = clock.now().toISOString();
@@ -69,9 +72,17 @@ export const startGenerationRun = (options: RunOptions): GenerationRun => {
     outputNodeId: idFactory(),
     position: positions[index],
   }));
-  const outputNodes: PlaygroundNode[] = executions.map((execution) => ({
+  const descendants = new Set(flow.edges.filter((edge) => edge.kind === "result" && edge.source === prompt.id).map((edge) => edge.target));
+  for (let pass = 0; pass < flow.nodes.length; pass += 1) {
+    const before = descendants.size;
+    flow.edges.forEach((edge) => { if (descendants.has(edge.source)) descendants.add(edge.target); });
+    if (descendants.size === before) break;
+  }
+  const anchor = flow.nodes.filter((node) => descendants.has(node.id)).reduce((lowest, node) => node.position.y + cardHeight(node) > lowest.position.y + cardHeight(lowest) ? node : lowest, prompt);
+  const outputNodes: PlaygroundNode[] = executions.map((execution, index) => ({
     id: execution.outputNodeId,
     position: execution.position ?? { x: prompt.position.x + 360, y: prompt.position.y },
+    placement: { anchorId: anchor.id, offsetX: prompt.position.x + index * RESULT_COL_STRIDE - anchor.position.x, direction: "below" },
     data: { kind: "text", origin: "generated", title: execution.modelId, text: "", batchId, executionId: execution.id },
     createdAt: startedAt,
     updatedAt: startedAt,
@@ -81,9 +92,10 @@ export const startGenerationRun = (options: RunOptions): GenerationRun => {
     id: batchId,
     generationNodeId: prompt.id,
     startedAt,
-    promptFormatVersion: 1,
+    promptFormatVersion: context.some((entry) => entry.role === "assistant") ? 2 : 1,
     instruction,
     inputs,
+    context,
     executions: executions.map(({ id, modelId, status, startedAt: executionStartedAt, outputNodeId }) => ({ id, modelId, status, startedAt: executionStartedAt, outputNodeId })),
   };
   const controller = new AbortController();

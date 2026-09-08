@@ -45,7 +45,7 @@ export const ModelPicker = ({ title, modelIds, models, status, error, onReload, 
   return <div className="model-picker-root nodrag" ref={rootRef}>
     <button type="button" className="model-pill" aria-label={`${title} model picker`} aria-expanded={open} title={modelIds.join(", ") || "No models selected"} onClick={() => setOpen((value) => !value)}>
       <span className="model-pill-label">{pillLabel}</span>{" "}
-      <span className="model-pill-count">({modelIds.length}/{MAX_MODELS})</span>
+      <span className="model-pill-count">({modelIds.length}/{Math.min(MAX_MODELS, models.length) || MAX_MODELS})</span>
     </button>
     {status === "loading" && <span className="muted model-status-line">Loading live catalog…</span>}
     {status === "error" && <span className="form-error model-status-line">{error} <button type="button" className="small-button" onClick={onReload}>Retry</button></span>}
@@ -53,7 +53,7 @@ export const ModelPicker = ({ title, modelIds, models, status, error, onReload, 
     {open && <div className="model-popover" role="dialog" aria-label={`${title} models`}>
       <input className="model-search" aria-label={`${title} model search`} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search models…" />
       {status === "ready" && visible.map((model) => <label className="model-option" key={model.id}>
-        <input type="checkbox" aria-label={`${title} model ${model.id}`} checked={selected.has(model.id)} onChange={() => onToggle(model.id)} disabled={!selected.has(model.id) && modelIds.length >= MAX_MODELS} />
+        <input type="checkbox" aria-label={`${title} model ${model.id}`} checked={selected.has(model.id)} onChange={() => onToggle(model.id)} disabled={selected.has(model.id) ? modelIds.length === 1 : modelIds.length >= MAX_MODELS} />
         <span>{model.id}</span>
       </label>)}
       {status === "ready" && visible.length === 0 && <span className="muted">No models match.</span>}

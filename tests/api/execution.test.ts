@@ -32,7 +32,7 @@ describe("prompt execution", () => {
 
   it("rejects invalid run inputs before dispatching a batch", () => {
     const valid = makeRunOptions(["model-a"]);
-    expect(() => startGenerationRun({ ...valid, generationNodeId: "missing" })).toThrow("Choose a Generation node to run.");
+    expect(() => startGenerationRun({ ...valid, generationNodeId: "missing" })).toThrow("Choose a prompt to send.");
     const empty = makeRunOptions([]);
     expect(() => startGenerationRun({ ...empty, generationNodeId: empty.prompt.id })).toThrow("Choose at least one model before running.");
     const tooMany = makeRunOptions(["a", "b", "c", "d", "e"]);

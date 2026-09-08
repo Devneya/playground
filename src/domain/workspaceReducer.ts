@@ -3,6 +3,8 @@ import { canAddInputConnection, getOrderedInputEdges, nextGenerationIndex, norma
 import { createBlankFlow } from "./workspaceFactory";
 import { RESULT_COL_STRIDE, RESULT_TO_CONTINUATION_STRIDE } from "./resultPlacement";
 import { isGeneratedTextNode, isGenerationNode, isManualTextNode } from "./types";
+import { detachPlacement, layoutAutomaticNodes } from "./spatialLayout";
+import { getContextFromInputs } from "./conversation";
 
 export type WorkspaceAction =
   | { type: "flow/create"; flow: FlowDocument }
@@ -12,14 +14,19 @@ export type WorkspaceAction =
   | { type: "flow/delete"; flowId: string }
   | { type: "node/add"; flowId: string; node: PlaygroundNode }
   | { type: "node/move"; flowId: string; nodeId: string; position: { x: number; y: number } }
+  | { type: "node/measure"; flowId: string; sizes: { id: string; height: number }[] }
   | { type: "node/rename"; flowId: string; nodeId: string; title: string }
   | { type: "node/edit-instruction"; flowId: string; nodeId: string; instruction: string }
   | { type: "node/edit-text"; flowId: string; nodeId: string; text: string }
   | { type: "node/set-models"; flowId: string; nodeId: string; modelIds: string[] }
   | { type: "node/delete"; flowId: string; nodeId: string }
   | { type: "node/make-editable"; flowId: string; node: PlaygroundNode }
+  | { type: "node/extract-note"; flowId: string; sourceNodeId: string }
+  | { type: "workspace/default-model"; modelId: string }
   | { type: "node/duplicate"; flowId: string; node: PlaygroundNode }
   | { type: "generation/continue"; flowId: string; sourceNodeId: string }
+  | { type: "generation/branch"; flowId: string; sourceNodeId: string }
+  | { type: "generation/duplicate"; flowId: string; sourceNodeId: string }
   | { type: "input/add"; flowId: string; edge: PlaygroundEdge }
 | { type: "input/reconnect"; flowId: string; edgeId: string; source: string; target: string; sourceHandle?: string | null; targetHandle?: string | null }
   | { type: "input/remove"; flowId: string; edgeId: string }
@@ -59,6 +66,34 @@ const removePromptTree = (flow: FlowDocument, nodeId: string) => {
 
 export const reduceWorkspace = (workspace: WorkspaceDocument, action: WorkspaceAction, context: ReducerContext): WorkspaceDocument => {
   switch (action.type) {
+    case "workspace/default-model": {
+      if (!action.modelId) return workspace;
+      let changed = false;
+      const flows = workspace.flows.map((flow) => {
+        const nodes = flow.nodes.map((node) => {
+          if (!isGenerationNode(node) || node.data.modelIds.length || flow.batches.some((batch) => batch.generationNodeId === node.id)) return node;
+          changed = true;
+          return { ...node, data: { ...node.data, modelIds: [action.modelId] } };
+        });
+        return nodes.every((node, index) => node === flow.nodes[index]) ? flow : { ...flow, nodes };
+      });
+      return changed ? { ...workspace, flows } : workspace;
+    }
+    case "node/extract-note": {
+      const flow = workspace.flows.find((item) => item.id === action.flowId);
+      const source = flow?.nodes.find((item) => item.id === action.sourceNodeId);
+      if (!flow || !isGeneratedTextNode(source)) return workspace;
+      const batch = flow.batches.find((item) => item.id === source.data.batchId);
+      const execution = batch?.executions.find((item) => item.id === source.data.executionId);
+      const now = context.clock.now().toISOString();
+      const note: PlaygroundNode = { id: context.idFactory(), createdAt: now, updatedAt: now,
+        position: { x: source.position.x + RESULT_COL_STRIDE, y: source.position.y },
+        placement: { anchorId: source.id, offsetX: RESULT_COL_STRIDE, direction: "above" },
+        data: { kind: "text", origin: "manual", title: `Note · ${source.data.title}`, text: source.data.text,
+          source: { nodeId: source.id, batchId: source.data.batchId, executionId: source.data.executionId, modelId: execution?.modelId ?? source.data.title, instruction: batch?.instruction ?? "", text: source.data.text } },
+      };
+      return updateFlow(workspace, flow.id, context, (current) => layoutAutomaticNodes({ ...current, nodes: [...current.nodes, note] }));
+    }
     case "flow/create": return { ...workspace, flows: [...workspace.flows, action.flow], activeFlowId: action.flow.id, updatedAt: context.clock.now().toISOString() };
     case "flow/activate": return workspace.flows.some((flow) => flow.id === action.flowId) ? { ...workspace, activeFlowId: action.flowId } : workspace;
     case "flow/rename": return updateFlow(workspace, action.flowId, context, (flow) => ({ ...flow, name: action.name }));
@@ -75,7 +110,14 @@ export const reduceWorkspace = (workspace: WorkspaceDocument, action: WorkspaceA
       return { ...workspace, flows, activeFlowId, updatedAt: context.clock.now().toISOString() };
     }
     case "node/add": return updateFlow(workspace, action.flowId, context, (flow) => ({ ...flow, nodes: [...flow.nodes, action.node] }));
-    case "node/move": return updateFlow(workspace, action.flowId, context, (flow) => ({ ...flow, nodes: flow.nodes.map((node) => node.id === action.nodeId ? { ...node, position: { ...action.position } } : node) }));
+    case "node/move": return updateFlow(workspace, action.flowId, context, (flow) => ({ ...flow, nodes: flow.nodes.map((node) => node.id === action.nodeId ? { ...detachPlacement(node), position: { ...action.position } } : node.placement?.anchorId === action.nodeId ? detachPlacement(node) : node) }));
+    case "node/measure": {
+      const flow = workspace.flows.find((candidate) => candidate.id === action.flowId);
+      if (!flow) return workspace;
+      const sizes = new Map(action.sizes.filter((size) => Number.isFinite(size.height) && size.height > 0).map((size) => [size.id, size.height]));
+      if (!flow.nodes.some((node) => sizes.has(node.id) && sizes.get(node.id) !== node.measuredHeight)) return workspace;
+      return updateFlow(workspace, action.flowId, context, (current) => layoutAutomaticNodes({ ...current, nodes: current.nodes.map((node) => sizes.has(node.id) ? { ...node, measuredHeight: sizes.get(node.id)! } : node) }));
+    }
     case "node/rename": return updateFlow(workspace, action.flowId, context, (flow) => ({ ...flow, nodes: flow.nodes.map((node) => node.id === action.nodeId && !isGeneratedTextNode(node) ? { ...node, data: { ...node.data, title: action.title } } : node) }));
     case "node/edit-instruction": return updateFlow(workspace, action.flowId, context, (flow) => ({ ...flow, nodes: flow.nodes.map((node) => isGenerationNode(node) && node.id === action.nodeId ? { ...node, data: { ...node.data, instruction: action.instruction } } : node) }));
     case "node/edit-text": return updateFlow(workspace, action.flowId, context, (flow) => ({ ...flow, nodes: flow.nodes.map((node) => node.id === action.nodeId && isManualTextNode(node) ? { ...node, data: { ...node.data, text: action.text } } : node) }));
@@ -83,6 +125,25 @@ export const reduceWorkspace = (workspace: WorkspaceDocument, action: WorkspaceA
     case "node/delete": return updateFlow(workspace, action.flowId, context, (flow) => removePromptTree(flow, action.nodeId));
     case "node/make-editable": return updateFlow(workspace, action.flowId, context, (flow) => ({ ...flow, nodes: [...flow.nodes, action.node] }));
     case "node/duplicate": return updateFlow(workspace, action.flowId, context, (flow) => ({ ...flow, nodes: [...flow.nodes, action.node] }));
+    case "generation/duplicate":
+    case "generation/branch": {
+      const flow = workspace.flows.find((candidate) => candidate.id === action.flowId);
+      const answer = flow?.nodes.find((node) => node.id === action.sourceNodeId);
+      if (!flow || !answer) return workspace;
+      const duplicate = action.type === "generation/duplicate";
+      if (duplicate ? !isGenerationNode(answer) : !isGeneratedTextNode(answer)) return workspace;
+      const batch = duplicate
+        ? flow.batches.filter((candidate) => candidate.generationNodeId === answer.id).reduce<ExecutionBatch | undefined>((latest, candidate) => !latest || candidate.startedAt >= latest.startedAt ? candidate : latest, undefined)
+        : flow.batches.find((candidate) => isGeneratedTextNode(answer) && candidate.id === answer.data.batchId);
+      const execution = batch?.executions.find((candidate) => isGeneratedTextNode(answer) && candidate.id === answer.data.executionId);
+      const parent = flow.nodes.find((node) => node.id === batch?.generationNodeId);
+      if (!batch || (!duplicate && execution?.status !== "success") || !isGenerationNode(parent)) return workspace;
+      const id = context.idFactory();
+      const now = context.clock.now().toISOString();
+      const node: PlaygroundNode = { id, position: { x: parent.position.x + RESULT_COL_STRIDE, y: parent.position.y }, placement: { anchorId: parent.id, offsetX: RESULT_COL_STRIDE, direction: "right" }, createdAt: now, updatedAt: now, data: { kind: "generation", title: `Generation ${nextGenerationIndex(flow)}`, instruction: batch.instruction, modelIds: duplicate ? batch.executions.map((item) => item.modelId) : [execution!.modelId], context: structuredClone(batch.context ?? getContextFromInputs(flow, batch.inputs)), branchedFrom: { nodeId: parent.id, batchId: batch.id } } };
+      const edges: InputEdge[] = batch.inputs.filter((input) => flow.nodes.some((candidate) => candidate.id === input.nodeId)).map((input, order) => ({ id: context.idFactory(), kind: "input", source: input.nodeId, target: id, sourceHandle: "flow-bottom", targetHandle: "flow-top", order }));
+      return updateFlow(workspace, flow.id, context, (current) => layoutAutomaticNodes({ ...current, nodes: [...current.nodes, node], edges: [...current.edges, ...edges] }));
+    }
     case "generation/continue": {
       const flow = workspace.flows.find((candidate) => candidate.id === action.flowId);
       if (!flow) return workspace;
@@ -91,8 +152,9 @@ export const reduceWorkspace = (workspace: WorkspaceDocument, action: WorkspaceA
       const batch = flow.batches.find((candidate) => candidate.id === source.data.batchId);
       const execution = batch?.executions.find((candidate) => candidate.id === source.data.executionId);
       if (!execution || execution.status !== "success") return workspace;
-      const parent = batch ? flow.nodes.find((node) => node.id === batch.generationNodeId) : undefined;
-      const modelIds = isGenerationNode(parent) ? [...parent.data.modelIds] : [];
+      // Continuing one answer defaults to that answer's model. Comparing
+      // models is an explicit choice for each reply, not inherited fan-out.
+      const modelIds = [execution.modelId];
       // A continuation descends below its result. The first continuation from a
       // result sits directly below it; every further Continue from the same
       // result opens a new parallel column to the right (a fork), keeping each
@@ -118,12 +180,13 @@ export const reduceWorkspace = (workspace: WorkspaceDocument, action: WorkspaceA
       const newGeneration: PlaygroundNode = {
         id: newId,
         position,
+        placement: { anchorId: source.id, offsetX: branchColumn * RESULT_COL_STRIDE, direction: "below" },
         data: { kind: "generation", title: `Generation ${nextGenerationIndex(flow)}`, instruction: "", modelIds },
         createdAt: now,
         updatedAt: now,
       };
       const edge: InputEdge = { id: context.idFactory(), kind: "input", source: source.id, target: newId, sourceHandle: "flow-bottom", targetHandle: "flow-top", order: getOrderedInputEdges(flow, newId).length };
-      return updateFlow(workspace, action.flowId, context, (targetFlow) => ({ ...targetFlow, nodes: [...targetFlow.nodes, newGeneration], edges: normalizeInputOrder([...targetFlow.edges, edge], newId) }));
+      return updateFlow(workspace, action.flowId, context, (targetFlow) => layoutAutomaticNodes({ ...targetFlow, nodes: [...targetFlow.nodes, newGeneration], edges: normalizeInputOrder([...targetFlow.edges, edge], newId) }));
     }
     case "viewport/update": return updateFlow(workspace, action.flowId, context, (flow) => ({ ...flow, viewport: { ...action.viewport } }));
     case "input/add": {
@@ -155,7 +218,7 @@ export const reduceWorkspace = (workspace: WorkspaceDocument, action: WorkspaceA
       const orders = new Map(ordered.map((item, order) => [item.id, order]));
       return { ...flow, edges: flow.edges.map((item) => item.kind === "input" && orders.has(item.id) ? { ...item, order: orders.get(item.id) ?? item.order } : item) };
     });
-    case "batch/started": return updateFlow(workspace, action.flowId, context, (flow) => ({
+    case "batch/started": return updateFlow(workspace, action.flowId, context, (flow) => layoutAutomaticNodes({
       ...flow,
       batches: [...flow.batches, action.batch],
       nodes: [...flow.nodes.map((node) => node.id === action.batch.generationNodeId ? { ...node, updatedAt: action.batch.startedAt } : node), ...action.outputNodes],

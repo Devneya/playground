@@ -158,6 +158,7 @@ export const WorkspaceProvider = ({ children, repository: injectedRepository }: 
       workspace,
       save: (userId, document) => repository.save(userId, document),
       isCurrent: (_queueVersion, userId) => generation === saveGenerationRef.current && userId === user.id && epoch === lifecycleEpochRef.current,
+      onScheduled: () => setSaving(true),
       onStart: () => setSaving(true),
       onSettled: (_queueVersion, userId, saveError) => {
         if (generation !== saveGenerationRef.current || userId !== user.id || epoch !== lifecycleEpochRef.current) return;
@@ -184,6 +185,14 @@ export const WorkspaceProvider = ({ children, repository: injectedRepository }: 
       setModelsError(normalizeApiError(modelsError).message);
     });
   }, []);
+
+  useEffect(() => {
+    const defaultModel = models[0]?.id;
+    if (loadStatus !== "ready" || modelsStatus !== "ready" || !defaultModel) return;
+    if (workspace.flows.some((flow) => flow.nodes.some((node) => node.data.kind === "generation" && !node.data.modelIds.length && !flow.batches.some((batch) => batch.generationNodeId === node.id)))) {
+      dispatch({ type: "workspace/default-model", modelId: defaultModel });
+    }
+  }, [dispatch, loadStatus, models, modelsStatus, workspace]);
 
   useEffect(() => {
     setModels([]);

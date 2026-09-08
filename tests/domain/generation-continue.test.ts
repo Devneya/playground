@@ -3,6 +3,7 @@ import { reduceWorkspace } from "../../src/domain/workspaceReducer";
 import { emptyHistory, isHistoryAction, pushHistory } from "../../src/domain/workspaceHistory";
 import type { Clock, IdFactory, WorkspaceDocument } from "../../src/domain/types";
 import { RESULT_COL_STRIDE, RESULT_TO_CONTINUATION_STRIDE } from "../../src/domain/resultPlacement";
+import { cardHeight, CHAT_GAP } from "../../src/domain/spatialLayout";
 
 const ids = (() => { let index = 0; return () => `id-${index++}`; })();
 const clock: Clock = { now: () => new Date("2026-01-01T00:00:00.000Z") };
@@ -37,7 +38,21 @@ const buildWorkspace = (): WorkspaceDocument => ({
 });
 
 describe("generation/continue", () => {
-  it("adds exactly one generation node and one input edge, copying parent modelIds", () => {
+  it("duplicates the frozen sent prompt without copying its answer into context", () => {
+    const initial = buildWorkspace();
+    const batch = initial.flows[0]!.batches[0]!;
+    batch.instruction = "Original question";
+    batch.context = [{ role: "user", content: "Earlier context", nodeId: "prior" }];
+    const next = reduceWorkspace(initial, { type: "generation/duplicate", flowId: "flow-1", sourceNodeId: "gen-1" }, context);
+    const copy = next.flows[0]!.nodes.at(-1)!;
+    expect(copy.data).toMatchObject({ kind: "generation", instruction: "Original question", modelIds: ["m1"], context: batch.context, branchedFrom: { nodeId: "gen-1", batchId: "batch-1" } });
+    expect(copy.position.x).toBeGreaterThan(initial.flows[0]!.nodes[0]!.position.x);
+    expect(next.flows[0]!.nodes.slice(0, 2)).toEqual(initial.flows[0]!.nodes);
+    expect(next.flows[0]!.batches).toEqual(initial.flows[0]!.batches);
+    expect(next.flows[0]!.edges.some((edge) => edge.source === "res-1" && edge.target === copy.id)).toBe(false);
+  });
+
+  it("adds one generation and input edge, defaulting to the answer's model", () => {
     const initial = buildWorkspace();
     const result = reduceWorkspace(initial, { type: "generation/continue", flowId: "flow-1", sourceNodeId: "res-1" }, context);
     const flow = result.flows[0]!;
@@ -45,11 +60,10 @@ describe("generation/continue", () => {
     expect(flow.edges).toHaveLength(1);
 
     const newGen = flow.nodes.find((node) => node.id !== "gen-1" && node.id !== "res-1")!;
-    expect(newGen.data).toMatchObject({ kind: "generation", title: "Generation 2", instruction: "", modelIds: ["m1", "m2"] });
-    // First continuation descends directly below the result; later Continues
-    // from the same result fork into a parallel column (the branch index).
-    // res at (100,100); RESULT_TO_CONTINUATION_STRIDE = 160 → y 260.
-    expect(newGen.position).toEqual({ x: 100, y: 260 });
+    expect(newGen.data).toMatchObject({ kind: "generation", title: "Generation 2", instruction: "", modelIds: ["m1"] });
+    // First continuation descends directly below the result; later forks
+    // from the same result open a parallel column (the branch index).
+    expect(newGen.position).toEqual({ x: 100, y: 100 + cardHeight(initial.flows[0]!.nodes[1]!) + CHAT_GAP });
 
     const edge = flow.edges[0]!;
     expect(edge).toMatchObject({ kind: "input", source: "res-1", target: newGen.id, sourceHandle: "flow-bottom", targetHandle: "flow-top" });
@@ -107,13 +121,12 @@ describe("generation/continue", () => {
     const initial = buildWorkspace();
     const first = reduceWorkspace(initial, { type: "generation/continue", flowId: "flow-1", sourceNodeId: "res-1" }, context);
     const firstGen = first.flows[0]!.nodes.find((node) => node.id !== "gen-1" && node.id !== "res-1")!;
-    // First continuation sits directly below the result (res at x:100,y:100, stride 160).
-    expect(firstGen.position).toEqual({ x: 100, y: 260 });
+    expect(firstGen.position).toEqual({ x: 100, y: 100 + cardHeight(initial.flows[0]!.nodes[1]!) + CHAT_GAP });
 
     const second = reduceWorkspace(first, { type: "generation/continue", flowId: "flow-1", sourceNodeId: "res-1" }, context);
     const secondGen = second.flows[0]!.nodes.find((node) => node.id !== "gen-1" && node.id !== "res-1" && node.id !== firstGen.id)!;
-    // Second continuation forks one column to the right (RESULT_COL_STRIDE = 520), sharing the first's y.
-    expect(secondGen.position).toEqual({ x: 620, y: 260 });
+    // Second continuation forks one column to the right, sharing the first's y.
+    expect(secondGen.position).toEqual({ x: 100 + RESULT_COL_STRIDE, y: firstGen.position.y });
     expect(second.flows[0]!.edges).toHaveLength(2);
   });
   it("never overlaps a sibling auto-continuation when forking a 2-model result", () => {
@@ -121,24 +134,25 @@ describe("generation/continue", () => {
     // produces two side-by-side results (model-a @ col 0, model-b @ col 1) and
     // two auto-continuations (gen-a below model-a, gen-b below model-b). The
     // model-a result already carries one input edge (to gen-a), so branchIndex
-    // is 1 and the naive placement would drop the fork at model-a.x + 520 =
-    // model-b.x — exactly on top of gen-b. The scan must skip to the next free
+    // is 1 and the naive placement would drop the fork one RESULT_COL_STRIDE
+    // to the right — exactly on top of gen-b. The scan must skip to the next free
     // column.
     const initial = buildTwoModelWorkspace();
     const result = reduceWorkspace(initial, { type: "generation/continue", flowId: "flow-1", sourceNodeId: "res-a" }, context);
     const flow = result.flows[0]!;
 
     const newGen = flow.nodes.find((node) => !["gen-1", "res-a", "res-b", "gen-a", "gen-b"].includes(node.id))!;
-    // source res-a at x:0; branchIndex 1 collides with gen-b at x:520; the first
-    // free column is k=2 → x 1040, still on the continuation row (y 460).
-    expect(newGen.position).toEqual({ x: 0 + 2 * RESULT_COL_STRIDE, y: 300 + RESULT_TO_CONTINUATION_STRIDE });
+    // source res-a at x:0; branchIndex 1 collides with gen-b at one stride; the
+    // first free column is k=2, still on the continuation row.
+    expect(newGen.position).toEqual({ x: 0 + 2 * RESULT_COL_STRIDE, y: 300 + cardHeight(initial.flows[0]!.nodes[1]!) + CHAT_GAP });
 
     // No two nodes share a (x, y) slot.
     const slots = new Set(flow.nodes.map((node) => `${node.position.x},${node.position.y}`));
     expect(slots.size).toBe(flow.nodes.length);
 
     // The branchIndex-only placement would have collided with gen-b. If someone
-    // reverts the scan, newGen.x === 520 and two nodes share (520, 460), so this
+    // reverts the scan, newGen.x === RESULT_COL_STRIDE and two nodes share that
+    // slot, so this
     // pair of assertions fails — proving the test guards the fix.
     const collisionX = 0 + 1 * RESULT_COL_STRIDE;
     expect(flow.nodes.some((node) => node.position.x === collisionX && node.position.y === 300 + RESULT_TO_CONTINUATION_STRIDE)).toBe(true);
@@ -157,9 +171,9 @@ const buildTwoModelWorkspace = (): WorkspaceDocument => ({
     nodes: [
       { id: "gen-1", position: { x: 0, y: 0 }, data: { kind: "generation", title: "Generation 1", instruction: "", modelIds: ["model-a", "model-b"] }, createdAt: clock.now().toISOString(), updatedAt: clock.now().toISOString() },
       { id: "res-a", position: { x: 0, y: 300 }, data: { kind: "text", origin: "generated", title: "model-a", text: "a", batchId: "batch-1", executionId: "exec-a" }, createdAt: clock.now().toISOString(), updatedAt: clock.now().toISOString() },
-      { id: "res-b", position: { x: 520, y: 300 }, data: { kind: "text", origin: "generated", title: "model-b", text: "b", batchId: "batch-1", executionId: "exec-b" }, createdAt: clock.now().toISOString(), updatedAt: clock.now().toISOString() },
-      { id: "gen-a", position: { x: 0, y: 460 }, data: { kind: "generation", title: "Generation 2", instruction: "", modelIds: ["model-a", "model-b"] }, createdAt: clock.now().toISOString(), updatedAt: clock.now().toISOString() },
-      { id: "gen-b", position: { x: 520, y: 460 }, data: { kind: "generation", title: "Generation 3", instruction: "", modelIds: ["model-a", "model-b"] }, createdAt: clock.now().toISOString(), updatedAt: clock.now().toISOString() },
+      { id: "res-b", position: { x: RESULT_COL_STRIDE, y: 300 }, data: { kind: "text", origin: "generated", title: "model-b", text: "b", batchId: "batch-1", executionId: "exec-b" }, createdAt: clock.now().toISOString(), updatedAt: clock.now().toISOString() },
+      { id: "gen-a", position: { x: 0, y: 465 }, data: { kind: "generation", title: "Generation 2", instruction: "", modelIds: ["model-a", "model-b"] }, createdAt: clock.now().toISOString(), updatedAt: clock.now().toISOString() },
+      { id: "gen-b", position: { x: RESULT_COL_STRIDE, y: 465 }, data: { kind: "generation", title: "Generation 3", instruction: "", modelIds: ["model-a", "model-b"] }, createdAt: clock.now().toISOString(), updatedAt: clock.now().toISOString() },
     ],
     edges: [
       { id: "re-a", kind: "result", source: "gen-1", target: "res-a", sourceHandle: "flow-bottom", targetHandle: "flow-top" },

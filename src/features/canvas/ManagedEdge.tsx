@@ -9,7 +9,7 @@ import { useWorkspace } from "../workspace/useWorkspace";
 // from the path stroke onto the button (they live in separate DOM subtrees).
 const HIDE_DELAY_MS = 250;
 
-export const ManagedEdge = ({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, markerStart, markerEnd, data }: EdgeProps) => {
+export const ManagedEdge = ({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, markerStart, markerEnd, data, style }: EdgeProps) => {
   const { activeFlow, dispatch } = useWorkspace();
   const [hovered, setHovered] = useState(false);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -41,7 +41,7 @@ export const ManagedEdge = ({ id, sourceX, sourceY, targetX, targetY, sourcePosi
   };
   return <>
     <g onMouseEnter={show} onMouseLeave={scheduleHide}>
-      <BaseEdge id={id} path={edgePath} markerStart={markerStart ?? ""} markerEnd={markerEnd ?? ""} />
+      <BaseEdge id={id} path={edgePath} markerStart={markerStart ?? ""} markerEnd={markerEnd ?? ""} style={style} />
     </g>
     <EdgeLabelRenderer>
       {removable && <div className="managed-edge-hoverzone nodrag nopan" style={{ left: zoneX, top: zoneY }} onMouseEnter={show} onMouseLeave={scheduleHide} aria-hidden="true" />}

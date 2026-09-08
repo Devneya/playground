@@ -1,24 +1,23 @@
 import type { FlowDocument, Position } from "./types";
 
-// Card geometry shared with the canvas CSS. Cards render at 480px wide; the
-// taller Generation/continuation card drives the overlap-check height.
-// (Measured heights: generation ~241px, result ~101px.)
+// Card geometry shared with the canvas CSS. Cards render at 480px wide.
+// nodeHeight is a conservative fallback before DOM measurement. The spatial
+// layout uses actual heights and an 8px gap once cards have been measured.
 export const LAYOUT = {
   nodeWidth: 480,
-  nodeHeight: 200,
+  nodeHeight: 240,
 } as const;
 
 // Horizontal distance between sibling answer cards in the side-by-side result
-// row and between parallel fork columns. Cards are 480px wide, so a 520px
-// stride leaves a 40px gutter between columns.
-export const RESULT_COL_STRIDE = 520;
-// Vertical distance from a Generation card's top to its result row's top.
-// Generation cards are ~241px tall, so 300 yields a ~59px visual gap.
-export const GEN_TO_RESULT_STRIDE = 300;
+// row and between parallel fork columns: 480px cards plus a 24px gutter.
+export const RESULT_COL_STRIDE = 504;
+// Legacy fallback placement strides; automatic spatial anchors supersede
+// these positions during creation and subsequent measurement.
+export const GEN_TO_RESULT_STRIDE = 315;
 // Vertical distance from a result card's top to the card directly below it
-// (a continuation Generation). Result cards are ~101px tall, so 160 yields a
-// ~59px visual gap.
-export const RESULT_TO_CONTINUATION_STRIDE = 160;
+// (a continuation Generation). Result cards are ~85px tall, so 165 yields an
+// ~80px visual gap.
+export const RESULT_TO_CONTINUATION_STRIDE = 165;
 // Vertical spacing between successive result rows, used when re-running a
 // generation so fresh answers clear the previous row and its continuations.
 export const RESULT_ROW_STRIDE = 460;

@@ -11,6 +11,8 @@ export const isHistoryAction = (action: WorkspaceAction): boolean =>
   && !action.type.startsWith("execution/")
   && action.type !== "workspace/reset"
   && action.type !== "workspace/imported"
+  && action.type !== "node/measure"
+  && action.type !== "workspace/default-model"
   && action.type !== "viewport/update";
 
 export type HistoryState = { past: WorkspaceDocument[]; future: WorkspaceDocument[]; bytes: number };

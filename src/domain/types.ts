@@ -15,6 +15,7 @@ export type ManualTextData = {
   origin: "manual";
   title: string;
   text: string;
+  source?: { nodeId: EntityId; batchId: EntityId; executionId: EntityId; modelId: string; instruction: string; text: string };
 };
 
 export type GeneratedTextData = {
@@ -31,6 +32,8 @@ export type GenerationData = {
   title: string;
   instruction: string;
   modelIds: string[];
+  context?: ConversationEntry[];
+  branchedFrom?: { nodeId: string; batchId: string };
 };
 
 export type TextNodeData = ManualTextData | GeneratedTextData;
@@ -40,6 +43,8 @@ export type NodeData = TextNodeData | GenerationData;
 export type PlaygroundNode = {
   id: EntityId;
   position: Position;
+  measuredHeight?: number;
+  placement?: { anchorId: string; offsetX: number; direction: "below" | "right" | "above" };
   data: NodeData;
   createdAt: string;
   updatedAt: string;
@@ -72,7 +77,9 @@ export type InputSnapshot = {
   text: string;
 };
 
-export type CompletionMessage = { role: "user"; content: string };
+export type CompletionMessage = { role: "user" | "assistant"; content: string };
+
+export type ConversationEntry = CompletionMessage & { nodeId: EntityId; modelId?: string };
 
 export type ExecutionError = {
   kind: "cancelled" | "network" | "http" | "invalid_response" | "interrupted";
@@ -98,9 +105,10 @@ export type ExecutionBatch = {
   generationNodeId: EntityId;
   startedAt: string;
   completedAt?: string;
-  promptFormatVersion: 1;
+  promptFormatVersion: 1 | 2;
   instruction: string;
   inputs: InputSnapshot[];
+  context?: ConversationEntry[];
   executions: ModelExecution[];
 };
 

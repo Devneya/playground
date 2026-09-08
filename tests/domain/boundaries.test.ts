@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createWorkspaceExport, parseWorkspaceExport, WorkspaceExportError } from "../../src/domain/exportFormat";
 import { duplicateFlowWithFreshIds } from "../../src/domain/duplicateFlow";
 import { createStarterWorkspace, uniqueFlowName } from "../../src/domain/workspaceFactory";
-import { placeNewResultNodes } from "../../src/domain/resultPlacement";
+import { placeNewResultNodes, RESULT_COL_STRIDE } from "../../src/domain/resultPlacement";
 import { emptyHistory, pushHistory, redoHistory, undoHistory } from "../../src/domain/workspaceHistory";
 import { isTextNode, isGeneratedTextNode, isGenerationNode } from "../../src/domain/types";
 
@@ -32,9 +32,9 @@ describe("workspace boundaries", () => {
     const flow = workspace.flows[0]!;
     const prompt = flow.nodes.find((node) => isGenerationNode(node))!;
     // Results stack in a row directly below the generation (gen at x:80,y:120);
-    // result_i is one column to the right (RESULT_COL_STRIDE = 520), each at
-    // gen.y + GEN_TO_RESULT_STRIDE (300).
-    expect(placeNewResultNodes(flow, prompt.id, 2)).toEqual([{ x: 80, y: 420 }, { x: 600, y: 420 }]);
+    // result_i is one column to the right (RESULT_COL_STRIDE), each at
+    // gen.y + GEN_TO_RESULT_STRIDE (315).
+    expect(placeNewResultNodes(flow, prompt.id, 2)).toEqual([{ x: 80, y: 435 }, { x: 80 + RESULT_COL_STRIDE, y: 435 }]);
     expect(placeNewResultNodes(flow, "missing", 2)).toEqual([]);
     expect(placeNewResultNodes(flow, prompt.id, 0)).toEqual([]);
   });

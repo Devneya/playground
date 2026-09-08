@@ -295,7 +295,7 @@ describe("WorkspaceProvider", () => {
     await user.click(screen.getByRole("button", { name: "import-large" }));
     await waitFor(() => expect(screen.getByTestId("action-error")).toHaveTextContent(/too large/i));
     await user.click(screen.getByRole("button", { name: "run-invalid" }));
-    await waitFor(() => expect(screen.getByTestId("action-error")).toHaveTextContent(/generation node/i));
+    await waitFor(() => expect(screen.getByTestId("action-error")).toHaveTextContent(/choose a prompt/i));
   });
 
   it("restores an existing workspace and reports a failed save", async () => {
