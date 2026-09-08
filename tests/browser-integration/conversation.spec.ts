@@ -208,10 +208,15 @@ test("selects a live default model and ejects a note without moving the thread",
   await expect(note).toHaveCount(1);
   await expect(note.getByRole("textbox")).toHaveValue("Mock result 1 from model-a.");
   await expect.poll(() => answer.evaluate((node) => node.closest<HTMLElement>(".react-flow__node")?.style.transform)).toBe(before);
-  const answerBox = await answer.boundingBox();
-  const noteBox = await note.boundingBox();
-  expect(noteBox!.x).toBeGreaterThanOrEqual(answerBox!.x + answerBox!.width);
-  expect(noteBox!.y + noteBox!.height).toBeLessThanOrEqual(answerBox!.y);
+  // Read both rectangles in one frame: CameraFollow can still be panning,
+  // so separate boundingBox calls can observe different viewport transforms.
+  await expect.poll(() => note.evaluate((element) => {
+    const source = document.querySelector(".generated-node");
+    if (!source) return false;
+    const answerBox = source.getBoundingClientRect();
+    const noteBox = element.getBoundingClientRect();
+    return noteBox.left >= answerBox.right && noteBox.bottom <= answerBox.top;
+  })).toBe(true);
   await expect.poll(async () => {
     const box = await note.boundingBox();
     return box ? box.x + box.width : Infinity;
