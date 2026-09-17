@@ -49,6 +49,8 @@ input:focus, textarea:focus { border-color: #b45309; box-shadow: 0 0 0 3px #b453
 .account-popover { position: absolute; z-index: 30; top: calc(100% + 8px); right: 0; width: 250px; border: 1px solid #dbe2ee; border-radius: 14px; background: #fff; box-shadow: 0 16px 40px #42506a30; padding: 14px; display: grid; gap: 8px; }
 .account-email { overflow: hidden; font-size: .8rem; font-weight: 700; text-overflow: ellipsis; }
 .account-notice { margin: 0; color: #5b6675; font-size: .7rem; line-height: 1.5; }
+.account-links { display: grid; gap: 6px; justify-items: start; }
+a.text-button { text-decoration: none; }
 .canvas-toolbar-floating { position: absolute; z-index: 20; left: 18px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 4px; padding: 10px 8px; border: 1px solid #e3e8f0; border-radius: 14px; background: #ffffffee; box-shadow: 0 6px 20px #42506a1e; pointer-events: none; }
 .canvas-toolbar-floating button { display: flex; flex-direction: column; align-items: center; gap: 1px; min-width: 58px; border: 0; border-radius: 8px; background: none; color: #44516a; padding: 7px 6px; cursor: pointer; pointer-events: auto; }
 .canvas-toolbar-floating button:hover:not(:disabled) { background: #f5f5f4; color: #8a5a00; }

@@ -13,6 +13,7 @@ import { randomIdFactory, systemClock } from "../domain/ids";
 import { LAYOUT } from "../domain/resultPlacement";
 import { CardIcon } from "../features/canvas/CardIcon";
 import { panToRevealCard } from "../features/canvas/camera";
+import { config } from "../config";
 import "./styles.css";
 
 const LOCAL_NOTICE = "Stored only in this browser—not backed up or synchronized. Clearing browser data may remove this workspace. Export it to keep a portable copy.";
@@ -98,7 +99,11 @@ const WorkspaceScreen = () => {
           <div className="account-popover" role="dialog" aria-label="Account">
             <div className="account-email" title={user?.email}>{user?.email}</div>
             <p className="account-notice">{LOCAL_NOTICE}</p>
-            <button type="button" className="text-button" onClick={() => void signOut()}>Sign out</button>
+            <nav className="account-links" aria-label="Account links">
+              <a className="text-button" href={`${config.appOrigin}/account`} target="_blank" rel="noreferrer">Profile</a>
+              <a className="text-button" href={`${config.appOrigin}/`} target="_blank" rel="noreferrer">Dashboard</a>
+              <button type="button" className="text-button" onClick={() => void signOut()}>Sign out</button>
+            </nav>
           </div>
         </>}
       </div>

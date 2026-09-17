@@ -17,4 +17,8 @@ This repository is the clean-cutover Devneya Playground. It is a documentation-l
 
 Before a handoff, run `npm run typecheck`, `npm run lint`, `npm test`, and `npm run test:coverage`. Run `npm run test:e2e` when Chromium is available.
 
+## Git
+
+Do not leave `Co-authored-by: Cursor` on commit messages. Hooks may re-inject it; amend with `git -c core.hooksPath=/dev/null commit --amend` before push.
+
 ## Deployment
