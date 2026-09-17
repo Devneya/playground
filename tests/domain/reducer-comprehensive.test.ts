@@ -128,7 +128,7 @@ describe("comprehensive domain transitions", () => {
     expect(flowOf(removed).batches).toHaveLength(0);
   });
 
-  it("deleting a prompt removes its result batch and generated nodes", () => {
+  it("deleting a prompt keeps its generated results", () => {
     const workspace = starter();
     const flow = flowOf(workspace);
     const prompt = nodeOf(workspace, "generation");
@@ -136,8 +136,10 @@ describe("comprehensive domain transitions", () => {
     const batch: ExecutionBatch = { id: "batch", generationNodeId: prompt.id, startedAt: clock.now().toISOString(), promptFormatVersion: 1, instruction: "", inputs: [], executions: [{ id: "execution", modelId: "model-a", status: "pending", startedAt: clock.now().toISOString(), outputNodeId: output.id }] };
     const started = reduceWorkspace(workspace, { type: "batch/started", flowId: flow.id, batch, outputNodes: [output], resultEdges: [{ id: "result-edge", kind: "result", source: prompt.id, target: output.id }] }, context);
     const removed = reduceWorkspace(started, { type: "node/delete", flowId: flow.id, nodeId: prompt.id }, context);
-    expect(flowOf(removed).nodes.some((node) => node.id === prompt.id || node.id === output.id)).toBe(false);
-    expect(flowOf(removed).batches).toHaveLength(0);
+    expect(flowOf(removed).nodes.some((node) => node.id === prompt.id)).toBe(false);
+    expect(flowOf(removed).nodes.some((node) => node.id === output.id)).toBe(true);
+    expect(flowOf(removed).batches).toHaveLength(1);
+    expect(validateWorkspaceInvariants(removed)).toEqual([]);
   });
 
   it("rejects direct and multi-hop cycles and normalizes input order", () => {

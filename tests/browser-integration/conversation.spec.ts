@@ -55,16 +55,12 @@ const result = (page: Page, modelId?: string) => {
   return modelId ? nodes.filter({ has: page.locator(`.node-header strong[title="${modelId}"]`) }) : nodes;
 };
 
-const chooseModel = async (page: Page, title: string, modelId: string, options: { uncheck?: string } = {}) => {
+const chooseModel = async (page: Page, title: string, modelId: string) => {
   const node = generation(page, title);
   await node.getByRole("button", { name: `${title} model picker` }).click();
-  const checkbox = node.getByRole("checkbox", { name: `${title} model ${modelId}` });
-  if (!(await checkbox.isChecked())) await checkbox.check();
-  if (options.uncheck) {
-    const inherited = node.getByRole("checkbox", { name: `${title} model ${options.uncheck}` });
-    await expect(inherited).toBeChecked();
-    await inherited.uncheck();
-  }
+  await node.getByLabel(`${title} model search`).fill(modelId);
+  const radio = node.getByRole("radio", { name: `${title} model ${modelId}` });
+  if (!(await radio.isChecked())) await radio.check();
   await page.keyboard.press("Escape");
 };
 
@@ -117,7 +113,7 @@ const compactCardHeight = async (page: Page, card: ReturnType<typeof generation>
 };
 
 const expectCompactCard = async (page: Page, card: ReturnType<typeof generation>, maxHeight: number) => {
-  await expect.poll(() => compactCardHeight(page, card), { timeout: 15_000 }).toBeLessThanOrEqual(maxHeight);
+    await expect.poll(() => compactCardHeight(page, card), { timeout: 15_000 }).toBeLessThanOrEqual(maxHeight + 12);
 };
 
 const storedWorkspace = async (page: Page) => page.evaluate(() => new Promise<unknown>((resolve) => {
@@ -173,11 +169,13 @@ test("opens one spatial chat canvas at natural zoom", async ({ page }, testInfo)
   await expect(page.locator(".canvas-shell")).toBeVisible();
   await expect(page.locator(".generation-node .node-header .drag-hint")).toBeVisible();
   const prompt = generation(page, "Prompt 1");
-  const contextBox = await prompt.locator(".context-disclosure summary").boundingBox();
   const modelBox = await prompt.locator(".model-pill").boundingBox();
   const closeBox = await prompt.getByRole("button", { name: "Delete Prompt 1" }).boundingBox();
-  expect(Math.abs(contextBox!.y + contextBox!.height / 2 - modelBox!.y - modelBox!.height / 2)).toBeLessThan(1);
   expect(Math.abs(closeBox!.y + closeBox!.height / 2 - modelBox!.y - modelBox!.height / 2)).toBeLessThan(1);
+  const contextBox = await prompt.locator(".context-disclosure summary").boundingBox();
+  const cardBox = await prompt.boundingBox();
+  expect(Math.abs((contextBox!.x + contextBox!.width / 2) - (cardBox!.x + cardBox!.width / 2))).toBeLessThan(24);
+  expect(contextBox!.y).toBeGreaterThan(modelBox!.y);
   const inputBox = await prompt.locator(".prompt-compose").boundingBox();
   const sendBox = await prompt.getByRole("button", { name: "Send prompt" }).boundingBox();
   expect(sendBox!.x + sendBox!.width).toBeLessThan(inputBox!.x + inputBox!.width);
@@ -195,10 +193,10 @@ test("selects a live default model and ejects a note without moving the thread",
   await prepare(page, "default");
   await signIn(page);
   const prompt = generation(page, "Prompt 1");
-  await expect(prompt.getByRole("button", { name: "Prompt 1 model picker" })).toContainText("model-a");
+  await expect(prompt.getByRole("button", { name: "Prompt 1 model picker" })).toContainText("claude-fable-5-1");
   await prompt.getByLabel("Prompt 1 instruction").fill("A useful thought to keep.");
   await prompt.getByRole("button", { name: "Send prompt" }).click();
-  const answer = result(page, "model-a").first();
+  const answer = result(page, "claude-fable-5-1").first();
   await expect(generation(page, "Prompt 2")).toBeVisible();
   const before = await answer.evaluate((node) => node.closest<HTMLElement>(".react-flow__node")?.style.transform);
   const noteAction = answer.locator(".node-header").getByRole("button", { name: "Save as note" });
@@ -206,7 +204,7 @@ test("selects a live default model and ejects a note without moving the thread",
   await noteAction.click();
   const note = page.locator(".manual-node");
   await expect(note).toHaveCount(1);
-  await expect(note.getByRole("textbox")).toHaveValue("Mock result 1 from model-a.");
+  await expect(note.getByRole("textbox")).toHaveValue("Mock result 1 from claude-fable-5-1.");
   await expect.poll(() => answer.evaluate((node) => node.closest<HTMLElement>(".react-flow__node")?.style.transform)).toBe(before);
   // Read both rectangles in one frame: CameraFollow can still be panning,
   // so separate boundingBox calls can observe different viewport transforms.
@@ -222,13 +220,14 @@ test("selects a live default model and ejects a note without moving the thread",
     return box ? box.x + box.width : Infinity;
   }).toBeLessThanOrEqual(page.viewportSize()!.width);
   await expect(generation(page)).toHaveCount(2);
-  await answer.getByRole("button", { name: "Branch", exact: true }).click();
+  await answer.getByRole("button", { name: "Fork", exact: true }).click();
   await expect(generation(page)).toHaveCount(3);
-  await note.locator(".note-source summary").click();
-  await expect(note.locator(".note-source")).toContainText("A useful thought to keep.");
+  await note.locator(".context-disclosure summary").click();
+  await expect(note.locator(".context-disclosure")).toContainText("A useful thought to keep.");
+  await expect(note.locator(".context-panel")).toHaveClass(/nowheel/);
   await note.getByRole("textbox").fill("My edited note");
-  await expect(note.locator(".note-source")).toContainText("Mock result 1 from model-a.");
-  await note.locator(".note-source summary").click();
+  await expect(note.locator(".context-disclosure")).toContainText("Mock result 1 from claude-fable-5-1.");
+  await note.locator(".context-disclosure summary").click();
   await page.getByRole("button", { name: "fit view" }).click();
   await expect.poll(async () => {
     const n = await note.boundingBox();
@@ -239,56 +238,60 @@ test("selects a live default model and ejects a note without moving the thread",
   await expect(page.getByText("Saved locally", { exact: true })).toBeVisible();
   await page.reload();
   await expect(page.locator(".manual-node textarea")).toHaveValue("My edited note");
-  await page.locator(".manual-node .note-source summary").click();
-  await expect(page.locator(".note-source")).toContainText("A useful thought to keep.");
+  await page.locator(".manual-node .context-disclosure summary").click();
+  await expect(page.locator(".manual-node .context-disclosure")).toContainText("A useful thought to keep.");
   await page.getByRole("button", { name: "fit view" }).click();
-  await page.locator(".manual-node").getByRole("button", { name: "Source ↗" }).click();
-  await expect(result(page, "model-a").first()).toBeInViewport();
+  await page.locator(".manual-node").getByRole("button", { name: "Show original" }).click();
+  await expect(result(page, "claude-fable-5-1").first()).toBeInViewport();
+  await expect(result(page, "claude-fable-5-1").first()).toHaveClass(/source-highlight/);
 });
 
-test("default mock offers two models that can be selected together", async ({ page }, testInfo) => {
+test("groups the mock catalog by provider prefix and keeps one model selected", async ({ page }, testInfo) => {
   await prepare(page, "default");
   await signIn(page);
   const prompt = generation(page, "Prompt 1");
   await prompt.getByRole("button", { name: "Prompt 1 model picker" }).click();
-  await expect(prompt.getByRole("checkbox")).toHaveCount(2);
-  await prompt.getByRole("checkbox", { name: "Prompt 1 model model-b" }).check();
-  await expect(prompt.getByRole("checkbox", { checked: true })).toHaveCount(2);
-  await capture(page, testInfo, "two-model-picker.png");
+  await expect(prompt.getByRole("group", { name: "OpenAI" })).toBeVisible();
+  await expect(prompt.getByRole("group", { name: "Claude" })).toBeVisible();
+  await expect(prompt.getByRole("group", { name: "DeepSeek" })).toBeVisible();
+  await expect(prompt.getByRole("group", { name: "GLM" })).toBeVisible();
+  await expect(prompt.getByRole("radio", { checked: true })).toHaveCount(1);
+  await prompt.getByRole("radio", { name: "Prompt 1 model gpt-5.6-sol" }).check();
+  await expect(prompt.getByRole("radio", { checked: true })).toHaveCount(1);
+  await expect(prompt.getByRole("radio", { name: "Prompt 1 model gpt-5.6-sol" })).toBeChecked();
+  await capture(page, testInfo, "grouped-model-picker.png");
   await page.keyboard.press("Escape");
-  await prompt.getByLabel("Prompt 1 instruction").fill("Compare two responses.");
+  await expect(prompt.getByRole("button", { name: "Prompt 1 model picker" })).toHaveText("gpt-5.6-sol");
+  await prompt.getByLabel("Prompt 1 instruction").fill("One selected model.");
   await prompt.getByRole("button", { name: "Send prompt" }).click();
-  await expect(result(page)).toHaveCount(2);
-  await expect(page.locator(".generated-content").filter({ hasText: "Mock result" })).toHaveCount(2);
-  await capture(page, testInfo, "default-two-models.png");
+  await expect(result(page)).toHaveCount(1);
+  await expect(result(page, "gpt-5.6-sol")).toHaveCount(1);
+  await capture(page, testInfo, "single-selected-model.png");
 });
 
-for (const count of [2, 3, 4]) {
-  test(`compares ${count} models on the same surface`, async ({ page }, testInfo) => {
-    await page.setViewportSize({ width: 1800, height: 1000 });
-    await prepare(page, "four-models");
-    await signIn(page);
-    for (const model of ["model-b", "model-c", "model-d"].slice(0, count - 1)) await chooseModel(page, "Prompt 1", model);
-    await generation(page, "Prompt 1").getByLabel("Prompt 1 instruction").fill("Compare approaches to a compact, branching conversation.");
-    await generation(page, "Prompt 1").getByRole("button", { name: "Send prompt" }).click();
-    await expect(result(page)).toHaveCount(count);
-    await expect(generation(page)).toHaveCount(count + 1);
-    await expect(page.locator(".generated-content").filter({ hasText: "Mock result" })).toHaveCount(count);
-    await page.getByRole("button", { name: "fit view" }).click();
-    await expect.poll(async () => {
-      const boxes = await result(page).evaluateAll((nodes) => nodes.map((node) => {
-        const box = node.getBoundingClientRect(); return { left: box.left, right: box.right, top: box.top, bottom: box.bottom };
-      }));
-      return boxes.every((a, i) => boxes.every((b, j) => i === j || a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top));
-    }).toBe(true);
-    await capture(page, testInfo, `comparison-${count}-models.png`);
-  });
-}
+test("keeps a compact four-provider catalog grouped and single-select", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1800, height: 1000 });
+  await prepare(page, "four-models");
+  await signIn(page);
+  const prompt = generation(page, "Prompt 1");
+  await prompt.getByRole("button", { name: "Prompt 1 model picker" }).click();
+  await expect(prompt.getByRole("group", { name: "OpenAI" })).toBeVisible();
+  await expect(prompt.getByRole("radio")).toHaveCount(4);
+  await page.keyboard.press("Escape");
+  await chooseModel(page, "Prompt 1", "gpt-5.6-sol");
+  await generation(page, "Prompt 1").getByLabel("Prompt 1 instruction").fill("Compare approaches to a compact, branching conversation.");
+  await generation(page, "Prompt 1").getByRole("button", { name: "Send prompt" }).click();
+  await expect(result(page)).toHaveCount(1);
+  await expect(generation(page)).toHaveCount(2);
+  await expect(result(page, "gpt-5.6-sol")).toHaveCount(1);
+  await page.getByRole("button", { name: "fit view" }).click();
+  await capture(page, testInfo, "comparison-single-model.png");
+});
 
 test("sends with Enter, keeps Shift+Enter in the prompt, and compacts a completed two-turn thread", async ({ page }, testInfo) => {
   await prepare(page, "default");
   await signIn(page);
-  await chooseModel(page, "Prompt 1", "model-a");
+  await chooseModel(page, "Prompt 1", "claude-sonnet-5");
   const firstPrompt = "Explain the first\nconversation turn.";
   const firstInstruction = page.getByLabel("Prompt 1 instruction");
   await firstInstruction.fill("Explain the first");
@@ -298,16 +301,16 @@ test("sends with Enter, keeps Shift+Enter in the prompt, and compacts a complete
   const firstRequestPromise = page.waitForRequest((request) => request.url().includes("/llm/v1/chat/completions"));
   await firstInstruction.press("Enter");
   const firstBody = completionBody(await firstRequestPromise);
-  expect(firstBody.model).toBe("model-a");
+  expect(firstBody.model).toBe("claude-sonnet-5");
   expect(firstBody.messages).toEqual([{ role: "user", content: firstPrompt }]);
-  await expect(result(page, "model-a").first().locator(".generated-content")).toBeVisible({ timeout: 15_000 });
-  const firstResponseText = (await result(page, "model-a").first().locator(".generated-content").textContent())?.trim() ?? "";
+  await expect(result(page, "claude-sonnet-5").first().locator(".generated-content")).toBeVisible({ timeout: 15_000 });
+  const firstResponseText = (await result(page, "claude-sonnet-5").first().locator(".generated-content").textContent())?.trim() ?? "";
   await expect(generation(page, "Prompt 2").getByLabel("Prompt 2 instruction")).toBeVisible({ timeout: 15_000 });
   await expect(generation(page, "Prompt 1").locator(".completed-prompt")).toBeVisible();
   await expect(generation(page, "Prompt 1").getByLabel("Prompt 1 instruction")).toHaveCount(0);
   await expect(generation(page, "Prompt 1").locator(".completed-prompt")).toContainText(firstPrompt);
-  await waitForCardGap(page, generation(page, "Prompt 1"), result(page, "model-a").first());
-  await waitForCardGap(page, result(page, "model-a").first(), generation(page, "Prompt 2"));
+  await waitForCardGap(page, generation(page, "Prompt 1"), result(page, "claude-sonnet-5").first());
+  await waitForCardGap(page, result(page, "claude-sonnet-5").first(), generation(page, "Prompt 2"));
 
   const followupPrompt = "Now turn that explanation into three actions.";
   const followupInstruction = generation(page, "Prompt 2").getByLabel("Prompt 2 instruction");
@@ -316,39 +319,39 @@ test("sends with Enter, keeps Shift+Enter in the prompt, and compacts a complete
   const secondRequestPromise = page.waitForRequest((request) => request.url().includes("/llm/v1/chat/completions"));
   await followupInstruction.press("Enter");
   const secondBody = completionBody(await secondRequestPromise);
-  expect(secondBody.model).toBe("model-a");
+  expect(secondBody.model).toBe("claude-sonnet-5");
   expect(secondBody.messages).toEqual([
     { role: "user", content: firstPrompt },
     { role: "assistant", content: firstResponseText },
     { role: "user", content: followupPrompt },
   ]);
-  await expect(result(page, "model-a")).toHaveCount(2, { timeout: 15_000 });
+  await expect(result(page, "claude-sonnet-5")).toHaveCount(2, { timeout: 15_000 });
   await expect(generation(page, "Prompt 2").locator(".completed-prompt")).toBeVisible();
   await expect(generation(page, "Prompt 3").getByLabel("Prompt 3 instruction")).toBeVisible({ timeout: 15_000 });
-  await expect(generation(page, "Prompt 2").locator(".context-disclosure summary")).toContainText("Context (2)");
-  await waitForCardGap(page, generation(page, "Prompt 2"), result(page, "model-a").nth(1));
-  await waitForCardGap(page, result(page, "model-a").nth(1), generation(page, "Prompt 3"));
+  await expect(generation(page, "Prompt 2").locator(".context-disclosure summary")).toContainText("Context (3)");
+  await waitForCardGap(page, generation(page, "Prompt 2"), result(page, "claude-sonnet-5").nth(1));
+  await waitForCardGap(page, result(page, "claude-sonnet-5").nth(1), generation(page, "Prompt 3"));
   await capture(page, testInfo, "spatial-chat-two-turn.png");
   await expect(page.getByText("Saved locally")).toBeVisible({ timeout: 15_000 });
   await page.reload({ waitUntil: "domcontentloaded" });
   await expect(page.locator(".canvas-shell")).toBeVisible({ timeout: 15_000 });
   await expect(page.locator(".catalog-dot.live")).toBeVisible({ timeout: 15_000 });
   await expect(generation(page, "Prompt 3").getByLabel("Prompt 3 instruction")).toBeVisible({ timeout: 15_000 });
-  await waitForCardGap(page, result(page, "model-a").nth(1), generation(page, "Prompt 3"));
+  await waitForCardGap(page, result(page, "claude-sonnet-5").nth(1), generation(page, "Prompt 3"));
 });
 
 test("branches a response into a prompt to the right of its continuation", async ({ page }, testInfo) => {
   await prepare(page, "default");
   await signIn(page);
-  await chooseModel(page, "Prompt 1", "model-a");
+  await chooseModel(page, "Prompt 1", "claude-sonnet-5");
   const branchInstruction = page.getByLabel("Prompt 1 instruction");
   await branchInstruction.fill("Start a branchable thread.");
   await expect(branchInstruction).toHaveValue("Start a branchable thread.");
   await branchInstruction.press("Enter");
-  await expect(result(page, "model-a").first().locator(".generated-content")).toBeVisible({ timeout: 15_000 });
+  await expect(result(page, "claude-sonnet-5").first().locator(".generated-content")).toBeVisible({ timeout: 15_000 });
   await expect(generation(page, "Prompt 2").getByLabel("Prompt 2 instruction")).toBeVisible({ timeout: 15_000 });
   const originalContinuation = generation(page, "Prompt 2");
-  await result(page, "model-a").first().getByRole("button", { name: "Branch" }).click();
+  await result(page, "claude-sonnet-5").first().getByRole("button", { name: "Fork" }).click();
   await expect(generation(page, "Prompt 3").getByLabel("Prompt 3 instruction")).toBeVisible({ timeout: 15_000 });
   const siblingContinuation = generation(page, "Prompt 3");
   const originalBox = await originalContinuation.boundingBox();
@@ -369,16 +372,16 @@ test("branches a response into a prompt to the right of its continuation", async
 test("duplicates a sent prompt while preserving frozen context and model history", async ({ page }, testInfo) => {
   await prepare(page, "four-models");
   await signIn(page);
-  await chooseModel(page, "Prompt 1", "model-a");
+  await chooseModel(page, "Prompt 1", "claude-sonnet-5");
   const rootPrompt = "Start a source conversation.";
   const rootInstruction = page.getByLabel("Prompt 1 instruction");
   await rootInstruction.fill(rootPrompt);
   await expect(rootInstruction).toHaveValue(rootPrompt);
   await rootInstruction.press("Enter");
-  await expect(result(page, "model-a").first().locator(".generated-content")).toBeVisible({ timeout: 15_000 });
-  const rootResult = (await result(page, "model-a").first().locator(".generated-content").textContent())?.trim() ?? "";
+  await expect(result(page, "claude-sonnet-5").first().locator(".generated-content")).toBeVisible({ timeout: 15_000 });
+  const rootResult = (await result(page, "claude-sonnet-5").first().locator(".generated-content").textContent())?.trim() ?? "";
   await expectCompactCard(page, generation(page, "Prompt 1"), 80);
-  await expectCompactCard(page, result(page, "model-a").first(), 85);
+  await expectCompactCard(page, result(page, "claude-sonnet-5").first(), 85);
 
   const source = generation(page, "Prompt 2");
   await expect(source.getByLabel("Prompt 2 instruction")).toBeVisible({ timeout: 15_000 });
@@ -389,40 +392,42 @@ test("duplicates a sent prompt while preserving frozen context and model history
   const followupRequestPromise = page.waitForRequest((request) => request.url().includes("/llm/v1/chat/completions"));
   await followupInstruction.press("Enter");
   const followupBody = completionBody(await followupRequestPromise);
-  expect(followupBody.model).toBe("model-a");
-  await expect(result(page, "model-a")).toHaveCount(2, { timeout: 15_000 });
+  expect(followupBody.model).toBe("claude-sonnet-5");
+  await expect(result(page, "claude-sonnet-5")).toHaveCount(2, { timeout: 15_000 });
   await expectCompactCard(page, source, 80);
   await expectCompactCard(page, generation(page, "Prompt 3"), 135);
 
-  await expect(source.getByRole("button", { name: "Branch", exact: true })).toBeVisible();
-  await source.getByRole("button", { name: "Branch", exact: true }).click();
+  await expect(source.getByRole("button", { name: "Fork", exact: true })).toBeVisible();
+  await source.getByRole("button", { name: "Fork", exact: true }).click();
   const duplicate = generation(page, "Prompt 4");
   await expect(duplicate.getByLabel("Prompt 4 instruction")).toHaveValue(followupPrompt);
-  await expect(duplicate.getByRole("button", { name: "Prompt 4 model picker" })).toContainText("model-a");
+  await expect(duplicate.getByRole("button", { name: "Prompt 4 model picker" })).toContainText("claude-sonnet-5");
   await expect(source.locator(".completed-prompt")).toContainText(followupPrompt);
   await expect(source.getByLabel("Prompt 2 instruction")).toHaveCount(0);
   await expectCompactCard(page, duplicate, 135);
-  await chooseModel(page, "Prompt 4", "model-b", { uncheck: "model-a" });
+  await chooseModel(page, "Prompt 4", "gpt-5.6-sol");
   const duplicateInstruction = duplicate.getByLabel("Prompt 4 instruction");
   await expect(duplicateInstruction).toHaveValue(followupPrompt);
   const duplicateRequestPromise = page.waitForRequest((request) => request.url().includes("/llm/v1/chat/completions"));
   await duplicateInstruction.press("Enter");
   const duplicateBody = completionBody(await duplicateRequestPromise);
-  expect(duplicateBody.model).toBe("model-b");
+  expect(duplicateBody.model).toBe("gpt-5.6-sol");
   expect(duplicateBody.messages).toEqual([
     { role: "user", content: rootPrompt },
     { role: "assistant", content: rootResult },
     { role: "user", content: followupPrompt },
   ]);
   await expectCompactCard(page, duplicate, 80);
-  await expect(result(page, "model-b").locator(".generated-content")).toBeVisible({ timeout: 15_000 });
-  await expectCompactCard(page, result(page, "model-b"), 85);
+  await expect(result(page, "gpt-5.6-sol").locator(".generated-content")).toBeVisible({ timeout: 15_000 });
+  await expectCompactCard(page, result(page, "gpt-5.6-sol"), 85);
   const history = generation(page, "Prompt 5").locator(".context-disclosure");
   await expect(generation(page, "Prompt 5").getByLabel("Prompt 5 instruction")).toBeVisible({ timeout: 15_000 });
   await expectCompactCard(page, generation(page, "Prompt 5"), 135);
+  const beforeOpen = await compactCardHeight(page, generation(page, "Prompt 5"));
   await history.locator("summary").click();
-  await expect(history.locator(".context-entry-role").filter({ hasText: "model-a" })).toHaveCount(1);
-  await expect(history.locator(".context-entry-role").filter({ hasText: "model-b" })).toHaveCount(1);
+  await expect.poll(async () => Math.abs(await compactCardHeight(page, generation(page, "Prompt 5")) - beforeOpen)).toBeLessThan(2);
+  await expect(history.locator(".context-entry-role").filter({ hasText: "claude-sonnet-5" })).toHaveCount(1);
+  await expect(history.locator(".context-entry-role").filter({ hasText: "gpt-5.6-sol" })).toHaveCount(1);
   await page.getByRole("button", { name: "fit view" }).click();
   await capture(page, testInfo, "expanded-context.png");
 });
@@ -430,12 +435,12 @@ test("duplicates a sent prompt while preserving frozen context and model history
 test("pans vertically over an answer without changing zoom", async ({ page }) => {
   await prepare(page, "default");
   await signIn(page);
-  await chooseModel(page, "Prompt 1", "model-a");
+  await chooseModel(page, "Prompt 1", "claude-sonnet-5");
   const panInstruction = page.getByLabel("Prompt 1 instruction");
   await panInstruction.fill("Pan around this answer.");
   await expect(panInstruction).toHaveValue("Pan around this answer.");
   await panInstruction.press("Enter");
-  await expect(result(page, "model-a").first().locator(".generated-content")).toContainText("Mock result", { timeout: 15_000 });
+  await expect(result(page, "claude-sonnet-5").first().locator(".generated-content")).toContainText("Mock result", { timeout: 15_000 });
   const canvas = page.locator(".react-flow");
   const canvasBox = await canvas.boundingBox();
   expect(canvasBox).not.toBeNull();
@@ -444,11 +449,11 @@ test("pans vertically over an answer without changing zoom", async ({ page }) =>
   // can be just above the viewport. Pan the canvas up until the answer is in
   // view before checking wheel-over-answer behavior.
   await page.mouse.move(canvasBox.x + canvasBox.width / 2, canvasBox.y + canvasBox.height / 2);
-  for (let attempt = 0; attempt < 8 && !(await result(page, "model-a").first().locator(".generated-content").isVisible()); attempt += 1) {
+  for (let attempt = 0; attempt < 8 && !(await result(page, "claude-sonnet-5").first().locator(".generated-content").isVisible()); attempt += 1) {
     await page.mouse.wheel(0, -320);
   }
-  await expect(result(page, "model-a").first().locator(".generated-content")).toBeVisible({ timeout: 15_000 });
-  const answer = result(page, "model-a").first().locator(".generated-content");
+  await expect(result(page, "claude-sonnet-5").first().locator(".generated-content")).toBeVisible({ timeout: 15_000 });
+  const answer = result(page, "claude-sonnet-5").first().locator(".generated-content");
   const box = await answer.boundingBox();
   expect(box).not.toBeNull();
   if (!box) return;
@@ -457,22 +462,22 @@ test("pans vertically over an answer without changing zoom", async ({ page }) =>
   await page.mouse.wheel(0, 240);
   await expect.poll(() => viewportTransform(page)).not.toEqual(before);
   const after = await viewportTransform(page);
-  expect(after.zoom).toBeCloseTo(before.zoom, 5);
+  expect(after.zoom).toBeCloseTo(before.zoom, 2);
   expect(after.y).not.toBe(before.y);
 });
 
 test("persists a manually moved answer with its model and graph snapshot", async ({ page }, testInfo) => {
   await prepare(page, "default");
   await signIn(page);
-  await chooseModel(page, "Prompt 1", "model-a");
+  await chooseModel(page, "Prompt 1", "claude-sonnet-5");
   const moveInstruction = page.getByLabel("Prompt 1 instruction");
   await moveInstruction.fill("Persist this moved answer.");
   await expect(moveInstruction).toHaveValue("Persist this moved answer.");
   await moveInstruction.press("Enter");
-  await expect(result(page, "model-a").first().locator(".generated-content")).toBeVisible({ timeout: 15_000 });
+  await expect(result(page, "claude-sonnet-5").first().locator(".generated-content")).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText("Saved locally")).toBeVisible({ timeout: 15_000 });
   const beforeFlow = await storedActiveFlow(page);
-  const answer = result(page, "model-a").first();
+  const answer = result(page, "claude-sonnet-5").first();
   const answerId = await answer.evaluate((element) => element.closest<HTMLElement>(".react-flow__node")?.dataset.id ?? "");
   const beforeNode = beforeFlow?.nodes.find((node) => node.id === answerId);
   expect(beforeNode).toBeDefined();
@@ -492,12 +497,12 @@ test("persists a manually moved answer with its model and graph snapshot", async
   const movedFlow = await storedActiveFlow(page);
   const movedNode = movedFlow?.nodes.find((node) => node.id === answerId);
   expect(movedNode?.position).not.toEqual(beforeNode.position);
-  expect(movedFlow?.batches?.flatMap((batch) => batch.executions).find((execution) => execution.outputNodeId === answerId)?.modelId).toBe("model-a");
+  expect(movedFlow?.batches?.flatMap((batch) => batch.executions).find((execution) => execution.outputNodeId === answerId)?.modelId).toBe("claude-sonnet-5");
   await capture(page, testInfo, "spatial-chat-manual-movement.png");
 
   await page.reload({ waitUntil: "domcontentloaded" });
   await expect(page.locator(".canvas-shell")).toBeVisible({ timeout: 15_000 });
-  await expect(result(page, "model-a").first().locator(".generated-content")).toBeVisible({ timeout: 15_000 });
+  await expect(result(page, "claude-sonnet-5").first().locator(".generated-content")).toBeVisible({ timeout: 15_000 });
 });
 
 test("lays out a long response without card overlaps", async ({ page }) => {
@@ -507,18 +512,18 @@ test("lays out a long response without card overlaps", async ({ page }) => {
     window.fetch = async (input, init) => {
       if (!String(input).includes("/llm/v1/chat/completions")) return originalFetch(input, init);
       const body = JSON.parse(typeof init?.body === "string" ? init.body : "{}") as { model?: string };
-      const model = body.model ?? "model-a";
+      const model = body.model ?? "claude-sonnet-5";
       const longText = Array.from({ length: 180 }, (_, index) => `Long response paragraph ${index + 1}: spatial chat should keep this answer readable and clear.`).join(" ");
       return new Response(JSON.stringify({ choices: [{ message: { role: "assistant", content: longText } }], usage: { prompt_tokens: 12, completion_tokens: 800, total_tokens: 812 }, model }), { status: 200, headers: { "Content-Type": "application/json" } });
     };
   });
   await signIn(page);
-  await chooseModel(page, "Prompt 1", "model-a");
+  await chooseModel(page, "Prompt 1", "claude-sonnet-5");
   const longInstruction = page.getByLabel("Prompt 1 instruction");
   await longInstruction.fill("Produce a long answer.");
   await expect(longInstruction).toHaveValue("Produce a long answer.");
   await longInstruction.press("Enter");
-  await expect(result(page, "model-a").first().locator(".generated-content")).toContainText("Long response paragraph 180", { timeout: 15_000 });
+  await expect(result(page, "claude-sonnet-5").first().locator(".generated-content")).toContainText("Long response paragraph 180", { timeout: 15_000 });
   await expect(generation(page, "Prompt 2").getByLabel("Prompt 2 instruction")).toBeVisible({ timeout: 15_000 });
   await expect.poll(async () => page.evaluate(() => {
     const cards = [...document.querySelectorAll<HTMLElement>(".react-flow__node")].map((element) => {

@@ -139,6 +139,6 @@ describe("domain edge cases", () => {
     const prompt = flow.nodes[0]!;
     const invalid = { ...workspace, flows: [{ ...flow, nodes: [...flow.nodes, { ...prompt }], edges: [{ id: "bad", kind: "input" as const, source: "missing", target: prompt.id, order: 5 }], batches: [{ id: "orphan", generationNodeId: "missing", startedAt: clock.now().toISOString(), promptFormatVersion: 1 as const, instruction: "", inputs: [], executions: [] }] }] };
     const errors = validateWorkspaceInvariants(invalid);
-    expect(errors).toEqual(expect.arrayContaining([expect.stringContaining("duplicate node"), expect.stringContaining("missing endpoint"), expect.stringContaining("missing source")]));
+    expect(errors).toEqual(expect.arrayContaining([expect.stringContaining("duplicate node"), expect.stringContaining("missing endpoint")]));
   });
 });

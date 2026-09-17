@@ -1,6 +1,6 @@
 import type { SVGProps } from "react";
 
-export type CardIconName = "branch" | "send" | "close" | "grip" | "history" | "note" | "message" | "undo" | "redo" | "library" | "download" | "upload" | "trash";
+export type CardIconName = "branch" | "chevron" | "send" | "close" | "grip" | "history" | "note" | "message" | "undo" | "redo" | "library" | "download" | "upload" | "trash";
 
 type CardIconProps = Omit<SVGProps<SVGSVGElement>, "name"> & {
   name: CardIconName;
@@ -30,6 +30,7 @@ export const CardIcon = ({ name, size = 14, ...props }: CardIconProps) => {
       <path {...common} d="M14 4h2a4 4 0 0 1 4 4v1" />
       <path {...common} d="m15 13 3 3-3 3" />
     </>}
+    {name === "chevron" && <path {...common} d="m6 9 6 6 6-6" />}
     {name === "send" && <path {...common} d="m3 3 18 9-18 9 4-9-4-9Zm4 9h14" />}
     {name === "close" && <path {...common} d="m6 6 12 12M18 6 6 18" />}
     {name === "grip" && <>

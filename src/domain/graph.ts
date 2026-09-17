@@ -1,6 +1,6 @@
 import { LIMITS, codePointLength, utf8ByteLength } from "./limits";
 import type { FlowDocument, InputEdge, InputSnapshot, PlaygroundEdge, WorkspaceDocument } from "./types";
-import { isTextNode, isGeneratedTextNode, isGenerationNode } from "./types";
+import { isTextNode, isGeneratedTextNode, isGenerationNode, isManualTextNode } from "./types";
 
 export const getNode = (flow: FlowDocument, nodeId: string) => flow.nodes.find((node) => node.id === nodeId);
 
@@ -19,6 +19,14 @@ export const nextGenerationIndex = (flow: FlowDocument): number => {
       const match = /^Generation\s+(\d+)$/.exec(node.data.title);
       return match ? Number(match[1]) : 0;
     });
+  return indices.length === 0 ? 1 : Math.max(...indices) + 1;
+};
+
+export const nextManualTextIndex = (flow: FlowDocument): number => {
+  const indices = flow.nodes.filter(isManualTextNode).map((node) => {
+    const match = /^(?:Text|Note)\s+(\d+)$/.exec(node.data.title);
+    return match ? Number(match[1]) : 0;
+  });
   return indices.length === 0 ? 1 : Math.max(...indices) + 1;
 };
 
@@ -49,7 +57,7 @@ export const canAddInputConnection = (flow: FlowDocument, sourceTextId: string, 
     if (!execution || execution.status !== "success") return { allowed: false, reason: "Only successful results can be used as inputs." };
   }
   if (getOrderedInputEdges(flow, target.id).some((edge) => edge.id !== ignoredEdgeId && edge.source === source.id)) return { allowed: false, reason: "That Text node is already connected." };
-  if (getOrderedInputEdges(flow, target.id).filter((edge) => edge.id !== ignoredEdgeId).length >= LIMITS.maxInputsPerGeneration) return { allowed: false, reason: `A Generation node can have at most ${LIMITS.maxInputsPerGeneration} input${LIMITS.maxInputsPerGeneration === 1 ? "" : "s"}.` };
+  if (getOrderedInputEdges(flow, target.id).filter((edge) => edge.id !== ignoredEdgeId).length >= LIMITS.maxInputsPerGeneration) return { allowed: false, reason: `A Generation node can have at most ${LIMITS.maxInputsPerGeneration} inputs.` };
   if (hasDirectedPath(flow, target.id, source.id, ignoredEdgeId)) return { allowed: false, reason: "That connection would create a cycle." };
   return { allowed: true };
 };
@@ -128,7 +136,8 @@ export const validateWorkspaceInvariants = (workspace: WorkspaceDocument): strin
       if (!execution || execution.outputNodeId !== node.id || execution.modelId !== node.data.title) errors.push(`Generated node ${node.id} has an invalid provenance reference.`);
     }
     for (const batch of flow.batches) {
-      if (!nodes.has(batch.generationNodeId)) errors.push(`Batch ${batch.id} has a missing source generation node.`);
+      const generation = nodes.get(batch.generationNodeId);
+      if (generation && !isGenerationNode(generation)) errors.push(`Batch ${batch.id} source is not a generation node.`);
       if (batch.executions.length > LIMITS.maxModelsPerBatch || new Set(batch.executions.map((execution) => execution.modelId)).size !== batch.executions.length) errors.push(`Batch ${batch.id} has invalid executions.`);
       for (const execution of batch.executions) {
         if (execution.outputNodeId) {

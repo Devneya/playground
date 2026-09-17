@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canAddInputConnection, getInputSnapshots, validateWorkspaceInvariants } from "../../src/domain/graph";
+import { canAddInputConnection, getInputSnapshots, nextGenerationIndex, nextManualTextIndex, validateWorkspaceInvariants } from "../../src/domain/graph";
 import { createStarterWorkspace } from "../../src/domain/workspaceFactory";
 import { systemClock } from "../../src/domain/ids";
 import type { PlaygroundNode } from "../../src/domain/types";
@@ -19,6 +19,8 @@ describe("graph invariants", () => {
     const flow = workspace.flows[0]!;
     const prompt = flow.nodes.find((node) => node.data.kind === "generation")!;
     expect(prompt.data.title).toBe("Generation 1");
+    expect(nextGenerationIndex(flow)).toBe(2);
+    expect(nextManualTextIndex(flow)).toBe(1);
     expect(getInputSnapshots(flow, prompt.id)).toEqual([]);
   });
 
@@ -32,7 +34,16 @@ describe("graph invariants", () => {
     const connected = { ...withContent, edges: [...withContent.edges, { id: "e1", kind: "input" as const, source: "c1", target: prompt.id, order: 0 }] };
     expect(canAddInputConnection(connected, "c1", prompt.id)).toEqual({ allowed: false, reason: "That Text node is already connected." });
     const extra = { ...connected, nodes: [...connected.nodes, content("c2", "Other")] };
-    expect(canAddInputConnection(extra, "c2", prompt.id)).toEqual({ allowed: false, reason: "A Generation node can have at most 1 input." });
+    expect(canAddInputConnection(extra, "c2", prompt.id)).toEqual({ allowed: true });
+  });
+
+  it("caps inputs per generation", () => {
+    const workspace = createStarterWorkspace(() => crypto.randomUUID(), systemClock);
+    const flow = workspace.flows[0]!;
+    const prompt = flow.nodes.find((node) => node.data.kind === "generation")!;
+    const nodes = [...flow.nodes, ...Array.from({ length: 9 }, (_, index) => content(`c${index}`))];
+    const edges = Array.from({ length: 8 }, (_, index) => ({ id: `e${index}`, kind: "input" as const, source: `c${index}`, target: prompt.id, order: index }));
+    expect(canAddInputConnection({ ...flow, nodes, edges }, "c8", prompt.id)).toEqual({ allowed: false, reason: "A Generation node can have at most 8 inputs." });
   });
 
   it("rejects a cycle and unavailable generated result as an input", () => {

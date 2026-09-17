@@ -59,6 +59,8 @@ describe("AuthScreen", () => {
     renderAuth();
     await user.click(screen.getByRole("button", { name: /forgot password/i }));
     expect(screen.queryByLabelText("Password")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /continue with google/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /continue with github/i })).not.toBeInTheDocument();
     await user.type(screen.getByLabelText("Email"), "person@example.com");
     await user.click(screen.getByRole("button", { name: /send recovery link/i }));
     expect(actions.sendRecovery).toHaveBeenCalledWith("person@example.com");

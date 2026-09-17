@@ -48,11 +48,13 @@ export const AuthScreen = () => {
       <p className="eyebrow">Devneya Playground</p>
       <h1 id="auth-title">Build and compare model workflows.</h1>
       <p className="muted">Sign in to keep named flows in this browser and run them through your Devneya account.</p>
-      <div className="auth-oauth">
-        <button type="button" onClick={() => void signInWithOAuth("google")} disabled={busy}>Continue with Google</button>
-        <button type="button" onClick={() => void signInWithOAuth("github")} disabled={busy}>Continue with GitHub</button>
-      </div>
-      <div className="auth-divider"><span>or</span></div>
+      {(mode === "login" || mode === "signup") && <>
+        <div className="auth-oauth">
+          <button type="button" onClick={() => void signInWithOAuth("google")} disabled={busy}>Continue with Google</button>
+          <button type="button" onClick={() => void signInWithOAuth("github")} disabled={busy}>Continue with GitHub</button>
+        </div>
+        <div className="auth-divider"><span>or</span></div>
+      </>}
       <form onSubmit={submit} autoComplete={isMock ? "off" : undefined}>
         <label>Email<input value={email} onChange={(event) => setEmail(event.target.value)} type="email" autoComplete="email" required /></label>
         {mode !== "recovery" && <label>Password<input value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete={isMock ? "new-password" : mode === "login" ? "current-password" : "new-password"} minLength={8} required /></label>}

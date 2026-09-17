@@ -66,13 +66,12 @@ const waitForStoredInputCount = async (page: Page, count: number) => {
   await expect.poll(async () => ((await storedWorkspaceJson(page)).match(/"kind":"input"/g) ?? []).length, { timeout: 15_000 }).toBe(count);
 };
 
-const selectModels = async (page: Page, modelIds: string[]) => {
+const selectModel = async (page: Page, modelId: string, title = "Prompt 1") => {
   const node = generation(page);
-  await node.getByRole("button", { name: "Prompt 1 model picker" }).click();
-  for (const modelId of modelIds) {
-    const checkbox = node.getByRole("checkbox", { name: `Prompt 1 model ${modelId}` });
-    if (!(await checkbox.isChecked())) await checkbox.check();
-  }
+  await node.getByRole("button", { name: `${title} model picker` }).click();
+  await node.getByLabel(`${title} model search`).fill(modelId);
+  const radio = node.getByRole("radio", { name: `${title} model ${modelId}` });
+  if (!(await radio.isChecked())) await radio.check();
   await page.keyboard.press("Escape");
   await fitCanvas(page);
 };
@@ -134,18 +133,18 @@ test.describe("mocked workspace flows", () => {
     await prepare(page, "default");
     await signIn(page);
     await page.getByLabel("Prompt 1 instruction").fill("A short internal product brief.");
-    await selectModels(page, ["model-a"]);
+    await selectModel(page, "claude-sonnet-5");
     await expect(page.getByText("Saved locally")).toBeVisible();
     await runAndWaitForOutputs(page, 1);
     await assertAccessible(page);
     await expect(page.locator(".generated-node")).toContainText("Mock result");
-    await expect(page.locator(".generated-node")).toContainText("model-a");
+    await expect(page.locator(".generated-node")).toContainText("claude-sonnet-5");
   });
 
   test("keeps generation disabled for whitespace instructions until valid text is entered", async ({ page }) => {
     await prepare(page, "default");
     await signIn(page);
-    await selectModels(page, ["model-a"]);
+    await selectModel(page, "claude-sonnet-5");
     const instruction = page.getByLabel("Prompt 1 instruction");
     const runButton = generation(page).first().getByRole("button", { name: "Send prompt" });
     await instruction.fill("   \n\t");
@@ -154,65 +153,77 @@ test.describe("mocked workspace flows", () => {
     await expect(runButton).toBeEnabled();
   });
 
-  test("auto-creates a continuation and exposes Branch on successful results", async ({ page }) => {
+  test("auto-creates a continuation and exposes Fork on successful results", async ({ page }) => {
     await prepare(page, "default");
     await signIn(page);
-    await selectModels(page, ["model-a"]);
+    await selectModel(page, "claude-sonnet-5");
     await runAndWaitForOutputs(page, 1);
     const result = page.locator(".generated-node").first();
-    await expect(result.getByRole("button", { name: "Branch", exact: true })).toBeVisible();
+    await expect(result.getByRole("button", { name: "Fork", exact: true })).toBeVisible();
     await expect(generation(page)).toHaveCount(2);
     await expect(generation(page).nth(1).getByLabel("Prompt 2 instruction")).toHaveValue("");
-    await result.getByRole("button", { name: "Branch", exact: true }).click();
+    await result.getByRole("button", { name: "Fork", exact: true }).click();
     await expect(generation(page)).toHaveCount(3);
     await expect(page.locator(".react-flow__edge")).toHaveCount(3);
   });
 
-  test("refuses a second input with a visible reason", async ({ page }) => {
+  test("accepts a second content input on a prompt", async ({ page }) => {
     await prepare(page, "four-models");
     await signIn(page);
-    await selectModels(page, ["model-a", "model-b"]);
-    await runAndWaitForOutputs(page, 2);
+    await selectModel(page, "claude-sonnet-5");
+    await runAndWaitForOutputs(page, 1);
+    const followup = page.locator(".generation-node").nth(1);
+    await selectModel(page, "gpt-5.6-sol", "Prompt 2");
+    await followup.getByLabel("Prompt 2 instruction").fill("Second model turn.");
+    await followup.getByRole("button", { name: "Send prompt" }).click();
+    await expect(page.locator(".generated-node")).toHaveCount(2, { timeout: 15_000 });
     await page.getByRole("button", { name: "+ Prompt" }).click();
     await fitCanvas(page);
-    const second = page.locator(".generation-node").last();
+    const extra = page.locator(".generation-node").last();
     const firstResult = page.locator(".generated-node").first().locator(".react-flow__handle.user-handle");
-    await firstResult.dragTo(second.locator(".react-flow__handle.user-handle"));
-    await expect(second).toContainText("model-a");
+    await firstResult.dragTo(extra.locator(".react-flow__handle.user-handle"));
+    await extra.locator(".context-disclosure summary").click();
+    await expect(extra.locator(".context-panel")).toContainText("claude-sonnet-5");
     const secondResult = page.locator(".generated-node").nth(1).locator(".react-flow__handle.user-handle");
-    await secondResult.dragTo(second.locator(".react-flow__handle.user-handle"));
-    await expect(page.getByRole("status")).toContainText("at most 1 input");
-    await expect(page.locator(".react-flow__edge")).toHaveCount(5);
+    await secondResult.dragTo(extra.locator(".react-flow__handle.user-handle"));
+    await expect(extra.locator(".context-panel")).toContainText("gpt-5.6-sol");
+    await expect(page.locator(".react-flow__edge")).toHaveCount(6);
     await page.locator(".managed-edge-hoverzone").last().hover();
     await page.getByRole("button", { name: "Remove connection" }).click();
-    await secondResult.dragTo(second.locator(".react-flow__handle.user-handle"));
-    await expect(second).toContainText("model-b");
     await expect(page.locator(".react-flow__edge")).toHaveCount(5);
   });
 
-  test("runs all four selected models and preserves result siblings", async ({ page }) => {
+  test("groups the four-provider catalog and runs the selected model", async ({ page }) => {
     await prepare(page, "four-models");
     await signIn(page);
-    await selectModels(page, ["model-a", "model-b", "model-c", "model-d"]);
-    await runAndWaitForOutputs(page, 4);
-    await expect(page.locator(".generated-node").first()).toContainText("model-a");
-    await expect(page.locator(".generated-node").last()).toContainText("model-d");
-    await expect(page.locator(".generated-content").filter({ hasText: "Mock result" })).toHaveCount(4);
+    const picker = page.getByRole("button", { name: "Prompt 1 model picker" });
+    await picker.click();
+    await expect(page.getByRole("group", { name: "OpenAI" })).toBeVisible();
+    await expect(page.getByRole("group", { name: "Claude" })).toBeVisible();
+    await expect(page.getByRole("group", { name: "DeepSeek" })).toBeVisible();
+    await expect(page.getByRole("group", { name: "GLM" })).toBeVisible();
+    await expect(page.getByRole("radio", { checked: true })).toHaveCount(1);
+    await page.keyboard.press("Escape");
+    await selectModel(page, "glm-5.3");
+    await runAndWaitForOutputs(page, 1);
+    await expect(page.locator(".generated-node")).toContainText("glm-5.3");
+    await expect(page.locator(".generated-content").filter({ hasText: "Mock result" })).toHaveCount(1);
   });
 
-  test("shows one provider failure without losing successful siblings", async ({ page }) => {
+  test("shows a provider failure on the selected model", async ({ page }) => {
     await prepare(page, "partial-failure");
     await signIn(page);
-    await selectModels(page, ["model-a", "model-b", "model-c", "model-d"]);
-    await runAndWaitForOutputs(page, 4);
-    await expect(page.locator(".generated-node").filter({ hasText: "Failed: The provider failed for model-b." })).toHaveCount(1);
-    await expect(page.locator(".generated-content").filter({ hasText: "Mock result" })).toHaveCount(3);
+    await selectModel(page, "gpt-5.6-sol");
+    await fitCanvas(page);
+    await generation(page).first().getByLabel(/instruction/).fill("Run the mock instruction.");
+    await generation(page).first().getByRole("button", { name: "Send prompt" }).click();
+    await expect(page.locator(".generated-node").filter({ hasText: "Failed: The provider failed for gpt-5.6-sol." })).toHaveCount(1, { timeout: 15_000 });
   });
 
   test("cancels an in-flight run before a late response can mutate the canvas", async ({ page }) => {
     await prepare(page, "default");
     await signIn(page);
-    await selectModels(page, ["model-a"]);
+    await selectModel(page, "claude-sonnet-5");
     await page.evaluate(() => {
       const originalFetch = window.fetch.bind(window);
       window.fetch = (input, init) => {
@@ -230,7 +241,7 @@ test.describe("mocked workspace flows", () => {
     await expect(generation(page).getByRole("button", { name: "Cancel run" })).toBeVisible({ timeout: 15_000 });
     await fitCanvas(page);
     await generation(page).first().getByRole("button", { name: "Cancel run" }).click();
-    await expect(generation(page).first().getByRole("button", { name: "Branch", exact: true })).toBeVisible();
+    await expect(generation(page).first().getByRole("button", { name: "Fork", exact: true })).toBeVisible();
     await expect(generation(page).first().getByRole("button", { name: "Send prompt" })).toHaveCount(0);
     await expect(page.locator(".generated-node")).toContainText("Cancelled: The run was cancelled.");
     await expect(page.locator(".generated-content").filter({ hasText: "Mock result" })).toHaveCount(0);
@@ -301,11 +312,11 @@ test.describe("mocked workspace flows", () => {
   test("duplicates a sent prompt, edits the copy, and preserves the previous result batch", async ({ page }) => {
     await prepare(page, "default");
     await signIn(page);
-    await selectModels(page, ["model-a"]);
+    await selectModel(page, "claude-sonnet-5");
     await runAndWaitForOutputs(page, 1);
     const originalResult = page.locator(".generated-node").first();
     await expect(originalResult).toContainText("Mock result");
-    await generation(page).first().getByRole("button", { name: "Branch", exact: true }).click();
+    await generation(page).first().getByRole("button", { name: "Fork", exact: true }).click();
     await expect(generation(page)).toHaveCount(3);
     const duplicate = generation(page).last();
     await expect(duplicate.getByLabel("Prompt 3 instruction")).toHaveValue("Run the mock instruction.");
@@ -330,7 +341,7 @@ test.describe("mocked workspace flows", () => {
   test("renders the offline completion recovery state", async ({ page }) => {
     await prepare(page, "offline");
     await signIn(page);
-    await selectModels(page, ["model-a"]);
+    await selectModel(page, "claude-sonnet-5");
     await fitCanvas(page);
     await generation(page).first().getByLabel(/instruction/).fill("Run the mock instruction.");
     await generation(page).first().getByRole("button", { name: "Send prompt" }).click();
@@ -342,7 +353,7 @@ for (const status of [401, 402, 403]) {
   test(`renders completion HTTP ${status} as a failed result`, async ({ page }) => {
     await prepare(page, `completion-${status === 401 ? "401" : status === 402 ? "402" : "403"}`);
     await signIn(page);
-    await selectModels(page, ["model-a"]);
+    await selectModel(page, "claude-sonnet-5");
     await fitCanvas(page);
     await generation(page).first().getByLabel(/instruction/).fill("Run the mock instruction.");
     await generation(page).first().getByRole("button", { name: "Send prompt" }).click();
@@ -353,7 +364,7 @@ for (const status of [401, 402, 403]) {
 test("renders an invalid completion payload as a failed result", async ({ page }) => {
   await prepare(page, "completion-invalid");
   await signIn(page);
-  await selectModels(page, ["model-a"]);
+  await selectModel(page, "claude-sonnet-5");
   await fitCanvas(page);
   await generation(page).first().getByLabel(/instruction/).fill("Run the mock instruction.");
   await generation(page).first().getByRole("button", { name: "Send prompt" }).click();
@@ -364,27 +375,27 @@ test("renders an invalid completion payload as a failed result", async ({ page }
 test("connects a result into a new prompt with the pointer and restores the edge after reload", async ({ page }) => {
   await prepare(page, "default");
   await signIn(page);
-  await selectModels(page, ["model-a"]);
+  await selectModel(page, "claude-sonnet-5");
   await runAndWaitForOutputs(page, 1);
   await page.getByRole("button", { name: "+ Prompt" }).click();
   await fitCanvas(page);
   const source = page.locator(".generated-node").first().locator(".react-flow__handle.user-handle");
   const second = page.locator(".generation-node").last();
   await source.dragTo(second.locator(".react-flow__handle.user-handle"));
-  await expect(second).toContainText("model-a");
+  await expect(second).toContainText("claude-sonnet-5");
   await expect(page.locator(".react-flow__edge")).toHaveCount(3);
   await waitForSave(page);
   await waitForStoredInputCount(page, 2);
   await page.reload({ waitUntil: "domcontentloaded" });
   await expect(page.locator(".canvas-shell")).toBeVisible({ timeout: 15_000 });
   await expect(page.locator(".catalog-dot.live")).toBeVisible({ timeout: 15_000 });
-  await expect(page.locator(".generation-node").last()).toContainText("model-a", { timeout: 15_000 });
+  await expect(page.locator(".generation-node").last()).toContainText("claude-sonnet-5", { timeout: 15_000 });
 });
 
 test("removes an input edge from its hover midpoint control", async ({ page }) => {
   await prepare(page, "default");
   await signIn(page);
-  await selectModels(page, ["model-a"]);
+  await selectModel(page, "claude-sonnet-5");
   await runAndWaitForOutputs(page, 1);
   await page.getByRole("button", { name: "+ Prompt" }).click();
   await fitCanvas(page);
@@ -395,35 +406,36 @@ test("removes an input edge from its hover midpoint control", async ({ page }) =
   await page.locator(".managed-edge-hoverzone").last().hover();
   await expect(removeButton).toBeVisible();
   await removeButton.click();
-  await expect(second).toContainText("Context (0)");
+  await expect(second.locator(".context-disclosure summary")).toContainText("Context");
+  await expect(second.locator(".context-disclosure summary")).not.toContainText("(");
   await expect(page.locator(".react-flow__edge")).toHaveCount(2);
 });
 
-test("selects models through the pill picker with search", async ({ page }) => {
+test("selects a model through the pill picker with search", async ({ page }) => {
   await prepare(page, "four-models");
   await signIn(page);
   await fitCanvas(page);
   const picker = page.getByRole("button", { name: "Prompt 1 model picker" });
-  await expect(picker).toContainText("model-a");
+  await expect(picker).toContainText("claude-sonnet-5");
   await picker.click();
-  await page.getByLabel("Prompt 1 model search").fill("model-c");
-  await expect(page.getByRole("checkbox", { name: "Prompt 1 model model-a" })).toBeHidden();
-  await page.getByRole("checkbox", { name: "Prompt 1 model model-c" }).check();
+  await page.getByLabel("Prompt 1 model search").fill("deepseek-flash");
+  await expect(page.getByRole("radio", { name: "Prompt 1 model claude-sonnet-5" })).toBeHidden();
+  await page.getByRole("radio", { name: "Prompt 1 model deepseek-flash" }).check();
   await page.keyboard.press("Escape");
-  await expect(picker).toContainText("model-a +1 (2/4)");
+  await expect(picker).toHaveText("deepseek-flash");
 });
 
 test("threads a result into a second prompt and refuses the cycle back", async ({ page }) => {
   await prepare(page, "default");
   await signIn(page);
-  await selectModels(page, ["model-a"]);
+  await selectModel(page, "claude-sonnet-5");
   await runAndWaitForOutputs(page, 1);
   await page.getByRole("button", { name: "+ Prompt" }).click();
   await fitCanvas(page);
   const second = page.locator(".generation-node").last();
   const outputHandle = page.locator(".generated-node").first().locator(".react-flow__handle.user-handle");
   await outputHandle.dragTo(second.locator(".react-flow__handle.user-handle"));
-  await expect(second).toContainText("model-a");
+  await expect(second).toContainText("claude-sonnet-5");
   await page.locator(".managed-edge-hoverzone").last().hover();
   await page.getByRole("button", { name: "Remove connection" }).click();
   await page.locator(".generated-node").first().locator(".react-flow__handle.user-handle").dragTo(generation(page).first().locator(".react-flow__handle.user-handle"));
@@ -434,7 +446,7 @@ test("threads a result into a second prompt and refuses the cycle back", async (
 test("runs a threaded generation from a result input", async ({ page }) => {
   await prepare(page, "default");
   await signIn(page);
-  await selectModels(page, ["model-a"]);
+  await selectModel(page, "claude-sonnet-5");
   await runAndWaitForOutputs(page, 1);
   await page.getByRole("button", { name: "+ Prompt" }).click();
   await fitCanvas(page);
@@ -442,7 +454,7 @@ test("runs a threaded generation from a result input", async ({ page }) => {
   const secondTitle = (await second.locator(".node-header > strong[title]").textContent())!;
   await page.locator(".generated-node").first().locator(".react-flow__handle.user-handle").dragTo(second.locator(".react-flow__handle.user-handle"));
   await second.getByRole("button", { name: `${secondTitle} model picker` }).click();
-  await second.getByRole("checkbox", { name: `${secondTitle} model model-a` }).check();
+  await second.getByRole("radio", { name: `${secondTitle} model claude-sonnet-5` }).check();
   await page.keyboard.press("Escape");
   await second.getByLabel(`${secondTitle} instruction`).fill("Continue the mock thread.");
   await second.getByRole("button", { name: "Send prompt" }).click();
@@ -459,10 +471,10 @@ test("supports flow creation, rename, duplication, activation, deletion, undo, a
   await expect(page.getByLabel("Prompt 1 instruction")).toHaveValue("");
   await page.getByRole("button", { name: "Redo last change" }).click();
   await expect(page.getByLabel("Prompt 1 instruction")).toHaveValue("UNDO_ME");
-  await page.getByRole("button", { name: "Canvases" }).click();
+  await page.getByRole("button", { name: "Flows" }).click();
   await page.getByRole("button", { name: "New flow" }).click();
-  await expect(page.getByRole("button", { name: "Rename Untitled flow 2" })).toBeVisible();
-  await page.getByRole("button", { name: "Rename Untitled flow 2" }).click();
+  await expect(page.getByRole("button", { name: "Rename Default flow 2" })).toBeVisible();
+  await page.getByRole("button", { name: "Rename Default flow 2" }).click();
   const rename = page.locator(".flow-list-item input");
   await rename.fill("Release flow");
   await rename.press("Enter");
@@ -471,8 +483,8 @@ test("supports flow creation, rename, duplication, activation, deletion, undo, a
   await expect(page.getByRole("button", { name: "Rename Release flow 2" })).toBeVisible();
   await page.getByRole("button", { name: "Delete Release flow 2" }).click();
   await expect(page.getByRole("button", { name: "Rename Release flow 2" })).toHaveCount(0);
-  await page.getByRole("button", { name: "Untitled flow" }).click();
-  await expect(page.locator(".flow-title")).toHaveText("Untitled flow");
+  await page.getByRole("button", { name: "Default flow" }).click();
+  await expect(page.locator(".flow-title")).toHaveText("Default flow");
 });
 
 test("recovers from one catalog and account-key failure", async ({ page }) => {
