@@ -7,6 +7,7 @@ import { canAddInputConnection } from "../../domain/graph";
 import { LAYOUT } from "../../domain/resultPlacement";
 import type { InputEdge, NodeData, PlaygroundEdge, PlaygroundNode } from "../../domain/types";
 import { useWorkspace } from "../workspace/useWorkspace";
+import { panToRevealCard } from "./camera";
 import { TextNode } from "./TextNode";
 import { GenerationNode } from "./GenerationNode";
 import { ManagedEdge } from "./ManagedEdge";
@@ -15,19 +16,38 @@ const nodeTypes = { text: TextNode, generation: GenerationNode };
 
 const edgeTypes = { managed: ManagedEdge };
 
+const EDGE = {
+  result: { color: "#5f64d0", dash: undefined as string | undefined },
+  input: { color: "#7a838f", dash: undefined as string | undefined },
+  branch: { color: "#8b5cf6", dash: "6 5" as string | undefined },
+} as const;
+
 const toFlowNode = (node: PlaygroundNode): Node<NodeData> => ({ id: node.id, type: node.data.kind, position: node.position, data: node.data, dragHandle: ".node-header", ...(node.measuredHeight ? { measured: { width: LAYOUT.nodeWidth, height: node.measuredHeight } } : {}) });
 
-const toFlowEdge = (edge: PlaygroundEdge): Edge => ({ id: edge.id, source: edge.source, target: edge.target, sourceHandle: edge.sourceHandle ?? null, targetHandle: edge.targetHandle ?? null, type: "managed", animated: false, selectable: edge.kind === "input", className: edge.kind === "result" ? "result-edge" : "input-edge", markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, color: edge.kind === "result" ? "#a4a9e8" : "#7d899d" }, data: { kind: edge.kind } });
+const toFlowEdge = (edge: PlaygroundEdge): Edge => {
+  const look = EDGE[edge.kind];
+  return { id: edge.id, source: edge.source, target: edge.target, sourceHandle: edge.sourceHandle ?? null, targetHandle: edge.targetHandle ?? null, type: "managed", animated: false, selectable: edge.kind === "input", className: `${edge.kind}-edge`, style: { stroke: look.color, strokeWidth: 2 }, markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18, color: look.color }, data: { kind: edge.kind } };
+};
 
 export const WorkspaceCanvas = ({ controlsContainer }: { controlsContainer?: HTMLElement | null } = {}) => {
   const { activeFlow, dispatch } = useWorkspace();
   const [notice, setNotice] = useState<string | null>(null);
+  const [compactFit, setCompactFit] = useState(false);
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const media = window.matchMedia("(max-width: 600px)");
+    const sync = () => setCompactFit(media.matches);
+    sync();
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, []);
+  const fitViewOptions = { maxZoom: 1, minZoom: compactFit ? 0.75 : 0.2, padding: 0.12 };
   const nodes = useMemo(() => activeFlow.nodes.map(toFlowNode), [activeFlow.nodes]);
   const edges = useMemo(() => [
     ...activeFlow.edges.map(toFlowEdge),
     ...activeFlow.nodes.flatMap((node): Edge[] => {
       const source = node.data.kind === "generation" ? node.data.branchedFrom?.nodeId : undefined;
-      return source && activeFlow.nodes.some((parent) => parent.id === source) ? [{ id: `branch-${node.id}`, source, target: node.id, sourceHandle: "generation-output", targetHandle: "generation-input", type: "managed", selectable: false, reconnectable: false, style: { stroke: "#bda24b", strokeDasharray: "4 4" }, data: { kind: "branch" } }] : [];
+      return source && activeFlow.nodes.some((parent) => parent.id === source) ? [{ id: `branch-${node.id}`, source, target: node.id, sourceHandle: "generation-output", targetHandle: "generation-input", type: "managed", selectable: false, reconnectable: false, className: "branch-edge", style: { stroke: EDGE.branch.color, strokeWidth: 2, strokeDasharray: EDGE.branch.dash }, markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18, color: EDGE.branch.color }, data: { kind: "branch" } }] : [];
     }),
   ], [activeFlow.edges, activeFlow.nodes]);
 
@@ -79,15 +99,15 @@ export const WorkspaceCanvas = ({ controlsContainer }: { controlsContainer?: HTM
   };
 
   return <section className="canvas-shell" aria-label="Flow canvas">
-    <ReactFlow<Node<NodeData>, Edge> nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onReconnect={onReconnect} onNodeDragStop={onNodeDragStop} onMoveEnd={onMoveEnd} defaultViewport={activeFlow.viewport} fitViewOptions={{ maxZoom: 1 }} panOnScroll panOnScrollSpeed={1} zoomOnScroll={false} zoomOnDoubleClick={false} zoomActivationKeyCode="Control" nodesFocusable={false} edgesFocusable={false} minZoom={0.2} maxZoom={2} deleteKeyCode={["Backspace", "Delete"]} onlyRenderVisibleElements={false}>
+    <ReactFlow<Node<NodeData>, Edge> nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onReconnect={onReconnect} onNodeDragStop={onNodeDragStop} onMoveEnd={onMoveEnd} defaultViewport={activeFlow.viewport} fitViewOptions={fitViewOptions} panOnScroll panOnScrollSpeed={1} zoomOnScroll={false} zoomOnDoubleClick={false} zoomActivationKeyCode="Control" nodesFocusable={false} edgesFocusable={false} minZoom={0.2} maxZoom={2} deleteKeyCode={["Backspace", "Delete"]} onlyRenderVisibleElements={false}>
       <Background variant={BackgroundVariant.Dots} gap={32} color="#e5e1d8" />
-      {controlsContainer && createPortal(<Controls fitViewOptions={{ maxZoom: 1 }} />, controlsContainer)}
+      {controlsContainer && createPortal(<Controls fitViewOptions={fitViewOptions} />, controlsContainer)}
       <ViewportFitter flowId={activeFlow.id} hasNodes={nodes.length > 0} storedViewport={activeFlow.viewport} />
       <CameraFollow flowId={activeFlow.id} nodes={activeFlow.nodes} edges={activeFlow.edges} />
     </ReactFlow>
     {activeFlow.nodes.length === 0 && (
       <div className="canvas-empty" role="status">
-        <p>Start a new chat. Reply below, branch to the right, or drag a card wherever you want.</p>
+        <p>Start a new chat. Continue below, fork to the right, or drag a card wherever you want.</p>
       </div>
     )}
     {notice && <div className="canvas-notice" role="status">{notice}<button type="button" onClick={() => setNotice(null)} aria-label="Dismiss notice">×</button></div>}
@@ -163,23 +183,8 @@ export const CameraFollow = ({ flowId, nodes, edges }: { flowId: string; nodes: 
     pending.current = null;
     const wrapper = document.querySelector<HTMLElement>(".canvas-shell .react-flow");
     if (!wrapper) return;
-    const rect = wrapper.getBoundingClientRect();
-    const viewport = getViewport();
-    const nodeRight = (newest.position.x + LAYOUT.nodeWidth) * viewport.zoom + viewport.x;
-    const nodeBottom = (newest.position.y + newest.measuredHeight) * viewport.zoom + viewport.y;
-    const visibleBottom = rect.height - 48;
-    let panY = 0;
-    if (nodeBottom > visibleBottom) panY = nodeBottom - visibleBottom;
-    const visibleRight = rect.width - 24;
-    let panX = 0;
-    if (nodeRight > visibleRight) panX = nodeRight - visibleRight;
-    // Earlier branches can be above or left of the current view. For a card
-    // larger than the viewport, keep its heading and controls reachable.
-    const nodeLeft = newest.position.x * viewport.zoom + viewport.x;
-    const nodeTop = newest.position.y * viewport.zoom + viewport.y;
-    panX = Math.min(panX, nodeLeft - 24);
-    panY = Math.min(panY, nodeTop - 24);
-    if (panX !== 0 || panY !== 0) setViewport({ x: viewport.x - panX, y: viewport.y - panY, zoom: viewport.zoom }, { duration: 400 });
+    const next = panToRevealCard(getViewport(), { position: newest.position, height: newest.measuredHeight }, wrapper.getBoundingClientRect());
+    if (next) setViewport(next, { duration: 400 });
     if (newest.data.kind === "generation" || (newest.data.kind === "text" && newest.data.origin === "manual")) {
       const element = [...document.querySelectorAll<HTMLElement>(".react-flow__node")].find((node) => node.dataset.id === newest.id);
       element?.querySelector<HTMLTextAreaElement>("textarea")?.focus({ preventScroll: true });

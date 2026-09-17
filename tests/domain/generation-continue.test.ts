@@ -82,14 +82,14 @@ describe("generation/continue", () => {
     expect(history.past).toHaveLength(1);
   });
 
-  it("is a no-op when the source is not a successful generated result", () => {
-    // Source is a manual Text node, not a generated result.
+  it("sparks a chat from a note and ignores failed results", () => {
     const manual = buildWorkspace();
     manual.flows[0]!.nodes[1]!.data = { kind: "text", origin: "manual", title: "Manual", text: "x" };
     const afterManual = reduceWorkspace(manual, { type: "generation/continue", flowId: "flow-1", sourceNodeId: "res-1" }, context);
-    expect(afterManual).toBe(manual);
+    const newGen = afterManual.flows[0]!.nodes.find((node) => node.id !== "gen-1" && node.id !== "res-1")!;
+    expect(newGen.data).toMatchObject({ kind: "generation", instruction: "", modelIds: [] });
+    expect(afterManual.flows[0]!.edges.some((edge) => edge.source === "res-1" && edge.target === newGen.id)).toBe(true);
 
-    // Source is a generated result whose execution failed.
     const failed = buildWorkspace();
     failed.flows[0]!.batches[0]!.executions[0]!.status = "failed";
     const afterFailed = reduceWorkspace(failed, { type: "generation/continue", flowId: "flow-1", sourceNodeId: "res-1" }, context);

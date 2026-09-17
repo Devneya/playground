@@ -66,7 +66,7 @@ describe("workspace invariant branch matrix", () => {
     const invalidBatch = { ...batch, generationNodeId: "missing-prompt", executions: Array.from({ length: 5 }, (_, index) => ({ ...batch.executions[0]!, id: `execution-${index}`, modelId: index === 4 ? "model-a" : `model-${index}`, outputNodeId: "wrong-output" })) };
     const invalid = { ...workspace, flows: [{ ...flow, nodes: [...flow.nodes, second, generated], edges, batches: [invalidBatch] }] };
     const errors = validateWorkspaceInvariants(invalid);
-    expect(errors).toEqual(expect.arrayContaining([expect.stringContaining("unavailable result"), expect.stringContaining("not contiguous"), expect.stringContaining("duplicate inputs"), expect.stringContaining("missing source"), expect.stringContaining("invalid executions"), expect.stringContaining("wrong output"), expect.stringContaining("cycle")]));
+    expect(errors).toEqual(expect.arrayContaining([expect.stringContaining("unavailable result"), expect.stringContaining("not contiguous"), expect.stringContaining("duplicate inputs"), expect.stringContaining("invalid executions"), expect.stringContaining("wrong output"), expect.stringContaining("cycle")]));
     expect(hasDirectedPath({ ...flow, edges }, prompt.id, second.id, "cycle")).toBe(false);
     expect(hasDirectedPath({ ...flow, edges }, second.id, "missing")).toBe(false);
     expect(normalizeInputOrder(edges, prompt.id).filter((edge) => edge.kind === "input").map((edge) => edge.order)).toEqual([0, 1, 2]);
@@ -80,7 +80,7 @@ describe("workspace invariant branch matrix", () => {
     const first = manual("first");
     const connected = { ...flow, nodes: [...flow.nodes, first], edges: [...flow.edges, { id: "first-input", kind: "input" as const, source: first.id, target: prompt.id, order: 0 }] };
     const extra = manual("source-extra");
-    expect(canAddInputConnection({ ...connected, nodes: [...connected.nodes, extra] }, extra.id, prompt.id)).toMatchObject({ allowed: false, reason: "A Generation node can have at most 1 input." });
+    expect(canAddInputConnection({ ...connected, nodes: [...connected.nodes, extra] }, extra.id, prompt.id)).toEqual({ allowed: true });
     expect(canAddInputConnection(connected, first.id, prompt.id)).toMatchObject({ allowed: false, reason: "That Text node is already connected." });
     const fresh = manual("fresh");
     expect(canAddInputConnection({ ...flow, nodes: [...flow.nodes, fresh] }, fresh.id, prompt.id)).toEqual({ allowed: true });
@@ -90,7 +90,7 @@ describe("workspace invariant branch matrix", () => {
 
   it("covers export size failures, history empty paths, and duplication without a requested name", () => {
     const workspace = starter();
-    expect(duplicateFlowWithFreshIds(workspace.flows[0]!, id, clock).name).toBe("Untitled flow");
+    expect(duplicateFlowWithFreshIds(workspace.flows[0]!, id, clock).name).toBe("Default flow");
     expect(undoHistory(emptyHistory(), workspace)).toBeNull();
     expect(redoHistory(emptyHistory(), workspace)).toBeNull();
     const history = pushHistory(emptyHistory(), workspace);

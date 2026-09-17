@@ -1,6 +1,10 @@
 ## Devneya Playground
 
+**Devneya Playground** — a spatial chat canvas: write, branch, compare, and follow thought on a mind-map board.
+
 The clean-cutover flow playground for `playground.devneya.com`. It is a React + TypeScript + Vite static site deployed to GitHub Pages; runtime workspace data stays in the signed-in user’s browser.
+
+The spatial-chat look is the product: cream prompts, grey answers, yellow notes, overlay Context, grouped single-select models, and compact flow chrome. See `PRODUCT_NOTES.md`.
 
 ### Local development
 
@@ -24,7 +28,7 @@ The app discovers models from `GET /llm/v1/models`, obtains a Bifrost virtual ke
 ### Product boundaries
 
 - Nodes are Text and Generation only. Text may be manual or a read-only generated result.
-- Each Generation takes at most one Text input, graph cycles are rejected, and only successful results can be reused as inputs for threading.
+- Each Generation takes up to 8 Text inputs, graph cycles are rejected, and only successful results can be reused as inputs for threading.
 - A run snapshots its inputs and instruction, creates one result per selected model, runs models concurrently, and records failures without retrying or overwriting results.
 - Named flows are persisted in IndexedDB (`devneya-playground`, `workspaces`) under the authenticated user ID.
 - Workspace export/import uses the versioned `devneya-flow-v1` JSON format.

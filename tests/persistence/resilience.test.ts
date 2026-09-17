@@ -13,9 +13,9 @@ describe("resilient local persistence", () => {
     await repository.save("user-a", workspace);
     workspace.flows[0]!.name = "mutated after save";
     const loaded = await repository.load("user-a");
-    expect(loaded?.flows[0]?.name).toBe("Untitled flow");
+    expect(loaded?.flows[0]?.name).toBe("Default flow");
     if (loaded) loaded.flows[0]!.name = "mutated after load";
-    expect((await repository.load("user-a"))?.flows[0]?.name).toBe("Untitled flow");
+    expect((await repository.load("user-a"))?.flows[0]?.name).toBe("Default flow");
   });
 
   it("falls back after a storage failure and reports the degraded mode", async () => {

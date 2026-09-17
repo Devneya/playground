@@ -8,9 +8,11 @@ import { useAuth } from "../auth/useAuth";
 const WorkspaceCanvas = lazy(() => import("../features/canvas/WorkspaceCanvas").then(({ WorkspaceCanvas: component }) => ({ default: component })));
 import { useWorkspace } from "../features/workspace/useWorkspace";
 import { WorkspaceProvider } from "../features/workspace/WorkspaceContext";
+import { nextGenerationIndex, nextManualTextIndex } from "../domain/graph";
 import { randomIdFactory, systemClock } from "../domain/ids";
 import { LAYOUT } from "../domain/resultPlacement";
 import { CardIcon } from "../features/canvas/CardIcon";
+import { panToRevealCard } from "../features/canvas/camera";
 import "./styles.css";
 
 const LOCAL_NOTICE = "Stored only in this browser—not backed up or synchronized. Clearing browser data may remove this workspace. Export it to keep a portable copy.";
@@ -36,8 +38,8 @@ const WorkspaceScreen = () => {
   // New nodes appear where the user is looking: flow coordinates of the
   // current viewport center, then walked down row by row until the full
   // card rectangle is clear of existing nodes — a free center point is not
-  // enough when the canvas is dense. The camera then glides so the node
-  // sits slightly above center, like a chat input.
+  // enough when the canvas is dense. The camera pans only if the new card
+  // would sit off-screen, so the current thread stays in view.
   const placeInViewport = () => {
     const rect = document.querySelector(".canvas-shell .react-flow")?.getBoundingClientRect();
     const screen = {
@@ -45,7 +47,6 @@ const WorkspaceScreen = () => {
       y: (rect?.top ?? 0) + (rect?.height ?? window.innerHeight) * 0.42,
     };
     const position = screenToFlowPosition(screen);
-    const { zoom } = getViewport();
     position.x -= LAYOUT.nodeWidth / 2;
     position.y -= 95;
     const overlapsAny = (candidate: { x: number; y: number }) =>
@@ -55,21 +56,20 @@ const WorkspaceScreen = () => {
         candidate.y < node.position.y + LAYOUT.nodeHeight &&
         candidate.y + LAYOUT.nodeHeight > node.position.y);
     while (overlapsAny(position)) position.y += LAYOUT.nodeHeight + 80;
-    return { position, viewport: { x: screen.x - (rect?.left ?? 0) - (position.x + LAYOUT.nodeWidth / 2) * zoom, y: screen.y - (rect?.top ?? 0) - (position.y + 95) * zoom, zoom } };
+    const viewport = panToRevealCard(getViewport(), { position, height: LAYOUT.nodeHeight }, { width: rect?.width ?? window.innerWidth, height: rect?.height ?? window.innerHeight });
+    return { position, viewport };
   };
   const addNewText = () => {
     const now = systemClock.now().toISOString();
-    const index = activeFlow.nodes.length + 1;
     const { position, viewport } = placeInViewport();
-    addNode({ id: randomIdFactory(), position, createdAt: now, updatedAt: now, data: { kind: "text", origin: "manual", title: `Text ${index}`, text: "" } });
-    setViewport(viewport, { duration: 300 });
+    addNode({ id: randomIdFactory(), position, createdAt: now, updatedAt: now, data: { kind: "text", origin: "manual", title: `Note ${nextManualTextIndex(activeFlow)}`, text: "" } });
+    if (viewport) setViewport(viewport, { duration: 300 });
   };
   const addNewGeneration = () => {
     const now = systemClock.now().toISOString();
-    const index = activeFlow.nodes.length + 1;
     const { position, viewport } = placeInViewport();
-    addNode({ id: randomIdFactory(), position, createdAt: now, updatedAt: now, data: { kind: "generation", title: `Generation ${index}`, instruction: "", modelIds: [] } });
-    setViewport(viewport, { duration: 300 });
+    addNode({ id: randomIdFactory(), position, createdAt: now, updatedAt: now, data: { kind: "generation", title: `Generation ${nextGenerationIndex(activeFlow)}`, instruction: "", modelIds: [] } });
+    if (viewport) setViewport(viewport, { duration: 300 });
   };
 
   const beginRename = (flowId: string, name: string) => { setRenameId(flowId); setRenameValue(name); };
@@ -107,7 +107,7 @@ const WorkspaceScreen = () => {
         <button type="button" aria-label="+ Prompt" onClick={addNewGeneration}><CardIcon name="message" size={17} /><span className="tool-caption">New chat</span></button>
         <button type="button" onClick={undo} disabled={!canUndo} aria-label="Undo last change"><CardIcon name="undo" size={17} /><span className="tool-caption">Undo</span></button>
         <button type="button" onClick={redo} disabled={!canRedo} aria-label="Redo last change"><CardIcon name="redo" size={17} /><span className="tool-caption">Redo</span></button>
-        <button type="button" aria-label="Canvases" aria-expanded={canvasesOpen} onClick={() => { setCanvasesOpen((value) => !value); setAccountOpen(false); }}><CardIcon name="library" size={17} /><span className="tool-caption">Library</span></button>
+        <button type="button" aria-label="Flows" aria-expanded={canvasesOpen} onClick={() => { setCanvasesOpen((value) => !value); setAccountOpen(false); }}><CardIcon name="library" size={17} /><span className="tool-caption">Flows</span></button>
         <button type="button" aria-label="Export workspace" onClick={exportWorkspace}><CardIcon name="download" size={17} /><span className="tool-caption">Export</span></button>
         <button type="button" aria-label="Import workspace" onClick={() => importRef.current?.click()}><CardIcon name="upload" size={17} /><span className="tool-caption">Import</span></button>
         <input ref={importRef} className="visually-hidden" type="file" aria-label="Workspace JSON file" accept="application/json,.json" onChange={(event) => void handleImport(event.target.files?.[0])} />
@@ -115,12 +115,12 @@ const WorkspaceScreen = () => {
         <div ref={setControlsContainer} className="canvas-navigation" aria-label="Canvas navigation" role="group" />
       </div>
       {canvasesOpen && <>
-        <button type="button" className="popover-backdrop" aria-label="Close canvases" onClick={() => setCanvasesOpen(false)} />
-        <div className="flows-popover" role="dialog" aria-label="Canvases">
+        <button type="button" className="popover-backdrop" aria-label="Close flows" onClick={() => setCanvasesOpen(false)} />
+        <div className="flows-popover" role="dialog" aria-label="Flows">
           <div className="flows-popover-head"><span>Flows</span><button type="button" className="primary-button compact-button" onClick={createFlow}>New flow</button></div>
           {importError && <p className="form-error">{importError}</p>}
           <div className="flow-list">{workspace.flows.map((flow) => <div className={`flow-list-item ${flow.id === activeFlow.id ? "active" : ""}`} key={flow.id}>
-            {renameId === flow.id ? <input autoFocus value={renameValue} onChange={(event) => setRenameValue(event.target.value)} onBlur={commitRename} onKeyDown={(event) => { if (event.key === "Enter") commitRename(); if (event.key === "Escape") setRenameId(null); }} /> : <button type="button" className="flow-select" onClick={() => activateFlow(flow.id)}><span>{flow.name}</span><small>{flow.nodes.length} nodes</small></button>}
+            {renameId === flow.id ? <input autoFocus value={renameValue} onChange={(event) => setRenameValue(event.target.value)} onBlur={commitRename} onKeyDown={(event) => { if (event.key === "Enter") commitRename(); if (event.key === "Escape") setRenameId(null); }} /> : <button type="button" className="flow-select" onClick={() => activateFlow(flow.id)}><span>{flow.name}</span><small>{flow.nodes.length} node{flow.nodes.length === 1 ? "" : "s"}</small></button>}
             {renameId !== flow.id && <div className="flow-actions"><button type="button" className="icon-button" aria-label={`Rename ${flow.name}`} onClick={() => beginRename(flow.id, flow.name)}>✎</button><button type="button" className="icon-button" aria-label={`Duplicate ${flow.name}`} onClick={() => duplicateFlow(flow.id)}>⧉</button><button type="button" className="icon-button" aria-label={`Delete ${flow.name}`} onClick={() => deleteFlow(flow.id)}>×</button></div>}
           </div>)}</div>
         </div>

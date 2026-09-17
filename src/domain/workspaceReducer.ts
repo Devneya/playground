@@ -2,7 +2,7 @@ import type { Clock, ExecutionBatch, ExecutionError, FlowDocument, IdFactory, In
 import { canAddInputConnection, getOrderedInputEdges, nextGenerationIndex, normalizeInputOrder } from "./graph";
 import { createBlankFlow } from "./workspaceFactory";
 import { RESULT_COL_STRIDE, RESULT_TO_CONTINUATION_STRIDE } from "./resultPlacement";
-import { isGeneratedTextNode, isGenerationNode, isManualTextNode } from "./types";
+import { isGeneratedTextNode, isGenerationNode, isManualTextNode, isTextNode } from "./types";
 import { detachPlacement, layoutAutomaticNodes } from "./spatialLayout";
 import { getContextFromInputs } from "./conversation";
 
@@ -50,18 +50,16 @@ const updateFlow = (workspace: WorkspaceDocument, flowId: string, context: Reduc
   }) };
 };
 
-const removePromptTree = (flow: FlowDocument, nodeId: string) => {
+const removeNode = (flow: FlowDocument, nodeId: string) => {
   const node = flow.nodes.find((item) => item.id === nodeId);
-  const batchIds = node && isGenerationNode(node) ? new Set(flow.batches.filter((batch) => batch.generationNodeId === nodeId).map((batch) => batch.id)) : new Set<string>();
-  const removedNodeIds = new Set([nodeId, ...flow.nodes.filter((item) => isGeneratedTextNode(item) && item.data.batchId && batchIds.has(item.data.batchId)).map((item) => item.id)]);
-  const edges = flow.edges.filter((edge) => !removedNodeIds.has(edge.source) && !removedNodeIds.has(edge.target));
+  if (!node) return flow;
+  const edges = flow.edges.filter((edge) => edge.source !== nodeId && edge.target !== nodeId);
   let batches = flow.batches;
-  if (node && isGeneratedTextNode(node)) {
+  if (isGeneratedTextNode(node)) {
     batches = batches.map((batch) => ({ ...batch, executions: batch.executions.map((execution) => execution.outputNodeId === nodeId ? (({ outputNodeId: _outputNodeId, ...withoutOutput }) => withoutOutput)(execution) : execution) }));
     batches = batches.filter((batch) => batch.executions.some((execution) => execution.outputNodeId));
   }
-  if (batchIds.size > 0) batches = batches.filter((batch) => !batchIds.has(batch.id));
-  return { ...flow, nodes: flow.nodes.filter((item) => !removedNodeIds.has(item.id)), edges, batches };
+  return { ...flow, nodes: flow.nodes.filter((item) => item.id !== nodeId), edges, batches };
 };
 
 export const reduceWorkspace = (workspace: WorkspaceDocument, action: WorkspaceAction, context: ReducerContext): WorkspaceDocument => {
@@ -122,7 +120,7 @@ export const reduceWorkspace = (workspace: WorkspaceDocument, action: WorkspaceA
     case "node/edit-instruction": return updateFlow(workspace, action.flowId, context, (flow) => ({ ...flow, nodes: flow.nodes.map((node) => isGenerationNode(node) && node.id === action.nodeId ? { ...node, data: { ...node.data, instruction: action.instruction } } : node) }));
     case "node/edit-text": return updateFlow(workspace, action.flowId, context, (flow) => ({ ...flow, nodes: flow.nodes.map((node) => node.id === action.nodeId && isManualTextNode(node) ? { ...node, data: { ...node.data, text: action.text } } : node) }));
     case "node/set-models": return updateFlow(workspace, action.flowId, context, (flow) => ({ ...flow, nodes: flow.nodes.map((node) => isGenerationNode(node) && node.id === action.nodeId ? { ...node, data: { ...node.data, modelIds: [...action.modelIds] } } : node) }));
-    case "node/delete": return updateFlow(workspace, action.flowId, context, (flow) => removePromptTree(flow, action.nodeId));
+    case "node/delete": return updateFlow(workspace, action.flowId, context, (flow) => removeNode(flow, action.nodeId));
     case "node/make-editable": return updateFlow(workspace, action.flowId, context, (flow) => ({ ...flow, nodes: [...flow.nodes, action.node] }));
     case "node/duplicate": return updateFlow(workspace, action.flowId, context, (flow) => ({ ...flow, nodes: [...flow.nodes, action.node] }));
     case "generation/duplicate":
@@ -148,13 +146,16 @@ export const reduceWorkspace = (workspace: WorkspaceDocument, action: WorkspaceA
       const flow = workspace.flows.find((candidate) => candidate.id === action.flowId);
       if (!flow) return workspace;
       const source = flow.nodes.find((node) => node.id === action.sourceNodeId);
-      if (!isGeneratedTextNode(source)) return workspace;
-      const batch = flow.batches.find((candidate) => candidate.id === source.data.batchId);
-      const execution = batch?.executions.find((candidate) => candidate.id === source.data.executionId);
-      if (!execution || execution.status !== "success") return workspace;
-      // Continuing one answer defaults to that answer's model. Comparing
-      // models is an explicit choice for each reply, not inherited fan-out.
-      const modelIds = [execution.modelId];
+      if (!isTextNode(source)) return workspace;
+      let modelIds: string[] = [];
+      if (isGeneratedTextNode(source)) {
+        const batch = flow.batches.find((candidate) => candidate.id === source.data.batchId);
+        const execution = batch?.executions.find((candidate) => candidate.id === source.data.executionId);
+        if (!execution || execution.status !== "success") return workspace;
+        // Continuing one answer defaults to that answer's model. Comparing
+        // models is an explicit choice for each reply, not inherited fan-out.
+        modelIds = [execution.modelId];
+      }
       // A continuation descends below its result. The first continuation from a
       // result sits directly below it; every further Continue from the same
       // result opens a new parallel column to the right (a fork), keeping each

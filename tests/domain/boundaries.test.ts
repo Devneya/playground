@@ -20,11 +20,11 @@ describe("workspace boundaries", () => {
   it("duplicates a flow with fresh references and names it uniquely", () => {
     const workspace = createStarterWorkspace(() => crypto.randomUUID(), clock);
     const flow = workspace.flows[0]!;
-    const duplicate = duplicateFlowWithFreshIds(flow, () => crypto.randomUUID(), clock, "Untitled flow 2");
+    const duplicate = duplicateFlowWithFreshIds(flow, () => crypto.randomUUID(), clock, "Default flow 2");
     expect(duplicate.id).not.toBe(flow.id);
-    expect(duplicate.name).toBe("Untitled flow 2");
+    expect(duplicate.name).toBe("Default flow 2");
     expect(duplicate.nodes.map((node) => node.id)).not.toEqual(flow.nodes.map((node) => node.id));
-    expect(uniqueFlowName(["Untitled flow", "Untitled flow 2"])).toBe("Untitled flow 3");
+    expect(uniqueFlowName(["Default flow", "Default flow 2"])).toBe("Default flow 3");
   });
 
   it("places result nodes in a horizontal row below the generation and handles invalid placement requests", () => {

@@ -97,17 +97,12 @@ const signOut = async (page: Page) => {
 const selectRealModel = async (page: Page): Promise<string> => {
   const node = titledGeneration(page, "Prompt 1");
   await node.getByRole("button", { name: "Prompt 1 model picker" }).click();
-  const available = await node.locator('input[type="checkbox"]').evaluateAll((inputs) => inputs
+  const available = await node.locator('input[type="radio"]').evaluateAll((inputs) => inputs
     .map((input) => input.getAttribute("aria-label")?.replace(/^Prompt 1 model /, ""))
     .filter((modelId): modelId is string => Boolean(modelId)));
   const model = configuredModel ?? available[0];
   if (!model || !available.includes(model)) throw new Error("No configured release-test model is available. Available models: " + available.join(", "));
-  await node.getByRole("checkbox", { name: "Prompt 1 model " + model }).check();
-  for (const otherModel of available) {
-    if (otherModel === model) continue;
-    const checkbox = node.getByRole("checkbox", { name: "Prompt 1 model " + otherModel });
-    if (await checkbox.isChecked()) await checkbox.uncheck();
-  }
+  await node.getByRole("radio", { name: "Prompt 1 model " + model }).check();
   await page.keyboard.press("Escape");
   await fitCanvas(page);
   return model;
@@ -264,7 +259,7 @@ test.describe("real-server functional E2E", () => {
     await runAndExpect(page, "DEVNEYA_SMOKE_FIRST", 1);
     const originalPrompt = titledGeneration(page, "Prompt 1");
     await expect(originalPrompt.locator(".completed-prompt")).toContainText("Rerun release smoke input. Reply with DEVNEYA_SMOKE_FIRST and no sensitive information.");
-    await originalPrompt.getByRole("button", { name: "Branch", exact: true }).click();
+    await originalPrompt.getByRole("button", { name: "Fork", exact: true }).click();
     const retryPrompt = titledGeneration(page, "Prompt 3");
     await expect(retryPrompt.getByLabel("Prompt 3 instruction")).toHaveValue("Rerun release smoke input. Reply with DEVNEYA_SMOKE_FIRST and no sensitive information.");
     await retryPrompt.getByLabel("Prompt 3 instruction").fill("Rerun release smoke input. Reply with DEVNEYA_SMOKE_RERUN and no sensitive information.");

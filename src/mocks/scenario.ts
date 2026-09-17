@@ -29,17 +29,46 @@ export type MockScenario = {
   failModels: string[];
 };
 
+export const CURRENT_CHAT_MODELS = [
+  "gpt-6-astra",
+  "gpt-5.6-sol",
+  "gpt-5.6-terra",
+  "gpt-5.6-luna",
+  "claude-fable-5-1",
+  "claude-opus-5",
+  "claude-sonnet-5",
+  "claude-haiku-4-5",
+  "deepseek-flash",
+  "deepseek-v4-pro",
+  "glm-5.3",
+  "glm-5.3-flash",
+  "glm-5.2",
+  "glm-5.1",
+  "glm-5",
+  "glm-4.7",
+  "glm-4.7-flashx",
+  "glm-4.7-flash",
+  "glm-4.6",
+  "glm-4.5",
+  "glm-4.5-x",
+  "glm-4.5-air",
+  "glm-4.5-airx",
+  "glm-4.5-flash",
+];
+
+export const FOUR_PROVIDER_MODELS = ["gpt-5.6-sol", "claude-sonnet-5", "deepseek-flash", "glm-5.3"];
+
 const base = (name: MockScenarioName): MockScenario => ({
   name,
-  models: ["model-a", "model-b"],
+  models: [...CURRENT_CHAT_MODELS],
   delayMs: 0,
   delays: {},
   failModels: [],
 });
 
 const createScenario = (name: MockScenarioName): MockScenario => {
-  if (name === "four-models") return { ...base(name), models: ["model-a", "model-b", "model-c", "model-d"] };
-  if (name === "partial-failure") return { ...base(name), models: ["model-a", "model-b", "model-c", "model-d"], failModels: ["model-b"], delays: { "model-a": 30, "model-b": 80, "model-c": 10, "model-d": 50 } };
+  if (name === "four-models") return { ...base(name), models: [...FOUR_PROVIDER_MODELS] };
+  if (name === "partial-failure") return { ...base(name), models: [...FOUR_PROVIDER_MODELS], failModels: ["gpt-5.6-sol"], delays: { "claude-sonnet-5": 30, "gpt-5.6-sol": 80, "deepseek-flash": 10, "glm-5.3": 50 } };
   if (name === "slow") return { ...base(name), delayMs: 4_000 };
   if (name === "catalog-error") return { ...base(name), catalogStatus: 503 };
   if (name === "catalog-recover") return { ...base(name), catalogFailuresRemaining: 1 };

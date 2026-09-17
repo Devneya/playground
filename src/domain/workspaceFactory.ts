@@ -1,7 +1,7 @@
 import { randomIdFactory, systemClock, timestamp } from "./ids";
 import type { Clock, FlowDocument, IdFactory, PlaygroundNode, WorkspaceDocument } from "./types";
 
-const starterFlowName = "Untitled flow";
+const starterFlowName = "Default flow";
 
 export const uniqueFlowName = (names: string[], requested = starterFlowName) => {
   const used = new Set(names);
