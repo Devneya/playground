@@ -123,6 +123,15 @@ test.afterEach(async ({ page }, testInfo) => {
 });
 
 test.describe("mocked workspace flows", () => {
+  test("links Profile and Dashboard from the account menu to the Devneya app", async ({ page }) => {
+    await prepare(page, "default");
+    await signIn(page);
+    await page.getByRole("button", { name: "Account" }).click();
+    await expect(page.getByRole("link", { name: "Profile" })).toHaveAttribute("href", "https://app.devneya.com/account");
+    await expect(page.getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "https://app.devneya.com/");
+    await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+  });
+
   test("has no serious or critical accessibility violations in the starter workspace", async ({ page }) => {
     await prepare(page, "default");
     await signIn(page);

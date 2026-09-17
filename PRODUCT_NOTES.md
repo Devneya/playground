@@ -15,7 +15,23 @@ paper stickies. The send control keeps the yellow accent; prompts do not.
 Context is one centered overlay on every card; the overlay scrolls under
 the pointer without panning the board. The model picker is a grouped
 single-select list. Flow chrome stays compact: Default flow in the top
-bar, Flows in the left rail.
+bar, Flows in the left rail. The top-right avatar menu stays compact:
+Profile opens `https://app.devneya.com/account`, Dashboard opens
+`https://app.devneya.com/`, Sign out stays here. Do not copy the app’s
+profile editor, billing, or key UI into playground.
+
+## Live API and keys
+
+Playground signs in with GoTrue, then asks `GET /account/key` (JWT) for a
+Bifrost `sk-bf-` key, and sends completions with that key only. A **403**
+on `/account/key` means the account is not activated or the key is blocked
+— not a CORS failure. CORS already allows `https://playground.devneya.com`.
+Playground has no Subscribe UI; activate the plan on the dashboard, then
+retry the key. Auth storage is not shared with `app.devneya.com`; use the
+same email that has an active plan.
+
+`GET /llm/v1/models` is unauthenticated. Production shows whatever that
+endpoint returns, not the mock OpenAI/Claude/DeepSeek/GLM catalog.
 
 ## Default interaction
 

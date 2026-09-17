@@ -6,6 +6,7 @@ export const gotrueAnonKey = import.meta.env.VITE_GOTRUE_ANON_KEY || (import.met
 export const config = {
   apiBaseUrl,
   gotrueAnonKey,
+  appOrigin: "https://app.devneya.com",
   useMocks: parseBoolean(import.meta.env.VITE_USE_MOCKS),
   playgroundOrigin: window.location.origin,
   catalogTimeoutMs: 15_000,

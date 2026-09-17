@@ -23,7 +23,7 @@ VITE_API_BASE_URL=https://api.devneya.com
 VITE_GOTRUE_ANON_KEY=...
 ```
 
-The app discovers models from `GET /llm/v1/models`, obtains a Bifrost virtual key from `/account/key` using the GoTrue JWT, and sends completions to `/llm/v1/chat/completions` with only the Bifrost key.
+The app discovers models from `GET /llm/v1/models`, obtains a Bifrost virtual key from `/account/key` using the GoTrue JWT, and sends completions to `/llm/v1/chat/completions` with only the Bifrost key. A 403 on `/account/key` is an inactive or blocked account, not CORS (playground origin is already allowed). Activate the plan on `https://app.devneya.com/`. Live models are the API catalog, not the mock four-provider list. The account menu links Profile and Dashboard there; Sign out stays in playground.
 
 ### Product boundaries
 
@@ -61,7 +61,7 @@ For a protected production build, provide the real public GoTrue anonymous key, 
 
 ### Deployment
 
-`.github/workflows/deploy.yml` validates every pull request and deploys only after validation on `main`. The build publishes the `dist/` artifact through GitHub Pages. `public/CNAME` keeps the custom domain `playground.devneya.com`.
+`.github/workflows/deploy.yml` validates every pull request and deploys only after validation on `main`. The build publishes the `dist/` artifact through GitHub Pages. `public/CNAME` keeps the custom domain `playground.devneya.com`. Full `npm audit` (including devDependencies) must be clean or Validate never reaches deploy. Post-deploy real E2E can fail on an external disposable-mail 502 even when Pages succeeded.
 
 Required Actions secret:
 
