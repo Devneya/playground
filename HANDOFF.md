@@ -25,6 +25,46 @@
 - For suitable independent delegation, `AGENTS.md` calls for `gpt-6-luna` with
   xhigh reasoning when that is expected to save total time and tokens.
 
+## Future: Sign in with ChatGPT
+
+Checked 2026-10-04 against [OpenAI's Sign in with ChatGPT docs](https://developers.openai.com/siwc/quickstart): **plan-funded inference is feasible for an eligible open-source local client.** An eligible user can explicitly grant `chatgpt.tokens.use.direct`; Plus/Pro plan usage or available credits can then cover eligible requests without an API key. This calls the public Responses API using the user's OAuth access token. It does not sign Devneya into ChatGPT's website, embed ChatGPT Web, expose their chats/GPTs, or reuse a browser session. ChatGPT identity alone does not grant inference permission.
+
+Implementation notes:
+
+- Keep this as an optional, separate connection. The current `dev:codex`
+  bridge reads the machine's Codex credentials; do not treat or store those as
+  Sign in with ChatGPT credentials. Keep this token set distinct from GoTrue
+  sessions and Bifrost virtual keys.
+- For the open-source/local flow, use the official dynamic OAuth client flow:
+  PKCE, fresh state and nonce, a loopback callback on `127.0.0.1`, and a stable
+  opaque `ext_agent_host_id`. Save the issued per-account `client_id`; do not
+  save `dynamic_agent_client`. Validate the ID token and granted scopes, then
+  protect and refresh access/refresh tokens in the local server runtime. Keep
+  tokens out of browser storage, logs, source, and exports.
+- Build the model picker from the signed-in account's `GET /v1/models` catalog
+  and confirm access by completing inference. OpenAI's example uses
+  `gpt-6.1-sol`; do not assume every model or reasoning effort in the existing
+  Codex catalog is available under every ChatGPT account/workspace.
+- Send requests to `POST /v1/responses` with `store: false`, `stream: true`,
+  and the required conversation history in each request. Follow the preview's
+  unsupported-field and tool limits. It accepts image/file inputs when the
+  model supports them, but **does not support image generation**; keep current
+  local SVG drawing behavior separate.
+- Explain in the UI that the user is opting to spend ChatGPT plan usage, offer
+  a link to ChatGPT Usage settings, and show when a request uses that plan.
+  Plus usage draws from the shared five-hour allowance across apps; do not
+  advertise a separate Devneya allowance. See [usage UI guidance](https://developers.openai.com/siwc/ui-ux-guidelines),
+  [OAuth and account handling](https://developers.openai.com/siwc/token-sharing-open-source/sign-in),
+  [models and inference](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference),
+  and [preview limitations](https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations).
+- Scope boundary: OpenAI documents plan usage for open-source/local clients
+  and selected private clients; paid or remotely hosted offerings must go
+  through its interest process. The separate “Sign in on your website”
+  identity integration is currently a limited trial for selected commercial
+  partners. Treat this repo's localhost playground as the candidate first
+  integration; do not enable plan-funded inference on the hosted Devneya app
+  until OpenAI confirms eligibility.
+
 ## Validation and UI coverage
 
 Latest recorded results: 294 unit tests and 63 browser checks (54 mocked

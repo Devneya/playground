@@ -45,6 +45,11 @@ virtual key. Keep GoTrue JWTs separate from Bifrost keys. Never add secrets,
 local auth files, or machine credentials to source, fixtures, `.env` files, or
 Git history.
 
+For future ChatGPT account linking and plan-funded inference, see the dated
+feasibility and implementation note in [HANDOFF.md](HANDOFF.md). It is a
+separate opt-in connection from both local Codex sign-in and production
+Devneya authentication.
+
 Text and SVG uploads are limited to 64 KB. Images and PDFs are limited to
 2 MB each, with a 4 MB combined request-file limit.
 
