@@ -1,0 +1,30 @@
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, expect, it, vi } from "vitest";
+import { GenerationStatus } from "../../src/features/canvas/GenerationStatus";
+
+afterEach(() => vi.useRealTimers());
+it("shows characters, model phase and elapsed time with one stop control", () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-10-03T10:00:00Z"));
+  const stop = vi.fn();
+  const { unmount, rerender } = render(<GenerationStatus modelName="chosen-model" startedAt="2026-10-03T10:00:00Z" instruction="What is in the sky?" onStop={stop} />);
+  expect(screen.getByLabelText("Characters received")).toHaveTextContent("0 characters received");
+  expect(screen.getByRole("status")).toHaveTextContent("chosen-model working");
+  expect(screen.getByText("0:00")).toBeVisible();
+  expect(screen.queryByRole("img")).not.toBeInTheDocument();
+  act(() => vi.advanceTimersByTime(65000));
+  expect(screen.getByText("1:05")).toBeVisible();
+  expect(screen.getByText(/has not returned an answer/)).toBeVisible();
+  fireEvent.click(screen.getByText("View question sent"));
+  expect(screen.getByText("What is in the sky?")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Fork question" })).not.toBeInTheDocument();
+  rerender(<GenerationStatus modelName="chosen-model" characters={1234} startedAt="2026-10-03T10:00:00Z" instruction="What is in the sky?" onStop={stop} />);
+  expect(screen.getByLabelText("Characters received")).toHaveTextContent("1,234 characters received");
+  expect(screen.getByRole("status")).toHaveTextContent("chosen-model responding");
+  expect(stop).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Cancel run" }));
+  expect(stop).toHaveBeenCalledOnce();
+  unmount();
+  act(() => vi.runOnlyPendingTimers());
+  expect(vi.getTimerCount()).toBe(0);
+});

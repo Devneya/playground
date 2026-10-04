@@ -52,6 +52,15 @@ describe("prompt execution", () => {
     if (failed?.type === "execution/failed") expect(failed.error.kind).toBe("invalid_response");
   });
 
+  it("rejects oversized Unicode answers before they can corrupt a saved workspace", async () => {
+    server.use(http.post("https://api.devneya.com/llm/v1/chat/completions", () => HttpResponse.json({ choices: [{ message: { content: "🌱".repeat(66_000) } }] })));
+    const actions: WorkspaceAction[] = [];
+    const options = makeRunOptions(["model-large"]);
+    await startGenerationRun({ ...options, generationNodeId: options.prompt.id, dispatch: (action) => actions.push(action) }).completed;
+    expect(actions.find((action) => action.type === "execution/failed")).toMatchObject({ error: { kind: "invalid_response", message: expect.stringContaining("text limit") } });
+    expect(actions.some((action) => action.type === "execution/succeeded" || action.type === "generation/continue")).toBe(false);
+  });
+
   it("runs selected models concurrently and records each settlement", async () => {
     const workspace = createStarterWorkspace(() => crypto.randomUUID(), clock);
     const flow = workspace.flows[0]!;

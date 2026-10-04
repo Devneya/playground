@@ -57,6 +57,7 @@ a.text-button { text-decoration: none; }
 .tool-glyph { font-size: 16px; line-height: 1.2; }
 .tool-caption { font-size: 9px; font-weight: 500; }
 .canvas-toolbar-floating button:disabled { opacity: .45; cursor: not-allowed; }
+.toolbar-separator { height: 1px; background: #e3e1da; margin: 5px 6px; }
 .flows-popover { position: absolute; z-index: 30; left: 150px; top: 50%; transform: translateY(-50%); width: 270px; max-height: 60vh; overflow: auto; border: 1px solid #dbe2ee; border-radius: 14px; background: #fff; box-shadow: 0 16px 40px #42506a30; padding: 14px; }
 .flows-popover-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; font-weight: 800; }
 .flow-list { display: grid; gap: 4px; }
@@ -174,8 +175,24 @@ a.text-button { text-decoration: none; }
   .spatial-chat .canvas-shell { padding-left: 0; margin-bottom: 84px; }
   .spatial-chat .canvas-toolbar-floating { top: auto; bottom: 0; left: 0; right: 0; transform: none; display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 0; border-radius: 0; padding: 2px; }
   .spatial-chat .canvas-toolbar-floating button { min-width: 0; padding: 4px 0; }
+  .spatial-chat .canvas-toolbar-floating .tool-caption { line-height: 11px; }
   .spatial-chat .canvas-navigation { grid-column: 1 / -1; margin-top: 1px; padding-top: 1px; }
   .spatial-chat .canvas-navigation .react-flow__controls { display: flex; flex-direction: row; justify-content: center; gap: 12px; }
   .spatial-chat .react-flow__attribution { bottom: 92px; }
   .flows-popover { left: 15px; width: min(270px, calc(100vw - 30px)); }
 }
+
+/* Typography retained from the panoramic workspace; original canvas geometry. */
+.brand-wordmark { font-size: 17px; font-weight: 650; letter-spacing: -.7px; color: #344437; }
+.brand-wordmark > span { font-size: 18px; font-weight: 300; color: #c0c4b6; margin: 0 8px; }
+.local-connection-note { font-size: 12px; line-height: 1.9; color: #546047; }
+.spatial-chat .brand-dot { width: 10px; height: 10px; background: #88996b; box-shadow: 3px 3px 0 #e1ca71; border-radius: 2px; }
+@media (max-width: 600px) { .brand-wordmark { display: none; } }
+
+.export-menu-root { position: relative; }
+.canvas-toolbar-floating:has(.export-menu) { overflow: visible; }
+.canvas-toolbar-floating .export-menu { position: absolute; z-index: 40; left: calc(100% + 12px); top: 0; width: 250px; padding: 8px; border: 1px solid #d8d0c4; border-radius: 10px; background: #fffdfa; box-shadow: 0 6px 24px #34463e22; }
+.canvas-toolbar-floating .export-menu button { align-items: flex-start; width: 100%; gap: 5px; padding: 10px; text-align: left; font-size: 14px; }
+.export-menu small { font-size: 11px; color: #64745e; }
+@media (max-width: 600px) { .canvas-toolbar-floating .export-menu { left: auto; right: 0; top: auto; bottom: calc(100% + 12px); } .spatial-chat .canvas-toolbar-floating { grid-template-columns: repeat(9, minmax(0, 1fr)); } }
+@media (max-width: 600px) { .toolbar-separator { display: none; } }

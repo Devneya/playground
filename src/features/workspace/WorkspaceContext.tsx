@@ -1,7 +1,10 @@
+import { emptySurface } from "../../domain/surface";
+import { startSurfaceRun } from "../execution/executeSurface";
+import { config } from "../../config";
 import { createContext, useCallback, useEffect, useMemo, useReducer, useRef, useState, type PropsWithChildren } from "react";
 import { useAuth } from "../../auth/useAuth";
 import { getVirtualKey } from "../../api/account";
-import { toGoTrueAccessToken, type BifrostVirtualKey } from "../../api/credentials";
+import { toGoTrueAccessToken, type CompletionCredential } from "../../api/credentials";
 import { normalizeApiError } from "../../api/errors";
 import { listModels } from "../../api/models";
 import { createBlankFlow, createStarterWorkspace, uniqueFlowName } from "../../domain/workspaceFactory";
@@ -34,7 +37,7 @@ export type WorkspaceContextValue = {
   modelsError: string | null;
   reloadModels(): void;
   reloadKey(): void;
-  virtualKey: BifrostVirtualKey | null;
+  virtualKey: CompletionCredential | null;
   keyStatus: AsyncStatus;
   keyError: string | null;
   dispatch(action: WorkspaceAction): void;
@@ -47,7 +50,8 @@ export type WorkspaceContextValue = {
   exportWorkspace(): void;
   importWorkspace(file: File): Promise<void>;
   clearLocalWorkspace(): Promise<void>;
-  runGeneration(generationNodeId: string): GenerationRun;
+  runGeneration(generationNodeId: string, instruction?: string): GenerationRun;
+  runSurface(instruction: string, selectedIds: string[], model: string): GenerationRun;
   canUndo: boolean;
   canRedo: boolean;
   undo(): void;
@@ -75,15 +79,21 @@ export const WorkspaceProvider = ({ children, repository: injectedRepository }: 
   workspaceRef.current = workspace;
   const [history, setHistory] = useState<HistoryState>(emptyHistory);
   const lastHistoryActionRef = useRef<string | null>(null);
+  const lastTypingAtRef = useRef(0);
   const dispatch = useCallback((action: WorkspaceAction) => {
     if (isHistoryAction(action)) {
-      const actionKey = JSON.stringify(action);
+      const typing = action.type === "node/edit-instruction" || action.type === "node/edit-text";
+      const actionKey = typing ? `${action.type}:${action.flowId}:${action.nodeId}` : action.type === "surface/change" && action.gesture ? `surface-gesture:${action.flowId}:${action.gesture}` : JSON.stringify(action);
+      if (typing && Date.now() - lastTypingAtRef.current > 1000) lastHistoryActionRef.current = null;
       const previousWorkspace = workspaceRef.current;
       if (lastHistoryActionRef.current !== actionKey) setHistory((current) => pushHistory(current, previousWorkspace));
       lastHistoryActionRef.current = actionKey;
+      if (typing) lastTypingAtRef.current = Date.now();
     } else if (action.type === "workspace/reset" || action.type === "workspace/imported") {
       lastHistoryActionRef.current = null;
       setHistory(emptyHistory());
+    } else if (action.type === "batch/started" || action.type === "execution/succeeded" || action.type === "batch/completed") {
+      lastHistoryActionRef.current = null;
     }
     reduceWorkspaceDispatch(action);
   }, [reduceWorkspaceDispatch]);
@@ -94,7 +104,7 @@ export const WorkspaceProvider = ({ children, repository: injectedRepository }: 
   const [models, setModels] = useState<Model[]>([]);
   const [modelsStatus, setModelsStatus] = useState<AsyncStatus>("idle");
   const [modelsError, setModelsError] = useState<string | null>(null);
-  const [virtualKey, setVirtualKey] = useState<BifrostVirtualKey | null>(null);
+  const [virtualKey, setVirtualKey] = useState<CompletionCredential | null>(null);
   const [keyStatus, setKeyStatus] = useState<AsyncStatus>("idle");
   const [keyError, setKeyError] = useState<string | null>(null);
   const loadedUserRef = useRef<string | null>(null);
@@ -105,6 +115,15 @@ export const WorkspaceProvider = ({ children, repository: injectedRepository }: 
   const keyAbortRef = useRef<AbortController | null>(null);
   const saveQueueRef = useRef(new WorkspaceSaveQueue());
   const saveGenerationRef = useRef(0);
+
+  useEffect(() => {
+    // Draft fields flush synchronously during pagehide. Drain the resulting
+    // save after all those handlers, without waiting for the idle timeout.
+    const leaving = () => queueMicrotask(() => { void saveQueueRef.current.flush(); });
+    window.addEventListener("beforeunload", leaving);
+    window.addEventListener("pagehide", leaving);
+    return () => { window.removeEventListener("beforeunload", leaving); window.removeEventListener("pagehide", leaving); };
+  }, []);
 
   useEffect(() => {
     lifecycleEpochRef.current += 1;
@@ -187,7 +206,7 @@ export const WorkspaceProvider = ({ children, repository: injectedRepository }: 
   }, []);
 
   useEffect(() => {
-    const defaultModel = models[0]?.id;
+    const defaultModel = (config.useLocalCodex ? models.find((model) => model.id === "gpt-6.1-sol") : undefined)?.id ?? models[0]?.id;
     if (loadStatus !== "ready" || modelsStatus !== "ready" || !defaultModel) return;
     if (workspace.flows.some((flow) => flow.nodes.some((node) => node.data.kind === "generation" && !node.data.modelIds.length && !flow.batches.some((batch) => batch.generationNodeId === node.id)))) {
       dispatch({ type: "workspace/default-model", modelId: defaultModel });
@@ -204,6 +223,11 @@ export const WorkspaceProvider = ({ children, repository: injectedRepository }: 
     keyAbortRef.current?.abort();
     setVirtualKey(null);
     setKeyError(null);
+    if (config.useLocalCodex) {
+      setVirtualKey({ kind: "local-codex" });
+      setKeyStatus("ready");
+      return;
+    }
     if (!session) {
       setKeyStatus("idle");
       return;
@@ -278,11 +302,19 @@ export const WorkspaceProvider = ({ children, repository: injectedRepository }: 
     setLastSavedAt(null);
   }, [dispatch, reducerContext, repository, user]);
 
-  const runGeneration = useCallback((generationNodeId: string) => {
+  const runGeneration = useCallback((generationNodeId: string, instruction?: string) => {
     if (!virtualKey) throw new Error(keyError || "Your account key is not ready yet.");
+    const currentWorkspace = workspaceRef.current;
+    let flow = currentWorkspace.flows.find(flow => flow.id === currentWorkspace.activeFlowId) ?? currentWorkspace.flows[0]!;
+    const prompt = flow.nodes.find(node => node.id === generationNodeId);
+    if (instruction !== undefined && prompt?.data.kind === "generation" && prompt.data.instruction !== instruction) {
+      // A send may arrive before a queued draft commit has rendered.
+      dispatch({ type: "node/edit-instruction", flowId: flow.id, nodeId: generationNodeId, instruction });
+      flow = { ...flow, nodes: flow.nodes.map(node => node.id === generationNodeId && node.data.kind === "generation" ? { ...node, data: { ...node.data, instruction } } : node) };
+    }
     const runEpoch = lifecycleEpochRef.current;
     const run = startGenerationRun({
-      flow: workspace.flows.find((flow) => flow.id === workspace.activeFlowId) ?? workspace.flows[0]!,
+      flow,
       generationNodeId: generationNodeId,
       virtualKey,
       idFactory: reducerContext.idFactory,
@@ -298,12 +330,30 @@ export const WorkspaceProvider = ({ children, repository: injectedRepository }: 
       setActiveRunIds((current) => current[generationNodeId] === run.batchId ? Object.fromEntries(Object.entries(current).filter(([nodeId]) => nodeId !== generationNodeId)) : current);
     });
     return run;
-  }, [dispatch, keyError, reducerContext, virtualKey, workspace]);
+  }, [dispatch, keyError, reducerContext, virtualKey]);
+
+  const runSurface = useCallback((instruction: string, selectedIds: string[], model: string) => {
+    if (!virtualKey) throw new Error(keyError || "Your account key is not ready yet.");
+    if (!models.some((item) => item.id === model)) throw new Error("Choose an available model.");
+    const flow = workspaceRef.current.flows.find((item) => item.id === workspaceRef.current.activeFlowId)!;
+    if (activeRunsRef.current.has(`surface-${flow.id}`)) throw new Error("A change is already in progress. Stop it before starting another.");
+    const runEpoch = lifecycleEpochRef.current;
+    const run = startSurfaceRun({ id: `surface-${flow.id}`, flowId: flow.id, surface: flow.surface ?? emptySurface(), instruction, selectedIds, model, credential: virtualKey, dispatch, canDispatch: () => runEpoch === lifecycleEpochRef.current });
+    activeRunsRef.current.set(run.batchId, run);
+    setActiveRunIds((current) => ({ ...current, [flow.id]: run.batchId }));
+    const clean = () => {
+      if (activeRunsRef.current.get(run.batchId) === run) activeRunsRef.current.delete(run.batchId);
+      if (runEpoch === lifecycleEpochRef.current) setActiveRunIds((current) => Object.fromEntries(Object.entries(current).filter(([id, batch]) => id !== flow.id || batch !== run.batchId)));
+    };
+    void run.completed.then(clean, clean);
+    return run;
+  }, [dispatch, keyError, models, virtualKey]);
 
   const cancelRun = useCallback((batchId: string) => activeRunsRef.current.get(batchId)?.cancel(), []);
 
   const activeFlow = workspace.flows.find((flow) => flow.id === workspace.activeFlowId) ?? workspace.flows[0]!;
   const undo = useCallback(() => {
+    activeRunsRef.current.forEach((run, id) => { if (id.startsWith("surface-")) run.cancel(); });
     const result = undoHistory(history, workspace);
     if (!result) return;
     lastHistoryActionRef.current = null;
@@ -312,6 +362,7 @@ export const WorkspaceProvider = ({ children, repository: injectedRepository }: 
   }, [history, reduceWorkspaceDispatch, workspace]);
 
   const redo = useCallback(() => {
+    activeRunsRef.current.forEach((run, id) => { if (id.startsWith("surface-")) run.cancel(); });
     const result = redoHistory(history, workspace);
     if (!result) return;
     lastHistoryActionRef.current = null;
@@ -346,12 +397,13 @@ export const WorkspaceProvider = ({ children, repository: injectedRepository }: 
     importWorkspace,
     clearLocalWorkspace,
     runGeneration,
+    runSurface,
     cancelRun,
     activeRunIds,
     canUndo: history.past.length > 0,
     canRedo: history.future.length > 0,
     undo,
     redo,
-  }), [activeFlow, activeRunIds, cancelRun, clearLocalWorkspace, createFlow, deleteFlow, dispatch, duplicateFlow, error, exportWorkspace, history, importWorkspace, keyError, keyStatus, lastSavedAt, loadStatus, models, modelsError, modelsStatus, redo, reloadKey, reloadModels, renameFlow, runGeneration, saving, storageWarning, activateFlow, undo, virtualKey, workspace]);
+  }), [activeFlow, activeRunIds, cancelRun, clearLocalWorkspace, createFlow, deleteFlow, dispatch, duplicateFlow, error, exportWorkspace, history, importWorkspace, keyError, keyStatus, lastSavedAt, loadStatus, models, modelsError, modelsStatus, redo, reloadKey, reloadModels, renameFlow, runGeneration, runSurface, saving, storageWarning, activateFlow, undo, virtualKey, workspace]);
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
 };

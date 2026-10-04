@@ -10,3 +10,5 @@ export const toBifrostVirtualKey = (value: unknown): BifrostVirtualKey => {
   if (typeof value !== "string" || !value.startsWith("sk-bf-") || value.length <= 6) throw new Error("Invalid Bifrost virtual key.");
   return value as BifrostVirtualKey;
 };
+
+export type CompletionCredential = BifrostVirtualKey | { readonly kind: "local-codex" };

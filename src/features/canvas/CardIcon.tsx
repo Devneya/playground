@@ -1,6 +1,6 @@
 import type { SVGProps } from "react";
 
-export type CardIconName = "branch" | "chevron" | "send" | "close" | "grip" | "history" | "note" | "message" | "undo" | "redo" | "library" | "download" | "upload" | "trash";
+export type CardIconName = "branch" | "chevron" | "send" | "close" | "grip" | "history" | "note" | "file" | "message" | "undo" | "redo" | "library" | "download" | "upload" | "trash";
 
 type CardIconProps = Omit<SVGProps<SVGSVGElement>, "name"> & {
   name: CardIconName;
@@ -47,10 +47,11 @@ export const CardIcon = ({ name, size = 14, ...props }: CardIconProps) => {
       <path {...common} d="M4 6.5h16" />
     </>}
     {name === "note" && <>
-      <path {...common} fill="#ffe58a" d="M5 3h14a2 2 0 0 1 2 2v10l-6 6H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" />
+      <path {...common} d="M5 3h14a2 2 0 0 1 2 2v10l-6 6H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" />
       <path {...common} d="M15 21v-6h6M7 8h10M7 12h6" />
     </>}
     {name === "message" && <path {...common} d="M5 5h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H11l-5 4v-4H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z" />}
+    {name === "file" && <><path {...common} d="M6 3h8l5 5v13H6z" /><path {...common} d="M14 3v6h5M9 13h7M9 17h5" /></>}
     {name === "undo" && <>
       <path {...common} d="M9 7H4v5" />
       <path {...common} d="M4 12a8 8 0 1 1 2.2 5.5" />

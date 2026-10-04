@@ -5,7 +5,9 @@ const root = document.getElementById("root");
 if (!root) throw new Error("Missing root element.");
 
 const start = async () => {
-  const appModule = import.meta.env.VITE_USE_MOCKS === "true"
+  const appModule = import.meta.env.DEV && import.meta.env.VITE_LOCAL_CODEX === "true"
+    ? await import("./app/LocalApp")
+    : import.meta.env.VITE_USE_MOCKS === "true"
     ? await import("./mocks/MockApp")
     : await import("./app/App");
   if (import.meta.env.VITE_USE_MOCKS === "true") {

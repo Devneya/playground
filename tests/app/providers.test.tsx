@@ -133,6 +133,11 @@ const WorkspaceProbe = () => {
     <button type="button" onClick={() => invoke(() => workspace.exportWorkspace())}>export</button>
     <button type="button" onClick={() => invoke(() => workspace.importWorkspace(new File(["not-json"], "bad.json", { type: "application/json" })))}>import-invalid</button>
     <button type="button" onClick={() => invoke(() => workspace.importWorkspace(new File(["x".repeat(10 * 1024 * 1024 + 1)], "large.json")))}>import-large</button>
+    <button type="button" onClick={() => workspace.dispatch({ type: "surface/change", flowId: flow.id, base: flow.surface!, gesture: "same-edit", operations: [{ op: "edit", id: "working", changes: { title: flow.surface?.objects[0]?.title === "Human edit" ? "Human edit continued" : "Human edit" } }] })}>surface-edit</button>
+    <output data-testid="surface-state">{JSON.stringify(flow.surface)}</output>
+    <output data-testid="surface-running">{workspace.activeRunIds[flow.id] ?? "idle"}</output>
+    <button type="button" onClick={() => invoke(() => workspace.runSurface("Make a working model", [], "model-a").completed)}>surface-run</button>
+    <button type="button" onClick={() => invoke(() => workspace.runSurface("Make a working model", [], "missing").completed)}>surface-invalid</button>
     <output data-testid="action-error">{actionError}</output>
   </>;
 };
@@ -327,5 +332,57 @@ describe("WorkspaceProvider", () => {
     render(<AuthContext.Provider value={signedInValue(makeSession("user-b"))}><WorkspaceProvider repository={repository}><WorkspaceProbe /></WorkspaceProvider></AuthContext.Provider>);
     await waitFor(() => expect(screen.getByTestId("error")).toHaveTextContent("saved record unreadable"));
     expect(screen.getByTestId("workspace-status")).toHaveTextContent("ready");
+  });
+});
+
+describe("shared workspace execution lifecycle", () => {
+  const surfaceResult = { summary: "Created the working object", operations: [{ op: "create", object: { id: "working", kind: "text", title: "Working object", x: 0, y: 0, width: 250, height: 100, color: "ink" } }], actions: [] };
+  it("applies and undoes model changes, clears a failed run, and checks the model", async () => {
+    apiServer.use(http.post("https://api.devneya.com/llm/v1/chat/completions", () => HttpResponse.json({ choices: [{ message: { content: JSON.stringify(surfaceResult) } }] })));
+    const user = userEvent.setup();
+    render(<AuthContext.Provider value={signedInValue(makeSession())}><WorkspaceProvider repository={new InMemoryWorkspaceRepository()}><WorkspaceProbe /></WorkspaceProvider></AuthContext.Provider>);
+    await waitFor(() => expect(screen.getByTestId("key-status")).toHaveTextContent("ready"));
+    await user.click(screen.getByRole("button", { name: "surface-invalid" }));
+    expect(screen.getByTestId("action-error")).toHaveTextContent("Choose an available model");
+    await user.click(screen.getByRole("button", { name: "surface-run" }));
+    await waitFor(() => expect(screen.getByTestId("surface-state")).toHaveTextContent("Working object"));
+    await waitFor(() => expect(screen.getByTestId("surface-running")).toHaveTextContent("idle"));
+    await user.click(screen.getByRole("button", { name: "undo" }));
+    expect(screen.getByTestId("surface-state")).not.toHaveTextContent("Working object");
+    await user.click(screen.getByRole("button", { name: "redo" }));
+    expect(screen.getByTestId("surface-state")).toHaveTextContent("Working object");
+    await user.click(screen.getByRole("button", { name: "surface-edit" }));
+    await user.click(screen.getByRole("button", { name: "surface-edit" }));
+    expect(screen.getByTestId("surface-state")).toHaveTextContent("Human edit continued");
+    await user.click(screen.getByRole("button", { name: "undo" }));
+    expect(JSON.parse(screen.getByTestId("surface-state").textContent!).objects[0].title).toBe("Working object");
+    apiServer.use(http.post("https://api.devneya.com/llm/v1/chat/completions", () => HttpResponse.json({ error: "Test failure" }, { status: 503 })));
+    await user.click(screen.getByRole("button", { name: "surface-run" }));
+    await waitFor(() => expect(screen.getByTestId("action-error")).toHaveTextContent("Test failure"));
+    expect(screen.getByTestId("surface-running")).toHaveTextContent("idle");
+  });
+  it("blocks duplicate runs and discards a response after clear", async () => {
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => { release = resolve; });
+    apiServer.use(http.post("https://api.devneya.com/llm/v1/chat/completions", async () => { await pending; return HttpResponse.json({ choices: [{ message: { content: JSON.stringify(surfaceResult) } }] }); }));
+    const user = userEvent.setup();
+    render(<AuthContext.Provider value={signedInValue(makeSession())}><WorkspaceProvider repository={new InMemoryWorkspaceRepository()}><WorkspaceProbe /></WorkspaceProvider></AuthContext.Provider>);
+    await waitFor(() => expect(screen.getByTestId("key-status")).toHaveTextContent("ready"));
+    await user.click(screen.getByRole("button", { name: "surface-run" }));
+    expect(screen.getByTestId("surface-running")).toHaveTextContent("surface-");
+    await user.click(screen.getByRole("button", { name: "surface-run" }));
+    expect(screen.getByTestId("action-error")).toHaveTextContent("already in progress");
+    await user.click(screen.getByRole("button", { name: "undo" }));
+    await user.click(screen.getByRole("button", { name: "clear" }));
+    release();
+    await waitFor(() => expect(screen.getByTestId("surface-running")).toHaveTextContent("idle"));
+    expect(screen.getByTestId("surface-state")).not.toHaveTextContent("Working object");
+  });
+  it("requires a credential", async () => {
+    const user = userEvent.setup();
+    render(<AuthContext.Provider value={{ session: null, user: null, initializing: false, recovery: false, ...staticAuthActions }}><WorkspaceProvider repository={new InMemoryWorkspaceRepository()}><WorkspaceProbe /></WorkspaceProvider></AuthContext.Provider>);
+    await waitFor(() => expect(screen.getByTestId("workspace-status")).toHaveTextContent("ready"));
+    await user.click(screen.getByRole("button", { name: "surface-run" }));
+    expect(screen.getByTestId("action-error")).toHaveTextContent("key is not ready");
   });
 });

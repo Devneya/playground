@@ -2,9 +2,10 @@ import { config, apiUrl } from "../config";
 import type { CompletionMessage, Usage } from "../domain/types";
 import { fetchJson } from "./http";
 import { ApiError } from "./errors";
-import type { BifrostVirtualKey } from "./credentials";
+import type { CompletionCredential } from "./credentials";
+import type { ReasoningEffort } from "../domain/reasoning";
 
-export type ChatCompletionRequest = { model: string; messages: CompletionMessage[]; stream: false };
+export type ChatCompletionRequest = { model: string; messages: CompletionMessage[]; stream: false; instructions?: string; reasoning_effort?: ReasoningEffort };
 export type ChatCompletionResult = { content: string; usage?: Usage };
 
 const usageNumber = (record: Record<string, unknown>, camelCase: string, snakeCase: string): number | undefined => {
@@ -25,8 +26,17 @@ const normalizeUsage = (value: unknown): Usage | undefined => {
   return Object.keys(usage).length > 0 ? usage : undefined;
 };
 
-export const createChatCompletion = async (key: BifrostVirtualKey, request: ChatCompletionRequest, signal?: AbortSignal): Promise<ChatCompletionResult> => {
-  const body = await fetchJson(apiUrl("llm/v1/chat/completions"), { method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify(request) }, config.completionTimeoutMs, signal);
+export const createChatCompletion = async (key: CompletionCredential, request: ChatCompletionRequest, signal?: AbortSignal): Promise<ChatCompletionResult> => {
+  if (typeof key === "object") {
+    if (!config.useLocalCodex) throw new ApiError("invalid_response", "Local Codex is only available in local development.");
+    const result = await fetchJson("/local-api/completion", { method: "POST", headers: { "Content-Type": "application/json", "X-Devneya-Local": "1" }, body: JSON.stringify({ ...request, instructions: request.instructions ?? "Answer the user's request directly in plain text." }) }, config.completionTimeoutMs, signal);
+    if (!result || typeof result !== "object" || !("content" in result) || typeof result.content !== "string") throw new ApiError("invalid_response", "Codex returned an invalid response.");
+    return { content: result.content, ...("usage" in result && normalizeUsage(result.usage) ? { usage: normalizeUsage(result.usage)! } : {}) };
+  }
+  const messages = request.messages.map(({ role, content, files }) => ({ role, content: files?.length ? [
+    { type: "text", text: content }, ...files.map(file => file.mimeType.startsWith("image/") ? { type: "image_url", image_url: { url: file.dataUrl } } : { type: "file", file: { filename: file.name, file_data: file.dataUrl } }),
+  ] : content }));
+  const body = await fetchJson(apiUrl("llm/v1/chat/completions"), { method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ model: request.model, stream: request.stream, ...(request.reasoning_effort ? { reasoning_effort: request.reasoning_effort } : {}), messages: request.instructions ? [{ role: "system", content: request.instructions }, ...messages] : messages }) }, config.completionTimeoutMs, signal);
   if (typeof body !== "object" || body === null) throw new ApiError("invalid_response", "The completion response was invalid.");
   const record = body as Record<string, unknown>;
   const choices = record.choices;

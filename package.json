@@ -14,6 +14,7 @@
   },
   "scripts": {
     "dev": "vite",
+    "dev:codex": "vite --mode codex --host 127.0.0.1 --port 3002 --strictPort",
     "build": "npm run build:prod",
     "preview": "vite preview",
     "lint": "eslint . --ext .ts,.tsx,.js,.cjs --max-warnings=0",
@@ -28,6 +29,7 @@
     "verify:mock-artifact": "node scripts/verify-mock-artifact.mjs",
     "verify:bundle": "node scripts/check-bundle-budget.mjs",
     "test:unit": "vitest run",
+    "test:e2e:codex": "playwright test --config playwright.codex.config.ts",
     "test:e2e": "E2E_MODE=real playwright test",
     "test:e2e:real": "E2E_MODE=real playwright test",
     "test:e2e:real:matrix": "E2E_MODE=real E2E_BROWSER_MATRIX=true playwright test",

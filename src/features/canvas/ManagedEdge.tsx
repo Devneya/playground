@@ -28,11 +28,8 @@ export const ManagedEdge = ({ id, sourceX, sourceY, targetX, targetY, sourcePosi
     hideTimer.current = setTimeout(() => setHovered(false), HIDE_DELAY_MS);
   };
   const [edgePath, labelX, labelY] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition });
-  const dx = targetX - sourceX;
-  const dy = targetY - sourceY;
-  const len = Math.hypot(dx, dy) || 1;
-  const zoneX = labelX + (-dy / len) * 34;
-  const zoneY = labelY + (dx / len) * 34;
+  const zoneX = labelX;
+  const zoneY = labelY;
   const removable = (data as { kind?: string } | undefined)?.kind === "input";
   const remove = (event: React.MouseEvent) => {
     event.stopPropagation();

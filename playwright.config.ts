@@ -25,10 +25,10 @@ export default defineConfig({
     video: realMode ? "off" : "retain-on-failure",
   },
   projects: browserMatrix ? [
-    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
+    { name: "chromium", use: { ...devices["Desktop Chrome"], channel: "chromium" } },
     { name: "firefox", use: { ...devices["Desktop Firefox"] } },
     { name: "webkit", use: { ...devices["Desktop Safari"] } },
-  ] : [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  ] : [{ name: "chromium", use: { ...devices["Desktop Chrome"], channel: "chromium" } }],
   webServer: externalBaseUrl ? undefined : {
     command: `${buildCommand} && npm run preview -- --mode ${previewMode} --host 127.0.0.1 --port 3001`,
     url: "http://127.0.0.1:3001",

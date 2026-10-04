@@ -1,6 +1,9 @@
 import { createChatCompletion } from "../../api/completions";
-import type { BifrostVirtualKey } from "../../api/credentials";
-import { normalizeApiError } from "../../api/errors";
+import { streamCompletion } from "../../api/streamCompletion";
+import { drawingInstructions, extractDrawings } from "../../domain/images";
+import { MAX_REQUEST_FILE_BYTES } from "../../domain/files";
+import type { CompletionCredential } from "../../api/credentials";
+import { ApiError, normalizeApiError } from "../../api/errors";
 import { buildConversationMessages, getConversationPath } from "../../domain/conversation";
 import { getInputSnapshots, getNode } from "../../domain/graph";
 import { LIMITS, utf8ByteLength } from "../../domain/limits";
@@ -13,7 +16,7 @@ import type { WorkspaceAction } from "../../domain/workspaceReducer";
 type RunOptions = {
   flow: FlowDocument;
   generationNodeId: string;
-  virtualKey: BifrostVirtualKey;
+  virtualKey: CompletionCredential;
   idFactory: IdFactory;
   clock: Clock;
   dispatch(action: WorkspaceAction): void;
@@ -59,7 +62,8 @@ export const startGenerationRun = (options: RunOptions): GenerationRun => {
   if (utf8ByteLength(instruction) > LIMITS.maxTextBytes) throw new Error("The instruction is too large.");
   const context = getConversationPath(flow, prompt.id);
   const messages = buildConversationMessages(flow, prompt.id, context);
-  if (utf8ByteLength(JSON.stringify(messages)) > LIMITS.maxPromptBytes) throw new Error("This conversation is too large to send. Start a new conversation with a shorter summary.");
+  if (utf8ByteLength(JSON.stringify(messages.map(({ files: _files, ...message }) => message))) > LIMITS.maxPromptBytes) throw new Error("This conversation is too large to send. Start a new conversation with a shorter summary.");
+  if (messages.flatMap(message => message.files ?? []).reduce((size, file) => size + file.size, 0) > MAX_REQUEST_FILE_BYTES) throw new Error("Connected files exceed the 4 MB request limit. Use fewer or smaller files.");
 
   const batchId = idFactory();
   const startedAt = clock.now().toISOString();
@@ -67,6 +71,7 @@ export const startGenerationRun = (options: RunOptions): GenerationRun => {
   const executions = modelIds.map((modelId, index) => ({
     id: idFactory(),
     modelId,
+    ...(prompt.data.modelEfforts?.[modelId] ? { reasoningEffort: prompt.data.modelEfforts[modelId] } : {}),
     status: "pending" as const,
     startedAt,
     outputNodeId: idFactory(),
@@ -96,7 +101,7 @@ export const startGenerationRun = (options: RunOptions): GenerationRun => {
     instruction,
     inputs,
     context,
-    executions: executions.map(({ id, modelId, status, startedAt: executionStartedAt, outputNodeId }) => ({ id, modelId, status, startedAt: executionStartedAt, outputNodeId })),
+    executions: executions.map(({ id, modelId, reasoningEffort, status, startedAt: executionStartedAt, outputNodeId }) => ({ id, modelId, ...(reasoningEffort ? { reasoningEffort } : {}), status, startedAt: executionStartedAt, outputNodeId })),
   };
   const controller = new AbortController();
   const externalAbort = options.signal;
@@ -109,10 +114,20 @@ export const startGenerationRun = (options: RunOptions): GenerationRun => {
   const completed = Promise.allSettled(executions.map(async (execution) => {
     const started = performance.now();
     try {
-      const result = await createChatCompletion(virtualKey, { model: execution.modelId, messages, stream: false }, controller.signal);
+      const request = { model: execution.modelId, messages, stream: false as const, ...(execution.reasoningEffort ? { reasoning_effort: execution.reasoningEffort } : {}) };
+      let content = "", lastUpdate = 0, stage = "Request sent to Codex";
+      const report = (force = false) => {
+        if (!force && performance.now() - lastUpdate < 80) return;
+        lastUpdate = performance.now();
+        emit({ type: "execution/progress", flowId: flow.id, batchId, executionId: execution.id, text: content, message: stage, characters: content.length });
+      };
+      const result = typeof virtualKey === "object"
+        ? await streamCompletion(virtualKey, { ...request, instructions: drawingInstructions }, controller.signal, (delta) => { content += delta; report(); }, (progress) => { if (stage !== progress.text) { stage = progress.text; report(true); } })
+        : await createChatCompletion(virtualKey, request, controller.signal);
+      if (utf8ByteLength(result.content) > LIMITS.maxGeneratedBytes) throw new ApiError("invalid_response", "The answer exceeded the canvas text limit. Try a narrower question.");
       const usage = result.usage as Usage | undefined;
       succeededOutputs.push(execution.outputNodeId);
-      emit({ type: "execution/succeeded", flowId: flow.id, batchId, executionId: execution.id, text: result.content, durationMs: duration(started), ...(usage ? { usage } : {}) });
+      emit({ type: "execution/succeeded", flowId: flow.id, batchId, executionId: execution.id, ...extractDrawings(result.content), durationMs: duration(started), ...(usage ? { usage } : {}) });
     } catch (error) {
       const failure = executionError(error);
       emit(failure.kind === "cancelled"

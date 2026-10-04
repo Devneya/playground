@@ -122,7 +122,7 @@ const runAndExpect = async (page: Page, token: string, expectedCount: number, pr
 
 const exportWorkspace = async (page: Page): Promise<string> => {
   const downloadPromise = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Export workspace" }).click();
+  await page.getByRole("button", { name: "Export options", exact: true }).click(); await page.getByRole("button", { name: "Export workspace" }).click();
   const download = await downloadPromise;
   const stream = await download.createReadStream();
   let exported = "";

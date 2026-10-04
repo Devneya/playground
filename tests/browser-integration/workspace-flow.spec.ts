@@ -69,8 +69,8 @@ const waitForStoredInputCount = async (page: Page, count: number) => {
 const selectModel = async (page: Page, modelId: string, title = "Prompt 1") => {
   const node = generation(page);
   await node.getByRole("button", { name: `${title} model picker` }).click();
-  await node.getByLabel(`${title} model search`).fill(modelId);
-  const radio = node.getByRole("radio", { name: `${title} model ${modelId}` });
+  await page.getByRole("dialog", { name: `${title} models` }).getByLabel(`${title} model search`).fill(modelId);
+  const radio = page.getByRole("radio", { name: `${title} model ${modelId}` });
   if (!(await radio.isChecked())) await radio.check();
   await page.keyboard.press("Escape");
   await fitCanvas(page);
@@ -189,12 +189,12 @@ test.describe("mocked workspace flows", () => {
     await page.getByRole("button", { name: "+ Prompt" }).click();
     await fitCanvas(page);
     const extra = page.locator(".generation-node").last();
-    const firstResult = page.locator(".generated-node").first().locator(".react-flow__handle.user-handle");
-    await firstResult.dragTo(extra.locator(".react-flow__handle.user-handle"));
+    const firstResult = page.locator(".generated-node").first().locator("[data-handleid='text-output']");
+    await firstResult.dragTo(extra.locator("[data-handleid='generation-input']"));
     await extra.locator(".context-disclosure summary").click();
     await expect(extra.locator(".context-panel")).toContainText("claude-sonnet-5");
-    const secondResult = page.locator(".generated-node").nth(1).locator(".react-flow__handle.user-handle");
-    await secondResult.dragTo(extra.locator(".react-flow__handle.user-handle"));
+    const secondResult = page.locator(".generated-node").nth(1).locator("[data-handleid='text-output']");
+    await secondResult.dragTo(extra.locator("[data-handleid='generation-input']"));
     await expect(extra.locator(".context-panel")).toContainText("gpt-5.6-sol");
     await expect(page.locator(".react-flow__edge")).toHaveCount(6);
     await page.locator(".managed-edge-hoverzone").last().hover();
@@ -247,11 +247,11 @@ test.describe("mocked workspace flows", () => {
     });
     await generation(page).first().getByLabel(/instruction/).fill("Run the mock instruction.");
     await generation(page).first().getByRole("button", { name: "Send prompt" }).click();
-    await expect(generation(page).getByRole("button", { name: "Cancel run" })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByLabel("Generation in progress").getByRole("button", { name: "Cancel run" })).toBeVisible({ timeout: 15_000 });
     await fitCanvas(page);
-    await generation(page).first().getByRole("button", { name: "Cancel run" }).click();
+    await page.getByLabel("Generation in progress").getByRole("button", { name: "Cancel run" }).click();
     await expect(generation(page).first().getByRole("button", { name: "Fork", exact: true })).toBeVisible();
-    await expect(generation(page).first().getByRole("button", { name: "Send prompt" })).toHaveCount(0);
+    await expect(generation(page).first().getByRole("button", { name: "Send prompt" })).toBeDisabled();
     await expect(page.locator(".generated-node")).toContainText("Cancelled: The run was cancelled.");
     await expect(page.locator(".generated-content").filter({ hasText: "Mock result" })).toHaveCount(0);
   });
@@ -288,7 +288,7 @@ test.describe("mocked workspace flows", () => {
     await page.getByLabel("Prompt 1 instruction").fill("EXPORTABLE_TEXT");
     await expect(page.getByText("Saved locally")).toBeVisible();
     const downloadPromise = page.waitForEvent("download");
-    await page.getByRole("button", { name: "Export workspace" }).click();
+    await page.getByRole("button", { name: "Export options", exact: true }).click(); await page.getByRole("button", { name: "Export workspace" }).click();
     const download = await downloadPromise;
     const stream = await download.createReadStream();
     let exported = "";
@@ -300,7 +300,7 @@ test.describe("mocked workspace flows", () => {
     page.once("dialog", (dialog) => void dialog.accept());
     await page.getByRole("button", { name: "Clear local workspace" }).click();
     await expect(page.getByLabel("Prompt 1 instruction")).toHaveValue("");
-    await page.locator('input[type="file"]').setInputFiles({ name: "restore.json", mimeType: "application/json", buffer: Buffer.from(exported) });
+    await page.getByLabel("Workspace JSON file").setInputFiles({ name: "restore.json", mimeType: "application/json", buffer: Buffer.from(exported) });
     await expect(page.getByLabel("Prompt 1 instruction")).toHaveValue("EXPORTABLE_TEXT");
   });
 
@@ -388,9 +388,9 @@ test("connects a result into a new prompt with the pointer and restores the edge
   await runAndWaitForOutputs(page, 1);
   await page.getByRole("button", { name: "+ Prompt" }).click();
   await fitCanvas(page);
-  const source = page.locator(".generated-node").first().locator(".react-flow__handle.user-handle");
+  const source = page.locator(".generated-node").first().locator("[data-handleid='text-output']");
   const second = page.locator(".generation-node").last();
-  await source.dragTo(second.locator(".react-flow__handle.user-handle"));
+  await source.dragTo(second.locator("[data-handleid='generation-input']"));
   await expect(second).toContainText("claude-sonnet-5");
   await expect(page.locator(".react-flow__edge")).toHaveCount(3);
   await waitForSave(page);
@@ -409,7 +409,7 @@ test("removes an input edge from its hover midpoint control", async ({ page }) =
   await page.getByRole("button", { name: "+ Prompt" }).click();
   await fitCanvas(page);
   const second = page.locator(".generation-node").last();
-  await page.locator(".generated-node").first().locator(".react-flow__handle.user-handle").dragTo(second.locator(".react-flow__handle.user-handle"));
+  await page.locator(".generated-node").first().locator("[data-handleid='text-output']").dragTo(second.locator("[data-handleid='generation-input']"));
   const removeButton = page.getByRole("button", { name: "Remove connection" });
   await expect(removeButton).toBeHidden();
   await page.locator(".managed-edge-hoverzone").last().hover();
@@ -442,12 +442,12 @@ test("threads a result into a second prompt and refuses the cycle back", async (
   await page.getByRole("button", { name: "+ Prompt" }).click();
   await fitCanvas(page);
   const second = page.locator(".generation-node").last();
-  const outputHandle = page.locator(".generated-node").first().locator(".react-flow__handle.user-handle");
-  await outputHandle.dragTo(second.locator(".react-flow__handle.user-handle"));
+  const outputHandle = page.locator(".generated-node").first().locator("[data-handleid='text-output']");
+  await outputHandle.dragTo(second.locator("[data-handleid='generation-input']"));
   await expect(second).toContainText("claude-sonnet-5");
   await page.locator(".managed-edge-hoverzone").last().hover();
   await page.getByRole("button", { name: "Remove connection" }).click();
-  await page.locator(".generated-node").first().locator(".react-flow__handle.user-handle").dragTo(generation(page).first().locator(".react-flow__handle.user-handle"));
+  await page.locator(".generated-node").first().locator("[data-handleid='text-output']").dragTo(generation(page).first().locator("[data-handleid='generation-input']"));
   await expect(page.getByRole("status")).toContainText("cycle");
   await expect(page.locator(".react-flow__edge")).toHaveCount(2);
 });
@@ -461,9 +461,9 @@ test("runs a threaded generation from a result input", async ({ page }) => {
   await fitCanvas(page);
   const second = page.locator(".generation-node").last();
   const secondTitle = (await second.locator(".node-header > strong[title]").textContent())!;
-  await page.locator(".generated-node").first().locator(".react-flow__handle.user-handle").dragTo(second.locator(".react-flow__handle.user-handle"));
+  await page.locator(".generated-node").first().locator("[data-handleid='text-output']").dragTo(second.locator("[data-handleid='generation-input']"));
   await second.getByRole("button", { name: `${secondTitle} model picker` }).click();
-  await second.getByRole("radio", { name: `${secondTitle} model claude-sonnet-5` }).check();
+  await page.getByRole("radio", { name: `${secondTitle} model claude-sonnet-5` }).check();
   await page.keyboard.press("Escape");
   await second.getByLabel(`${secondTitle} instruction`).fill("Continue the mock thread.");
   await second.getByRole("button", { name: "Send prompt" }).click();

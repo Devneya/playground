@@ -58,8 +58,8 @@ const result = (page: Page, modelId?: string) => {
 const chooseModel = async (page: Page, title: string, modelId: string) => {
   const node = generation(page, title);
   await node.getByRole("button", { name: `${title} model picker` }).click();
-  await node.getByLabel(`${title} model search`).fill(modelId);
-  const radio = node.getByRole("radio", { name: `${title} model ${modelId}` });
+  await page.getByRole("dialog", { name: `${title} models` }).getByLabel(`${title} model search`).fill(modelId);
+  const radio = page.getByRole("radio", { name: `${title} model ${modelId}` });
   if (!(await radio.isChecked())) await radio.check();
   await page.keyboard.press("Escape");
 };
@@ -200,7 +200,7 @@ test("selects a live default model and ejects a note without moving the thread",
   await expect(generation(page, "Prompt 2")).toBeVisible();
   const before = await answer.evaluate((node) => node.closest<HTMLElement>(".react-flow__node")?.style.transform);
   const noteAction = answer.locator(".node-header").getByRole("button", { name: "Save as note" });
-  await expect(noteAction).toHaveText("Note");
+  await expect(noteAction).toHaveText("Save as note");
   await noteAction.click();
   const note = page.locator(".manual-node");
   await expect(note).toHaveCount(1);
@@ -213,7 +213,7 @@ test("selects a live default model and ejects a note without moving the thread",
     if (!source) return false;
     const answerBox = source.getBoundingClientRect();
     const noteBox = element.getBoundingClientRect();
-    return noteBox.left >= answerBox.right && noteBox.bottom <= answerBox.top;
+    return noteBox.left >= answerBox.right && Math.abs(noteBox.top - answerBox.top) < 2;
   })).toBe(true);
   await expect.poll(async () => {
     const box = await note.boundingBox();
@@ -232,7 +232,7 @@ test("selects a live default model and ejects a note without moving the thread",
   await expect.poll(async () => {
     const n = await note.boundingBox();
     const b = await generation(page, "Prompt 3").boundingBox();
-    return !!n && !!b && n.y + n.height <= b.y;
+    return !!n && !!b && (n.y + n.height <= b.y || b.y + b.height <= n.y || n.x + n.width <= b.x || b.x + b.width <= n.x);
   }).toBe(true);
   await capture(page, testInfo, "note-ejected.png");
   await expect(page.getByText("Saved locally", { exact: true })).toBeVisible();
@@ -251,14 +251,14 @@ test("groups the mock catalog by provider prefix and keeps one model selected", 
   await signIn(page);
   const prompt = generation(page, "Prompt 1");
   await prompt.getByRole("button", { name: "Prompt 1 model picker" }).click();
-  await expect(prompt.getByRole("group", { name: "OpenAI" })).toBeVisible();
-  await expect(prompt.getByRole("group", { name: "Claude" })).toBeVisible();
-  await expect(prompt.getByRole("group", { name: "DeepSeek" })).toBeVisible();
-  await expect(prompt.getByRole("group", { name: "GLM" })).toBeVisible();
-  await expect(prompt.getByRole("radio", { checked: true })).toHaveCount(1);
-  await prompt.getByRole("radio", { name: "Prompt 1 model gpt-5.6-sol" }).check();
-  await expect(prompt.getByRole("radio", { checked: true })).toHaveCount(1);
-  await expect(prompt.getByRole("radio", { name: "Prompt 1 model gpt-5.6-sol" })).toBeChecked();
+  await expect(page.getByRole("group", { name: "OpenAI" })).toBeVisible();
+  await expect(page.getByRole("group", { name: "Claude" })).toBeVisible();
+  await expect(page.getByRole("group", { name: "DeepSeek" })).toBeVisible();
+  await expect(page.getByRole("group", { name: "GLM" })).toBeVisible();
+  await expect(page.getByRole("radio", { checked: true })).toHaveCount(1);
+  await page.getByRole("radio", { name: "Prompt 1 model gpt-5.6-sol" }).check();
+  await expect(page.getByRole("radio", { checked: true })).toHaveCount(1);
+  await expect(page.getByRole("radio", { name: "Prompt 1 model gpt-5.6-sol" })).toBeChecked();
   await capture(page, testInfo, "grouped-model-picker.png");
   await page.keyboard.press("Escape");
   await expect(prompt.getByRole("button", { name: "Prompt 1 model picker" })).toHaveText("gpt-5.6-sol");
@@ -275,8 +275,8 @@ test("keeps a compact four-provider catalog grouped and single-select", async ({
   await signIn(page);
   const prompt = generation(page, "Prompt 1");
   await prompt.getByRole("button", { name: "Prompt 1 model picker" }).click();
-  await expect(prompt.getByRole("group", { name: "OpenAI" })).toBeVisible();
-  await expect(prompt.getByRole("radio")).toHaveCount(4);
+  await expect(page.getByRole("group", { name: "OpenAI" })).toBeVisible();
+  await expect(page.getByRole("radio")).toHaveCount(4);
   await page.keyboard.press("Escape");
   await chooseModel(page, "Prompt 1", "gpt-5.6-sol");
   await generation(page, "Prompt 1").getByLabel("Prompt 1 instruction").fill("Compare approaches to a compact, branching conversation.");
@@ -306,9 +306,8 @@ test("sends with Enter, keeps Shift+Enter in the prompt, and compacts a complete
   await expect(result(page, "claude-sonnet-5").first().locator(".generated-content")).toBeVisible({ timeout: 15_000 });
   const firstResponseText = (await result(page, "claude-sonnet-5").first().locator(".generated-content").textContent())?.trim() ?? "";
   await expect(generation(page, "Prompt 2").getByLabel("Prompt 2 instruction")).toBeVisible({ timeout: 15_000 });
-  await expect(generation(page, "Prompt 1").locator(".completed-prompt")).toBeVisible();
-  await expect(generation(page, "Prompt 1").getByLabel("Prompt 1 instruction")).toHaveCount(0);
-  await expect(generation(page, "Prompt 1").locator(".completed-prompt")).toContainText(firstPrompt);
+  await expect(generation(page, "Prompt 1").getByLabel("Prompt 1 instruction")).toHaveAttribute("readonly", "");
+  await expect(generation(page, "Prompt 1").getByLabel("Prompt 1 instruction")).toHaveValue(firstPrompt);
   await waitForCardGap(page, generation(page, "Prompt 1"), result(page, "claude-sonnet-5").first());
   await waitForCardGap(page, result(page, "claude-sonnet-5").first(), generation(page, "Prompt 2"));
 
@@ -326,7 +325,7 @@ test("sends with Enter, keeps Shift+Enter in the prompt, and compacts a complete
     { role: "user", content: followupPrompt },
   ]);
   await expect(result(page, "claude-sonnet-5")).toHaveCount(2, { timeout: 15_000 });
-  await expect(generation(page, "Prompt 2").locator(".completed-prompt")).toBeVisible();
+  await expect(generation(page, "Prompt 2").getByLabel("Prompt 2 instruction")).toHaveAttribute("readonly", "");
   await expect(generation(page, "Prompt 3").getByLabel("Prompt 3 instruction")).toBeVisible({ timeout: 15_000 });
   await expect(generation(page, "Prompt 2").locator(".context-disclosure summary")).toContainText("Context (3)");
   await waitForCardGap(page, generation(page, "Prompt 2"), result(page, "claude-sonnet-5").nth(1));
@@ -350,15 +349,16 @@ test("branches a response into a prompt to the right of its continuation", async
   await branchInstruction.press("Enter");
   await expect(result(page, "claude-sonnet-5").first().locator(".generated-content")).toBeVisible({ timeout: 15_000 });
   await expect(generation(page, "Prompt 2").getByLabel("Prompt 2 instruction")).toBeVisible({ timeout: 15_000 });
-  const originalContinuation = generation(page, "Prompt 2");
   await result(page, "claude-sonnet-5").first().getByRole("button", { name: "Fork" }).click();
   await expect(generation(page, "Prompt 3").getByLabel("Prompt 3 instruction")).toBeVisible({ timeout: 15_000 });
   const siblingContinuation = generation(page, "Prompt 3");
-  const originalBox = await originalContinuation.boundingBox();
-  const siblingBox = await siblingContinuation.boundingBox();
-  expect(originalBox).not.toBeNull();
-  expect(siblingBox).not.toBeNull();
-  if (originalBox && siblingBox) expect(siblingBox.x).toBeGreaterThan(originalBox.x + originalBox.width - 8);
+  await expect.poll(() => siblingContinuation.evaluate((element) => {
+    const original = [...document.querySelectorAll(".generation-node")].find((node) => node.querySelector('[aria-label="Prompt 2 instruction"]'));
+    if (!original) return false;
+    const left = original.getBoundingClientRect();
+    const right = element.getBoundingClientRect();
+    return right.x > left.right - 8;
+  })).toBe(true);
   await siblingContinuation.getByLabel("Prompt 3 instruction").fill("A sibling branch direction.");
   await expect(siblingContinuation.getByLabel("Prompt 3 instruction")).toHaveValue("A sibling branch direction.");
   await expect.poll(async () => {
@@ -380,7 +380,7 @@ test("duplicates a sent prompt while preserving frozen context and model history
   await rootInstruction.press("Enter");
   await expect(result(page, "claude-sonnet-5").first().locator(".generated-content")).toBeVisible({ timeout: 15_000 });
   const rootResult = (await result(page, "claude-sonnet-5").first().locator(".generated-content").textContent())?.trim() ?? "";
-  await expectCompactCard(page, generation(page, "Prompt 1"), 80);
+  await expectCompactCard(page, generation(page, "Prompt 1"), 135);
   await expectCompactCard(page, result(page, "claude-sonnet-5").first(), 85);
 
   const source = generation(page, "Prompt 2");
@@ -394,7 +394,7 @@ test("duplicates a sent prompt while preserving frozen context and model history
   const followupBody = completionBody(await followupRequestPromise);
   expect(followupBody.model).toBe("claude-sonnet-5");
   await expect(result(page, "claude-sonnet-5")).toHaveCount(2, { timeout: 15_000 });
-  await expectCompactCard(page, source, 80);
+  await expectCompactCard(page, source, 135);
   await expectCompactCard(page, generation(page, "Prompt 3"), 135);
 
   await expect(source.getByRole("button", { name: "Fork", exact: true })).toBeVisible();
@@ -402,8 +402,8 @@ test("duplicates a sent prompt while preserving frozen context and model history
   const duplicate = generation(page, "Prompt 4");
   await expect(duplicate.getByLabel("Prompt 4 instruction")).toHaveValue(followupPrompt);
   await expect(duplicate.getByRole("button", { name: "Prompt 4 model picker" })).toContainText("claude-sonnet-5");
-  await expect(source.locator(".completed-prompt")).toContainText(followupPrompt);
-  await expect(source.getByLabel("Prompt 2 instruction")).toHaveCount(0);
+  await expect(source.locator("textarea")).toHaveValue(followupPrompt);
+  await expect(source.getByLabel("Prompt 2 instruction")).toHaveAttribute("readonly", "");
   await expectCompactCard(page, duplicate, 135);
   await chooseModel(page, "Prompt 4", "gpt-5.6-sol");
   const duplicateInstruction = duplicate.getByLabel("Prompt 4 instruction");
@@ -417,7 +417,7 @@ test("duplicates a sent prompt while preserving frozen context and model history
     { role: "assistant", content: rootResult },
     { role: "user", content: followupPrompt },
   ]);
-  await expectCompactCard(page, duplicate, 80);
+  await expectCompactCard(page, duplicate, 135);
   await expect(result(page, "gpt-5.6-sol").locator(".generated-content")).toBeVisible({ timeout: 15_000 });
   await expectCompactCard(page, result(page, "gpt-5.6-sol"), 85);
   const history = generation(page, "Prompt 5").locator(".context-disclosure");

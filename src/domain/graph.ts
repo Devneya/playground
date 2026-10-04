@@ -1,3 +1,6 @@
+import { surfaceProblems, surfaceSchema } from "./surface";
+import { moveBoardSchema } from "./moveBoard";
+import { experienceSchema } from "./experience";
 import { LIMITS, codePointLength, utf8ByteLength } from "./limits";
 import type { FlowDocument, InputEdge, InputSnapshot, PlaygroundEdge, WorkspaceDocument } from "./types";
 import { isTextNode, isGeneratedTextNode, isGenerationNode, isManualTextNode } from "./types";
@@ -10,7 +13,7 @@ export const getOrderedInputEdges = (flow: FlowDocument, generationNodeId: strin
 export const getInputSnapshots = (flow: FlowDocument, generationNodeId: string): InputSnapshot[] =>
   getOrderedInputEdges(flow, generationNodeId).flatMap((edge) => {
     const node = getNode(flow, edge.source);
-    return isTextNode(node) ? [{ nodeId: node.id, title: node.data.title, text: node.data.text }] : [];
+    return isTextNode(node) ? [{ nodeId: node.id, title: node.data.title, text: node.data.text + (node.data.images?.map((image) => `\n\nStored drawing (${image.name}):\n\`\`\`svg\n${image.source}\n\`\`\``).join("") ?? ""), ...(node.data.origin === "manual" && node.data.files ? { files: structuredClone(node.data.files) } : {}) }] : [];
   });
 export const nextGenerationIndex = (flow: FlowDocument): number => {
   const indices = flow.nodes
@@ -99,6 +102,13 @@ export const validateWorkspaceInvariants = (workspace: WorkspaceDocument): strin
   const flowIds = workspace.flows.map((flow) => flow.id);
   if (duplicateIds(flowIds).length) errors.push("Duplicate flow IDs.");
   for (const flow of workspace.flows) {
+    if (flow.board && !moveBoardSchema.safeParse(flow.board).success) errors.push("Invalid move board.");
+    if (flow.experience && !experienceSchema.safeParse(flow.experience).success) errors.push("Invalid evolving workspace.");
+    if (flow.surface) {
+      const parsed = surfaceSchema.safeParse(flow.surface);
+      if (!parsed.success) errors.push("Invalid shared workspace.");
+      else errors.push(...surfaceProblems(parsed.data));
+    }
     if (flow.nodes.length > LIMITS.maxNodesPerFlow) errors.push(`Flow ${flow.id} has too many nodes.`);
     if (flow.edges.length > LIMITS.maxEdgesPerFlow) errors.push(`Flow ${flow.id} has too many edges.`);
     const nodeIds = flow.nodes.map((node) => node.id);
@@ -133,15 +143,15 @@ export const validateWorkspaceInvariants = (workspace: WorkspaceDocument): strin
     }
     for (const node of flow.nodes.filter(isGeneratedTextNode)) {
       const execution = flow.batches.flatMap((batch) => batch.executions).find((item) => item.id === node.data.executionId);
-      if (!execution || execution.outputNodeId !== node.id || execution.modelId !== node.data.title) errors.push(`Generated node ${node.id} has an invalid provenance reference.`);
+      if (!execution || (![execution.outputNodeId, ...(execution.additionalOutputNodeIds ?? [])].includes(node.id)) || execution.modelId !== node.data.title) errors.push(`Generated node ${node.id} has an invalid provenance reference.`);
     }
     for (const batch of flow.batches) {
       const generation = nodes.get(batch.generationNodeId);
       if (generation && !isGenerationNode(generation)) errors.push(`Batch ${batch.id} source is not a generation node.`);
       if (batch.executions.length > LIMITS.maxModelsPerBatch || new Set(batch.executions.map((execution) => execution.modelId)).size !== batch.executions.length) errors.push(`Batch ${batch.id} has invalid executions.`);
       for (const execution of batch.executions) {
-        if (execution.outputNodeId) {
-          const output = nodes.get(execution.outputNodeId);
+        for (const outputId of [execution.outputNodeId, ...(execution.additionalOutputNodeIds ?? [])].filter((id): id is string => Boolean(id))) {
+          const output = nodes.get(outputId);
           if (!isGeneratedTextNode(output) || output.data.executionId !== execution.id) errors.push(`Execution ${execution.id} points to the wrong output.`);
         }
       }

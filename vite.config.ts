@@ -2,6 +2,7 @@ import { existsSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
+import { localCodexPlugin } from "./src/api/local-codex.mjs";
 
 const validateProductionEnv = (mode: string): Plugin => ({
   name: "validate-production-env",
@@ -27,10 +28,13 @@ const excludeMockWorker = (mode: string): Plugin => ({
 });
 
 export default defineConfig(({ mode }) => ({
-  plugins: [react(), validateProductionEnv(mode), excludeMockWorker(mode)],
+  plugins: [...(mode === "codex" ? [localCodexPlugin()] : []), react(), validateProductionEnv(mode), excludeMockWorker(mode)],
+  define: mode === "codex" ? { "import.meta.env.VITE_LOCAL_CODEX": JSON.stringify("true") } : {},
   server: {
-    port: 3001,
+    host: "127.0.0.1",
+    port: mode === "codex" ? 3002 : 3001,
     open: false,
+    watch: { ignored: ["**/coverage/**", "**/test-results/**", "**/playwright-report/**", "**/release-evidence/**"] },
   },
   build: {
     chunkSizeWarningLimit: 500,
