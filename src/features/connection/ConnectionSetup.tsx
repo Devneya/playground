@@ -30,10 +30,10 @@ export const ConnectionSetup = ({ serviceError }: { serviceError?: string } = {}
   return <main className="auth-screen connection-screen"><section className="auth-card connection-card" aria-labelledby="connection-title">
     <p className="eyebrow">Devneya Playground</p>
     <h1 id="connection-title">Choose your connection.</h1>
-    <p className="muted">Use your OpenAI API key or continue with your Devneya account.</p>
+    <p className="muted">Choose OpenAI API key or continue with your Devneya account.</p>
     <div className="connection-options">
-      <button type="button" className="connection-option" onClick={() => { setEnteringKey(true); setError(null); }} disabled={busy}>Provide OpenAI/ChatGPT key</button>
-      <button type="button" className="primary-button" onClick={devneya} disabled={busy}>Start immediately with Devneya</button>
+      <button type="button" className="connection-option" onClick={() => { setEnteringKey(true); setError(null); }} disabled={busy}>Use OpenAI API key</button>
+      <button type="button" className="primary-button" onClick={devneya} disabled={busy}>Continue with Devneya</button>
     </div>
     {enteringKey && <form onSubmit={submit}>
       <label>OpenAI API key<input type="password" autoFocus autoComplete="off" spellCheck={false} value={key} onChange={event => setKey(event.target.value)} required disabled={busy} /></label>

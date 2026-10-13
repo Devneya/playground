@@ -1,38 +1,84 @@
 # Playground handoff
 
-## Resume on another computer — 2026-10-13
+## Current release scope — 2026-10-13
 
-Repository: `Devneya/playground`. Continue on
-`release/openai-provider-setup`, which contains the implementation commit
-`f679cb2cae64d30803e09794aa1be4ffd9bd8039` and these saved research notes.
-Fetch and switch to that branch before pulling; pulling `main` alone will not
-retrieve this work. No PR, merge, or production deployment was performed.
+Repository: `Devneya/playground`, branch `release/openai-provider-setup`.
+Publish the complete reviewed branch, including the accepted spatial canvas
+work. The current release offers exactly **Use OpenAI API key** and
+**Continue with Devneya**. Hosted Codex is deferred. The dated authentication
+research below records historical exploration, not a third release choice.
+Existing local `dev:codex` support is retained.
 
-Read this file and `PRODUCT_NOTES.md` before changing the implementation.
-The latest requested direction adds a Codex choice alongside Devneya and the
-OpenAI API. The user rejected a local helper for the hosted Codex choice.
-Hosted OAuth, a hosted bridge, and changes to the original browser-only
-architecture remain undecided. Do not assume those changes are authorized.
+Read this file and `PRODUCT_NOTES.md` before editing. Use Node 22.23.2 from
+`.nvmrc`, `npm ci`, and `npx playwright install --with-deps chromium`.
+Keep GoTrue JWTs, Bifrost virtual keys, and Platform keys separate. Workspaces
+stay in the existing IndexedDB browser-workspace record across providers.
+No application API or persistence migration is required.
 
-Two unresolved release prerequisites remain: obtain a local Platform API key
-for the original OpenAI test, and correct the runner's genuine-preflight
-verification described below. The native Codex backend currently fails CORS
-from our production origin. No successful Codex OAuth login or authenticated
-Codex inference was verified by these feasibility probes.
+Release implementation now includes a genuine browser preflight check for
+both OpenAI endpoints. The synthetic `--check-cors` mode reads no credential
+file, sends no paid inference, and observes actual OPTIONS via CDP Network
+without routing or Fetch interception. The full runner checks credential
+selection, deployed metadata, and genuine CORS before opening the allowance.
+CORS evidence survives an early failure under ignored `release-evidence/`.
 
-Credentials and browser workspaces do not travel through Git. On the new
-machine, recheck its own Codex authentication. For the original OpenAI runner,
-set `CODEX_HOME` to that machine's Codex directory if needed, since its unset
-fallback is `/home/alex/.codex/auth.json`; alternatively use an existing
-`OPENAI_API_KEY` process variable. Never substitute an OAuth token for the
-required Platform key. Release usage to date is zero forwarded completions
-and $0.00; preserve the cumulative four-request/$0.10 allowance across machines.
+Publication requires GitHub push/merge/Pages settings access, an available
+Platform API key, approved public GoTrue configuration through the process
+environment, and the Actions secret `VITE_SUPABASE_PUBLIC_KEY`. Secret listing
+cannot retrieve its value. Keep credentials out of chat, shell arguments,
+`.env` files, source, tests, logs, and Git history. The runner still prefers
+the supported top-level auth-file key over the process environment and
+rejects OAuth-only credentials.
 
-The sanitized research findings are recorded below, and the reusable probe is
-tracked at `scripts/check-codex-browser-feasibility.mjs`. Generated evidence,
-reports, builds, dependencies, credentials, and IndexedDB workspaces remain
-local and ignored. Nothing necessary to understand the findings depends on
-the ignored evidence directory surviving this machine.
+The saved portable ledger establishes zero forwarded completions and $0.00
+usage; no later live usage is recorded. Keep the ignored cumulative ledger
+and lock across machines and corrective deployments. At most two live runs,
+four forwarded paid requests, and $0.10 estimated usage are permitted. Never
+reset the ledger or remove a lock belonging to an active process.
+
+## Latest implementation validation — 2026-10-13
+
+The two-provider implementation is finished locally on the release branch.
+Node 22.23.2 and GitHub CLI 2.102.0 were installed outside the repository with
+verified checksums. Typecheck, lint, 330 unit tests in 50 files, coverage,
+production/full audits (zero vulnerabilities), validation build, mock build,
+artifact checks, bundle budgets, and all 69 Chromium browser checks passed.
+The browser suite includes eight provider regressions and seven genuine CORS
+regressions on separate local HTTP ports. The checked whole coverage group is
+96.01% statements and 92.06% branches; thresholds and dependency ranges are
+unchanged. `git diff --check` passed.
+
+The final production-mode build and its artifact/bundle checks passed:
+20 files, 781,669 JavaScript bytes, 229,967 gzip bytes. It has no mock runtime
+or synthetic credentials. This machine has no approved public GoTrue value,
+so that local artifact does not configure Devneya sign-in and is not a valid
+two-provider release artifact. A configured protected production build and
+Actions secret verification remain publication gates. The mock artifact has
+21 files, 1,004,045 JavaScript bytes, and 335,852 gzip bytes.
+
+The final `--check-cors` run at 2026-10-13 16:09 UTC passed from the fixed
+production origin: both endpoints had observed upstream OPTIONS 200 with
+matching requested methods/headers and readable synthetic 401 responses.
+Its isolated context and browser both closed. Evidence is local and ignored:
+`release-evidence/openai-cors/2026-10-13T16-09-34-446Z/cors.json`.
+Deterministic check logs and the sanitized implementation summary are under
+`release-evidence/implementation-checks/`.
+
+Credential preflight and `npm run test:e2e` both stopped with the fixed missing
+Platform-key message before browser launch or network activity. No paid run
+began: this turn and the cumulative release each have zero forwarded paid
+requests, zero inference tokens, and $0.00 estimated cost. The cumulative
+ledger remains absent and was not initialized; the portable zero-usage record
+above still applies.
+
+The operator requested finishing code and checks while reporting blockers.
+GitHub authentication, a Platform key, and approved public GoTrue configuration
+are absent. The Actions secret's presence could not be inspected without
+GitHub access. No PR, push, merge, deployment, HTTPS setting change, or rollback
+was performed. The existing deployment baseline later in this file is a saved
+historical value; refresh the latest successful Pages deployment immediately
+before an eventual merge. Publication and two-completion live certification
+remain incomplete.
 
 ## Accepted direction
 
@@ -62,8 +108,8 @@ the ignored evidence directory surviving this machine.
 
 ## Current hosted connections
 
-- Fresh users see `Provide OpenAI/ChatGPT key` and
-  `Start immediately with Devneya`. OpenAI setup checks the key with the
+- Fresh users see `Use OpenAI API key` and
+  `Continue with Devneya`. OpenAI setup checks the key with the
   authenticated `GET https://api.openai.com/v1/models` catalog request; it does
   not send inference. The chosen catalog is shown in the existing model picker,
   and model selection remains manual because the list includes non-chat models.
@@ -79,11 +125,10 @@ the ignored evidence directory surviving this machine.
 - For suitable independent delegation, `AGENTS.md` calls for `gpt-6-luna` with
   xhigh reasoning when that is expected to save total time and tokens.
 
-## Authentication discussion — 2026-10-13
+## Historical authentication discussion — 2026-10-13
 
-The requested next setup direction is three explicit choices: **Devneya**,
-**OpenAI API**, and **Codex**. This expands the earlier release's two hosted
-connections. The current code has two hosted setup buttons and an existing
+The historical exploration proposed three explicit choices: **Devneya**,
+**OpenAI API**, and **Codex**. Hosted Codex is now deferred; this proposal is not current release scope. The current code has two hosted setup buttons and an existing
 `local-codex` adapter used by `npm run dev:codex`; a selectable hosted Codex
 connection has not been implemented.
 
@@ -122,7 +167,7 @@ References: [Codex backend and account headers](https://learn.chatgpt.com/docs/e
 [public API ChatGPT-plan inference](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference),
 and [Sign in with ChatGPT scopes and eligibility](https://developers.openai.com/siwc/quickstart).
 
-Recommended setup presentation: `Continue with Devneya`, `Use OpenAI API key`,
+Historical proposed setup presentation: `Continue with Devneya`, `Use OpenAI API key`,
 and `Use Codex`. Remove the ambiguous `OpenAI/ChatGPT key` label. Keep one
 active connection and the same canvas across all three, with separate
 credentials, authenticated catalogs, connection validation, and disconnect
@@ -247,11 +292,11 @@ responses when Chromium request routing is enabled, even when a handler uses
 `route.continue()`. Its source implements this in `coreBundle.js` under
 `isInterceptedOptionsPreflight`. Response-level CORS still applies, but routed
 tests alone cannot establish that the real server accepts preflights. The
-OpenAI release runner needs an independent genuine-preflight check before
-publication/live certification; the earlier synthetic response-CORS test did
-not establish that property.
+current OpenAI release runner uses an independent unrouted genuine-preflight
+check before publication/live certification; the earlier synthetic response-CORS
+test did not establish that property.
 
-## Future: Sign in with ChatGPT
+## Deferred research: Sign in with ChatGPT
 
 Checked 2026-10-04 against [OpenAI's Sign in with ChatGPT docs](https://developers.openai.com/siwc/quickstart): **plan-funded inference is feasible for an eligible open-source local client.** An eligible user can explicitly grant `chatgpt.tokens.use.direct`; Plus/Pro plan usage or available credits can then cover eligible requests without an API key. This calls the public Responses API using the user's OAuth access token. It does not sign Devneya into ChatGPT's website, embed ChatGPT Web, expose their chats/GPTs, or reuse a browser session. ChatGPT identity alone does not grant inference permission.
 
@@ -291,12 +336,13 @@ Implementation notes:
   integration; do not enable plan-funded inference on the hosted Devneya app
   until OpenAI confirms eligibility.
 
-## Validation and UI coverage
+## Previous validation and local UI coverage
 
 Cross-machine handoff checks on 2026-10-13 passed typecheck, lint, all 321 unit
 tests, coverage (96.01% statements, 92.06% branches), the tracked probe's
-syntax check, and `git diff --check`. This repeat used the currently installed
-Node 22.14.0; the earlier full release gates below used the pinned 22.23.2.
+syntax check, and `git diff --check`. That previous repeat used
+Node 22.14.0 on that previous machine; the earlier full release gates below
+used the pinned 22.23.2.
 `npm run test:e2e` was attempted again and stopped with the fixed missing-key
 message before launching Chromium or making API requests. No additional live
 usage was incurred. The synthetic probe was made portable and syntax/lint
@@ -352,11 +398,12 @@ The Pages build requires the Actions secret `VITE_SUPABASE_PUBLIC_KEY`, mapped
 to `VITE_GOTRUE_ANON_KEY`; the build fails before artifact upload if that secret
 is absent. `dist/release.json` records the full source commit SHA.
 
-Before publishing, run the credential preflight. After deployment, run the
+Before publishing, require both the synthetic CORS check and credential preflight. After deployment, run the
 local OpenAI check against `https://playground.devneya.com`, using the deployed
 full release SHA from `release.json`:
 
 ```sh
+node scripts/run-openai-live.mjs --check-cors
 node scripts/run-openai-live.mjs --preflight
 PLAYGROUND_RELEASE_SHA=<full-commit-sha> npm run test:e2e:openai:live
 ```
@@ -368,6 +415,13 @@ in the executing process environment. The key is transmitted only in the
 HTTPS Authorization header directly to `api.openai.com`.
 It never uses OAuth tokens and refuses CI or debug environments. Missing the
 key is a stop before publication.
+
+Standard pricing was rechecked on 2026-10-13 against the official
+[GPT-6 Luna model documentation](https://developers.openai.com/api/docs/models/gpt-6-luna):
+$0.10 per million input tokens and $0.50 per million output tokens. Cost
+reports remain estimates. The official
+[Chat Completions reference](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)
+confirms that the completion cap includes reasoning tokens.
 
 Each live run makes exactly two non-streaming `gpt-6-luna` calls. Serialized
 messages may use at most 4,096 UTF-8 bytes; `max_completion_tokens` is 4,096,
@@ -395,25 +449,29 @@ incomplete restoration.
 ## Saved publication procedure
 
 Publication remains pending and must stop while local credential preflight
-fails. Resolve the genuine-preflight runner gap before certifying browser
+fails. Require the genuine-preflight result before certifying browser
 compatibility. Rerun the full deterministic gates on Node 22.23.2: typecheck,
 lint, unit tests, coverage, production and full audits, validation build and
 bundle check, mock build/artifact/bundle checks, browser integration with one
 worker, then production build/artifact/bundle checks and `git diff --check`.
 Finish with the production artifact because mock builds overwrite `dist/`.
 
-Use `/snap/gh/current/gh` and verify `auth status` before GitHub operations.
+Use GitHub CLI 2.102.0 and verify `gh auth status` before GitHub operations.
+This Linux machine has the pinned Node and CLI under
+`/home/ubuntu/.cache/devneya-release-tools/`; prepend their `bin` directories
+to PATH in each new shell.
 Create the PR from `release/openai-provider-setup` to `main` with title
 `Add OpenAI connection setup and local production verification`; describe
 the actual final behavior and checks without credentials or local evidence.
-Wait for required checks and squash-merge normally. Before merging, refresh
+Wait for required checks on the final reviewed head and squash-merge normally
+with `--match-head-commit`; respect required reviews and merge queues. Before merging, refresh
 the last successful Pages deployment SHA; the saved baseline is
 `4e928547f9582727e35310b25546d910b176eb60`.
 
 Enable Pages HTTPS enforcement with:
 
 ```sh
-/snap/gh/current/gh api --method PUT repos/Devneya/playground/pages -F https_enforced=true
+gh api --method PUT repos/Devneya/playground/pages -F https_enforced=true
 ```
 
 Wait for the merged SHA's workflow to build and deploy. Require valid

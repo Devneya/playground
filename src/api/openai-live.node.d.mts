@@ -21,3 +21,34 @@ export function createReleaseAllowance(state?: ReleaseAllowanceState, save?: (st
 };
 export function requireSuccessfulStatus(status: number, code?: string): void;
 export function installRedirectGuard(context: import("playwright").BrowserContext, page: import("playwright").Page, onFailure: (error: LiveTestFailure) => void): Promise<void>;
+export function parseLiveArguments(args: string[]): "live" | "preflight" | "cors";
+export type CorsTarget = { endpoint: "models" | "chat/completions"; url: string; method: "GET" | "POST" };
+export type CorsEndpointResult = {
+  endpoint: "models" | "chat/completions";
+  method: "GET" | "POST";
+  preflight: { observed: boolean; status: number | null; requestedMethod: "GET" | "POST" | null; requestedHeaders: string[]; matches: boolean };
+  response: { status: number | null; readable: boolean };
+  failure: string | null;
+};
+export type CorsResult = {
+  navigationStatus: number | null; originMatched: boolean; endpoints: CorsEndpointResult[];
+  cleanup: { contextClosed: boolean; browserClosed: boolean }; failure: string | null;
+};
+export function createCorsCollector(targets?: CorsTarget[]): {
+  observe(name: string, event: Record<string, unknown>): void;
+  readable(endpoint: string, result: { readable: boolean; status: number | null; timedOut?: boolean }): void;
+  finish(): CorsEndpointResult[];
+};
+export function assertCorsResult(result: CorsResult): void;
+export function collectBrowserCors(options: {
+  chromium: import("playwright").BrowserType; origin: string; navigationUrl: string; targets?: CorsTarget[];
+  timeoutMs?: number; env?: NodeJS.ProcessEnv;
+}): Promise<CorsResult>;
+export function checkProductionCors(): Promise<CorsResult>;
+export function prepareLiveRun<T>(options: {
+  env: NodeJS.ProcessEnv;
+  selectCredential: () => Promise<{ key: string; source: string }>;
+  verifyRelease: (sha: string) => Promise<void>;
+  checkCors: (sha: string) => Promise<CorsResult>;
+  openAllowance: () => Promise<T>;
+}): Promise<{ credential: { key: string; source: string }; sha: string; cors: CorsResult; budget: T }>;

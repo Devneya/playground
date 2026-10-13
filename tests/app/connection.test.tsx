@@ -75,9 +75,10 @@ describe("provider setup", () => {
     const user = userEvent.setup();
     renderConnectionApp(<WorkspaceProbe />);
 
-    expect(screen.getByRole("button", { name: "Provide OpenAI/ChatGPT key" })).toBeVisible();
-    expect(screen.getByRole("button", { name: "Start immediately with Devneya" })).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "Provide OpenAI/ChatGPT key" }));
+    expect(document.querySelectorAll(".connection-options button")).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "Use OpenAI API key" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Continue with Devneya" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Use OpenAI API key" }));
     await user.type(screen.getByLabelText("OpenAI API key"), key);
     await user.click(screen.getByRole("button", { name: "Connect to OpenAI" }));
 
@@ -93,7 +94,7 @@ describe("provider setup", () => {
 
     await user.click(screen.getByRole("button", { name: "Edit workspace" }));
     await user.click(screen.getByRole("button", { name: "Change connection" }));
-    await user.click(screen.getByRole("button", { name: "Start immediately with Devneya" }));
+    await user.click(screen.getByRole("button", { name: "Continue with Devneya" }));
     await waitFor(() => expect(screen.getByTestId("provider")).toHaveTextContent("devneya"));
     expect(screen.getByTestId("prompt-text")).toHaveTextContent("same browser workspace");
     expect(readBrowserConnection()).toEqual({ provider: "devneya" });
@@ -111,7 +112,7 @@ describe("provider setup", () => {
     renderConnectionApp(<WorkspaceProbe />, "openai");
     await waitFor(() => expect(screen.getByTestId("models-status")).toHaveTextContent("ready"));
     await user.click(screen.getByRole("button", { name: "Change connection" }));
-    await user.click(screen.getByRole("button", { name: "Provide OpenAI/ChatGPT key" }));
+    await user.click(screen.getByRole("button", { name: "Use OpenAI API key" }));
     await user.type(screen.getByLabelText("OpenAI API key"), "sk-rejected-key");
     await user.click(screen.getByRole("button", { name: "Connect to OpenAI" }));
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("OpenAI rejected the API key."));
@@ -120,6 +121,6 @@ describe("provider setup", () => {
     await user.click(screen.getByRole("button", { name: "Back to OpenAI" }));
     await user.click(screen.getByRole("button", { name: "Disconnect" }));
     expect(readBrowserConnection()).toBeNull();
-    expect(screen.getByRole("button", { name: "Provide OpenAI/ChatGPT key" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Use OpenAI API key" })).toBeVisible();
   });
 });

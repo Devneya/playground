@@ -4,8 +4,11 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const evidenceDir = process.env.EVIDENCE_DIR;
+const OPENAI_TEST_KEY = "synthetic-openai-browser-key";
+const OPENAI_TEST_CHAT_MODEL = "gpt-mock-chat";
 const browserErrors = new WeakMap<Page, string[]>();
 const networkFailures = new WeakMap<Page, string[]>();
+const expectedCancellation = new WeakSet<Page>();
 const assertAccessible = async (page: Page) => {
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations.filter((violation) => violation.impact === "serious" || violation.impact === "critical")).toEqual([]);
@@ -15,25 +18,46 @@ const waitForMockWorker = async (page: Page) => page.evaluate(async () => {
   await Promise.race([navigator.serviceWorker.ready, new Promise<void>((resolve) => window.setTimeout(resolve, 2_000))]);
 });
 
-const prepare = async (page: Page, scenario: string) => {
+const prepare = async (page: Page, scenario: string, options: { setup?: boolean } = {}) => {
   // Establish this origin without booting the app so its early workspace save
   // cannot repopulate IndexedDB while the test fixture is being reset.
   await page.route("**/favicon.ico", (route) => route.fulfill({ status: 204 }));
   await page.goto("/robots.txt");
-  await page.evaluate(async (scenarioName) => {
+  await page.evaluate(async ({ scenarioName, setup }) => {
     localStorage.clear();
     sessionStorage.clear();
     sessionStorage.setItem("devneya-mock-scenario", scenarioName);
+    if (setup) localStorage.setItem("devneya-playground-connection", JSON.stringify({ provider: null }));
     await new Promise<void>((resolve) => {
       const request = indexedDB.deleteDatabase("devneya-playground");
       request.onsuccess = () => resolve();
       request.onerror = () => resolve();
     });
-  }, scenario);
+  }, { scenarioName: scenario, setup: options.setup ?? false });
   await page.goto("/");
   await waitForMockWorker(page);
-  await expect(page.getByLabel("Email")).toBeVisible({ timeout: 15_000 });
+  if (options.setup) await expect(page.getByRole("heading", { name: "Choose your connection." })).toBeVisible({ timeout: 15_000 });
+  else await expect(page.getByLabel("Email")).toBeVisible({ timeout: 15_000 });
 };
+
+const connectOpenAI = async (page: Page, apiKey = OPENAI_TEST_KEY) => {
+  await page.getByRole("button", { name: "Use OpenAI API key", exact: true }).click();
+  await page.getByLabel("OpenAI API key").fill(apiKey);
+  await page.getByRole("button", { name: "Connect to OpenAI" }).click();
+  await expect(page.locator(".canvas-shell")).toBeVisible();
+  await expect(page.locator(".catalog-dot.live")).toBeVisible({ timeout: 15_000 });
+};
+
+const changeConnection = async (page: Page) => {
+  await page.getByRole("button", { name: "Connection" }).click();
+  await page.getByRole("button", { name: "Change connection" }).click();
+  await expect(page.getByRole("heading", { name: "Choose your connection." })).toBeVisible();
+};
+
+const storedConnection = async (page: Page) => page.evaluate(() => {
+  const raw = localStorage.getItem("devneya-playground-connection");
+  return raw ? JSON.parse(raw) as { provider?: string | null; apiKey?: string } : null;
+});
 
 const signIn = async (page: Page, email = "user-a@example.test") => {
   await expect(page.getByLabel("Email")).toBeVisible({ timeout: 15_000 });
@@ -102,6 +126,7 @@ test.beforeEach(async ({ page }) => {
   });
   page.on("requestfailed", (request) => {
     const url = new URL(request.url());
+    if (expectedCancellation.has(page) && request.method() === "POST" && url.pathname.endsWith("/chat/completions") && request.failure()?.errorText === "net::ERR_ABORTED") return;
     failures.push(`${request.method()} ${url.origin}${url.pathname}: ${request.failure()?.errorText ?? "request failed"}`);
   });
 });
@@ -123,6 +148,229 @@ test.afterEach(async ({ page }, testInfo) => {
 });
 
 test.describe("mocked workspace flows", () => {
+  test("offers the two hosted choices, runs a contextual OpenAI conversation, and reloads it", async ({ page }) => {
+    const requested: string[] = [];
+    page.on("request", (request) => requested.push(request.url()));
+    await prepare(page, "default", { setup: true });
+    await expect(page.locator(".connection-options button")).toHaveCount(2);
+    await expect(page.getByRole("button", { name: "Use OpenAI API key", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Continue with Devneya", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Codex/i })).toHaveCount(0);
+
+    const catalogRequestPromise = page.waitForRequest((request) => request.url() === "https://api.openai.com/v1/models");
+    await connectOpenAI(page);
+    const catalogRequest = await catalogRequestPromise;
+    expect(await catalogRequest.headerValue("authorization")).toBe(`Bearer ${OPENAI_TEST_KEY}`);
+    await expect(generation(page).first().getByRole("button", { name: "Prompt 1 model picker" })).toHaveText("Select model");
+    const openPicker = generation(page).first().getByRole("button", { name: "Prompt 1 model picker" });
+    await openPicker.click();
+    await expect(page.getByRole("radio", { name: "Prompt 1 model gpt-mock-chat" })).toBeVisible();
+    await expect(page.getByRole("radio", { name: "Prompt 1 model text-embedding-mock" })).toBeVisible();
+    await expect(page.getByRole("radio", { checked: true })).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    expect(requested.filter((url) => url === "https://api.openai.com/v1/models")).toHaveLength(1);
+    expect(requested.filter((url) => url === "https://api.openai.com/v1/chat/completions")).toHaveLength(0);
+    expect(requested.filter((url) => url.includes("api.devneya.com") || url.includes("supabase.co"))).toHaveLength(0);
+    expect(await storedConnection(page)).toEqual({ provider: "openai", apiKey: OPENAI_TEST_KEY });
+
+    await selectModel(page, OPENAI_TEST_CHAT_MODEL);
+    const firstInstruction = "Summarize the launch plan in one sentence.";
+    await generation(page).first().getByLabel("Prompt 1 instruction").fill(firstInstruction);
+    const firstRequestPromise = page.waitForRequest((request) => request.url() === "https://api.openai.com/v1/chat/completions");
+    await generation(page).first().getByRole("button", { name: "Send prompt" }).click();
+    const firstRequest = await firstRequestPromise;
+    const firstBody = firstRequest.postDataJSON() as { model: string; messages: Array<{ role: string; content: string }> };
+    expect(firstBody.model).toBe(OPENAI_TEST_CHAT_MODEL);
+    expect(firstBody.messages).toEqual([{ role: "user", content: firstInstruction }]);
+    await expect(page.locator(".generated-content").filter({ hasText: "OpenAI mock result" })).toHaveCount(1, { timeout: 15_000 });
+    const firstResult = await page.locator(".generated-content").first().innerText();
+    await expect(generation(page)).toHaveCount(2);
+
+    await selectModel(page, OPENAI_TEST_CHAT_MODEL, "Prompt 2");
+    const secondInstruction = "Now list the first follow-up action.";
+    await generation(page).nth(1).getByLabel("Prompt 2 instruction").fill(secondInstruction);
+    const secondRequestPromise = page.waitForRequest((request) => request.url() === "https://api.openai.com/v1/chat/completions");
+    await generation(page).nth(1).getByRole("button", { name: "Send prompt" }).click();
+    const secondRequest = await secondRequestPromise;
+    const secondBody = secondRequest.postDataJSON() as { model: string; messages: Array<{ role: string; content: string }> };
+    expect(secondBody.model).toBe(OPENAI_TEST_CHAT_MODEL);
+    expect(secondBody.messages).toContainEqual({ role: "user", content: firstInstruction });
+    expect(secondBody.messages).toContainEqual({ role: "assistant", content: firstResult });
+    expect(secondBody.messages).toContainEqual({ role: "user", content: secondInstruction });
+    await expect(page.locator(".generated-node")).toHaveCount(2, { timeout: 15_000 });
+    await expect(page.locator(".generated-content").filter({ hasText: "OpenAI mock result" })).toHaveCount(2, { timeout: 15_000 });
+    await waitForSave(page);
+    await waitForStoredText(page, firstInstruction);
+    await waitForStoredText(page, secondInstruction);
+    type PersistedRecord = {
+      document: {
+        flows: Array<{
+          batches: Array<{
+            executions: Array<{ usage?: Record<string, unknown> }>;
+          }>;
+        }>;
+      };
+    };
+    const persisted = JSON.parse(await storedWorkspaceJson(page)) as PersistedRecord[];
+    const executions = persisted.flatMap((record) => record.document.flows.flatMap((flow) => flow.batches.flatMap((batch) => batch.executions)));
+    expect(executions).toHaveLength(2);
+    for (const execution of executions) expect(execution.usage).toEqual(expect.objectContaining({
+      promptTokens: expect.any(Number),
+      completionTokens: expect.any(Number),
+      totalTokens: expect.any(Number),
+    }));
+
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(page.locator(".canvas-shell")).toBeVisible();
+    await expect(page.locator(".catalog-dot.live")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByLabel("Prompt 1 instruction")).toHaveValue(firstInstruction);
+    await expect(page.getByLabel("Prompt 2 instruction")).toHaveValue(secondInstruction);
+    await expect(page.locator(".generated-node")).toHaveCount(2);
+    await expect(page.locator(".generated-content").filter({ hasText: "OpenAI mock result" })).toHaveCount(2);
+    await expect(generation(page).first().getByRole("button", { name: "Prompt 1 model picker" })).toContainText(OPENAI_TEST_CHAT_MODEL);
+    await expect(generation(page).nth(1).getByRole("button", { name: "Prompt 2 model picker" })).toContainText(OPENAI_TEST_CHAT_MODEL);
+  });
+
+  test("keeps one workspace through OpenAI, Devneya, OpenAI, and reloads", async ({ page }) => {
+    await prepare(page, "default", { setup: true });
+    await connectOpenAI(page);
+    await selectModel(page, OPENAI_TEST_CHAT_MODEL);
+    const text = "SHARED_PROVIDER_WORKSPACE";
+    await page.getByLabel("Prompt 1 instruction").fill(text);
+    await waitForStoredText(page, text);
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(page.locator(".canvas-shell")).toBeVisible();
+    await expect(page.getByLabel("Prompt 1 instruction")).toHaveValue(text, { timeout: 15_000 });
+    await expect(generation(page).first().getByRole("button", { name: "Prompt 1 model picker" })).toContainText(OPENAI_TEST_CHAT_MODEL);
+
+    await changeConnection(page);
+    await page.getByRole("button", { name: "Continue with Devneya", exact: true }).click();
+    await signIn(page);
+    await expect(page.getByLabel("Prompt 1 instruction")).toHaveValue(text);
+    expect(await storedConnection(page)).toEqual({ provider: "devneya" });
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(page.locator(".canvas-shell")).toBeVisible();
+    await expect(page.getByLabel("Prompt 1 instruction")).toHaveValue(text, { timeout: 15_000 });
+
+    await changeConnection(page);
+    await connectOpenAI(page);
+    await expect(page.getByLabel("Prompt 1 instruction")).toHaveValue(text);
+    await expect(generation(page).first().getByRole("button", { name: "Prompt 1 model picker" })).toContainText(OPENAI_TEST_CHAT_MODEL);
+    expect(await storedConnection(page)).toEqual({ provider: "openai", apiKey: OPENAI_TEST_KEY });
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(page.locator(".canvas-shell")).toBeVisible();
+    await expect(page.locator(".catalog-dot.live")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByLabel("Prompt 1 instruction")).toHaveValue(text, { timeout: 15_000 });
+  });
+
+  test("keeps the original OpenAI key after a failed replacement and Back", async ({ page }) => {
+    await prepare(page, "default", { setup: true });
+    await connectOpenAI(page);
+    await changeConnection(page);
+    await page.getByRole("button", { name: "Use OpenAI API key", exact: true }).click();
+    await page.getByLabel("OpenAI API key").fill("sk-rejected-openai-key");
+    await page.getByRole("button", { name: "Connect to OpenAI" }).click();
+    await expect(page.getByRole("alert")).toHaveText("OpenAI rejected the API key.");
+    expect(await storedConnection(page)).toEqual({ provider: "openai", apiKey: OPENAI_TEST_KEY });
+    await page.getByRole("button", { name: "Back to OpenAI" }).click();
+    await expect(page.locator(".canvas-shell")).toBeVisible();
+    await expect(page.locator(".catalog-dot.live")).toBeVisible();
+    expect(await storedConnection(page)).toEqual({ provider: "openai", apiKey: OPENAI_TEST_KEY });
+  });
+
+  test("disconnecting OpenAI keeps the workspace and removes the key", async ({ page }) => {
+    await prepare(page, "default", { setup: true });
+    await connectOpenAI(page);
+    const text = "RETAINED_AFTER_OPENAI_DISCONNECT";
+    await page.getByLabel("Prompt 1 instruction").fill(text);
+    await waitForStoredText(page, text);
+    await page.getByRole("button", { name: "Connection" }).click();
+    await page.getByRole("button", { name: "Disconnect" }).click();
+    await expect(page.getByRole("heading", { name: "Choose your connection." })).toBeVisible();
+    expect(await storedConnection(page)).toEqual({ provider: null });
+    expect(JSON.stringify(await storedConnection(page))).not.toContain(OPENAI_TEST_KEY);
+    expect(await storedWorkspaceJson(page)).toContain(text);
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(page.getByRole("heading", { name: "Choose your connection." })).toBeVisible();
+    expect(await storedWorkspaceJson(page)).toContain(text);
+  });
+
+  test("disconnecting Devneya keeps the workspace and removes its virtual key", async ({ page }) => {
+    await prepare(page, "default", { setup: true });
+    await page.getByRole("button", { name: "Continue with Devneya", exact: true }).click();
+    await signIn(page);
+    const text = "RETAINED_AFTER_DEVNEYA_DISCONNECT";
+    await page.getByLabel("Prompt 1 instruction").fill(text);
+    await waitForStoredText(page, text);
+    await page.getByRole("button", { name: "Connection" }).click();
+    await page.getByRole("button", { name: "Disconnect" }).click();
+    await expect(page.getByRole("heading", { name: "Choose your connection." })).toBeVisible();
+    expect(await storedConnection(page)).toEqual({ provider: null });
+    const storage = await page.evaluate(() => Array.from({ length: localStorage.length }, (_, index) => localStorage.getItem(localStorage.key(index) ?? "")).join("\n"));
+    expect(storage).not.toContain("sk-bf-");
+    expect(await storedWorkspaceJson(page)).toContain(text);
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(page.getByRole("heading", { name: "Choose your connection." })).toBeVisible();
+    expect(await storedWorkspaceJson(page)).toContain(text);
+  });
+
+  test("exports an OpenAI workspace without connection credentials", async ({ page }) => {
+    await prepare(page, "default", { setup: true });
+    await connectOpenAI(page);
+    await page.getByLabel("Prompt 1 instruction").fill("OPENAI_EXPORT_TEXT");
+    await waitForSave(page);
+    const downloadPromise = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Export options", exact: true }).click();
+    await page.getByRole("button", { name: "Export workspace" }).click();
+    const download = await downloadPromise;
+    const stream = await download.createReadStream();
+    let exported = "";
+    if (stream) for await (const chunk of stream) exported += chunk.toString();
+    expect(exported).toContain("OPENAI_EXPORT_TEXT");
+    expect(exported).not.toContain(OPENAI_TEST_KEY);
+    expect(exported).not.toContain("sk-bf-");
+    expect(exported).not.toContain("mock-jwt-");
+  });
+
+  test("cancels a delayed OpenAI run before switching to Devneya", async ({ page }) => {
+    await prepare(page, "slow", { setup: true });
+    await connectOpenAI(page);
+    await selectModel(page, OPENAI_TEST_CHAT_MODEL);
+    await page.getByLabel("Prompt 1 instruction").fill("Wait for this delayed mock response.");
+    await generation(page).first().getByRole("button", { name: "Send prompt" }).click();
+    await expect(page.getByLabel("Generation in progress").getByRole("button", { name: "Cancel run" })).toBeVisible({ timeout: 15_000 });
+    expectedCancellation.add(page);
+    await changeConnection(page);
+    await expect.poll(async () => (await storedWorkspaceJson(page)).includes('"status":"cancelled"')).toBe(true);
+    await page.getByRole("button", { name: "Continue with Devneya", exact: true }).click();
+    await signIn(page);
+    await expect(page.locator(".generated-node")).toContainText("Cancelled: The run was cancelled.");
+    await expect.poll(async () => (await storedWorkspaceJson(page)).includes('"status":"cancelled"')).toBe(true);
+    await page.waitForTimeout(4_500);
+    await expect(page.locator(".generated-node")).toContainText("Cancelled: The run was cancelled.");
+    await expect(page.locator(".generated-content").filter({ hasText: "OpenAI mock result" })).toHaveCount(0);
+    await expect.poll(async () => (await storedWorkspaceJson(page)).includes('"status":"cancelled"')).toBe(true);
+  });
+
+  test("cancels a delayed Devneya run before switching to OpenAI", async ({ page }) => {
+    await prepare(page, "slow", { setup: true });
+    await page.getByRole("button", { name: "Continue with Devneya", exact: true }).click();
+    await signIn(page);
+    await generation(page).first().getByLabel("Prompt 1 instruction").fill("Wait for this delayed mock response.");
+    await generation(page).first().getByRole("button", { name: "Send prompt" }).click();
+    await expect(page.getByLabel("Generation in progress").getByRole("button", { name: "Cancel run" })).toBeVisible({ timeout: 15_000 });
+    expectedCancellation.add(page);
+    await changeConnection(page);
+    await expect.poll(async () => (await storedWorkspaceJson(page)).includes('"status":"cancelled"')).toBe(true);
+    await connectOpenAI(page);
+    await expect(page.locator(".generated-node")).toContainText("Cancelled: The run was cancelled.");
+    await expect.poll(async () => (await storedWorkspaceJson(page)).includes('"status":"cancelled"')).toBe(true);
+    await page.waitForTimeout(4_500);
+    await expect(page.locator(".generated-node")).toContainText("Cancelled: The run was cancelled.");
+    await expect(page.locator(".generated-content").filter({ hasText: "Mock result" })).toHaveCount(0);
+    await expect.poll(async () => (await storedWorkspaceJson(page)).includes('"status":"cancelled"')).toBe(true);
+  });
+
   test("links Profile and Dashboard from the connection menu to the Devneya app", async ({ page }) => {
     await prepare(page, "default");
     await signIn(page);

@@ -3,8 +3,9 @@ import { writeFileSync, renameSync } from "node:fs";
 import { resolve, join } from "node:path";
 import {
   PRODUCTION_URL, MODEL, MODELS_URL, COMPLETIONS_URL, LiveTestFailure,
-  assertLocalEnvironment, expectedRelease, resolveLocalPlatformKey, safeFailure,
+  assertLocalEnvironment, resolveLocalPlatformKey, safeFailure,
   inspectRequest, containsSecret, createReleaseAllowance, requireSuccessfulStatus, installRedirectGuard,
+  parseLiveArguments, checkProductionCors, assertCorsResult, prepareLiveRun,
 } from "../src/api/openai-live.node.mjs";
 
 const INVALID_KEY = "invalid-openai-key-for-release-test";
@@ -54,19 +55,27 @@ async function openAllowance() {
 
 async function main() {
   assertLocalEnvironment(process.env);
-  const args = process.argv.slice(2);
-  if (args.length > 1 || (args.length === 1 && args[0] !== "--preflight")) throw new LiveTestFailure("arguments");
-  const { key } = await resolveLocalPlatformKey();
-  if (args[0] === "--preflight") {
+  const mode = parseLiveArguments(process.argv.slice(2));
+  if (mode === "cors") {
+    const directory = resolve("release-evidence", "openai-cors", new Date().toISOString().replace(/[:.]/g, "-"));
+    const cors = await recordCors(directory);
+    assertCorsResult(cors);
+    console.log("Genuine browser CORS passed: observed upstream OPTIONS and readable synthetic 401 responses for models and chat/completions; context and browser closed. No Platform credential was read or paid request sent.");
+    return;
+  }
+  if (mode === "preflight") {
+    await resolveLocalPlatformKey();
     console.log("Local OpenAI Platform key is available; no browser or API request was made.");
     return;
   }
-  const sha = expectedRelease(process.env);
-  await verifyRelease(sha); // No credentials sent; TLS validation stays enabled.
-  const budget = await openAllowance();
-  const { allowance } = budget;
   const startedAt = new Date().toISOString();
-  const evidenceDir = resolve("release-evidence", sha, startedAt.replace(/[:.]/g, "-"), "openai-live");
+  const evidenceFor = (sha) => resolve("release-evidence", sha, startedAt.replace(/[:.]/g, "-"), "openai-live");
+  const { credential: { key }, sha, cors, budget } = await prepareLiveRun({
+    env: process.env, selectCredential: resolveLocalPlatformKey, verifyRelease,
+    checkCors: (sha) => recordCors(evidenceFor(sha)), openAllowance,
+  });
+  const { allowance } = budget;
+  const evidenceDir = evidenceFor(sha);
   let browser, context, page;
   let catalogKey = null, expectedMessages = null, failure = null, rejectStop, cleaning = false;
   let completionSuccesses = 0, catalogRequests = 0;
@@ -192,7 +201,7 @@ async function main() {
       await page.keyboard.press("Escape");
     };
     const connect = async (candidate) => {
-      await page.getByRole("button", { name: "Provide OpenAI/ChatGPT key", exact: true }).click();
+      await page.getByRole("button", { name: "Use OpenAI API key", exact: true }).click();
       await page.getByLabel("OpenAI API key", { exact: true }).fill(candidate);
       catalogKey = candidate;
       await page.getByRole("button", { name: "Connect to OpenAI", exact: true }).click();
@@ -226,8 +235,8 @@ async function main() {
     };
     await scenario("fresh production load", async () => {
       await page.goto(`${PRODUCTION_URL}/`, { waitUntil: "networkidle" });
-      await expect(page.getByRole("button", { name: "Provide OpenAI/ChatGPT key", exact: true })).toBeVisible();
-      await expect(page.getByRole("button", { name: "Start immediately with Devneya", exact: true })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Use OpenAI API key", exact: true })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Continue with Devneya", exact: true })).toBeVisible();
       if (catalogRequests || allowance.runForwarded) throw new LiveTestFailure("application");
     });
     await scenario("invalid key rejection", async () => {
@@ -311,7 +320,7 @@ async function main() {
     await scenario("disconnect and reconnect", async () => {
       await openConnection();
       await page.getByRole("button", { name: "Disconnect", exact: true }).click();
-      await expect(page.getByRole("button", { name: "Provide OpenAI/ChatGPT key", exact: true })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Use OpenAI API key", exact: true })).toBeVisible();
       const removed = await page.evaluate(() => {
         const saved = JSON.parse(localStorage.getItem("devneya-playground-connection") ?? "null");
         return !saved || (saved.provider === null && !saved.apiKey);
@@ -361,7 +370,7 @@ async function main() {
     if (browser && (!cleanup.storageCleared || !cleanup.browserClosed)) summaryFailure ??= safeFailure(new LiveTestFailure("cleanup"));
     await budget.close();
     const summary = {
-      productionUrl: PRODUCTION_URL, commit: sha, model: MODEL, startedAt, finishedAt: new Date().toISOString(),
+      productionUrl: PRODUCTION_URL, commit: sha, model: MODEL, startedAt, finishedAt: new Date().toISOString(), cors,
       result: summaryFailure ? "failed" : "passed", failure: summaryFailure ?? null, scenarios,
       forwardedCompletionRequests: allowance.runForwarded, successfulCompletionResponses: completionSuccesses, catalogRequests,
       releaseAllowance: { ...allowance.state, maxForwarded: 4, maxRuns: 2, maxEstimatedUsd: 0.10 },
@@ -382,6 +391,14 @@ async function main() {
   }
   if (summaryFailure) throw new LiveTestFailure(summaryFailure.category);
   console.log(`OpenAI verification passed: ${PRODUCTION_URL}, ${sha}, two successful ${MODEL} completions; isolated context cleared and closed.`);
+}
+
+async function recordCors(directory) {
+  const cors = await checkProductionCors();
+  await mkdir(directory, { recursive: true });
+  await writeFile(join(directory, "cors.json"), `${JSON.stringify(cors, null, 2)}\n`, { mode: 0o600 });
+  console.log(`Sanitized CORS evidence: ${directory}`);
+  return cors;
 }
 
 try { await main(); }

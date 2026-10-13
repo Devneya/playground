@@ -6,6 +6,8 @@ import {
   MISSING_KEY_MESSAGE, REQUEST_RESERVE_USD, assertLocalEnvironment, containsSecret,
   expectedRelease, inspectRequest, resolveLocalPlatformKey, safeFailure,
   createReleaseAllowance, requireSuccessfulStatus,
+  parseLiveArguments, createCorsCollector, assertCorsResult, collectBrowserCors, prepareLiveRun,
+  type CorsResult,
   installRedirectGuard,
 } from "../../src/api/openai-live.node.mjs";
 
@@ -13,6 +15,17 @@ const key = "synthetic-platform-key";
 const messages = [{ role: "user", content: "synthetic prompt" }];
 const request = () => ({ url: COMPLETIONS_URL, method: "POST", headers: { authorization: `Bearer ${key}`, "content-type": "application/json" }, body: JSON.stringify({ model: MODEL, stream: false, messages }), key, expectedMessages: messages });
 const notFound = async (): Promise<string> => { throw Object.assign(new Error("synthetic file missing"), { code: "ENOENT" }); };
+
+const validCorsResult = (): CorsResult => ({
+  navigationStatus: 200,
+  originMatched: true,
+  endpoints: [
+    { endpoint: "models", method: "GET", preflight: { observed: true, status: 204, requestedMethod: "GET", requestedHeaders: ["authorization"], matches: true }, response: { status: 401, readable: true }, failure: null },
+    { endpoint: "chat/completions", method: "POST", preflight: { observed: true, status: 204, requestedMethod: "POST", requestedHeaders: ["authorization", "content-type"], matches: true }, response: { status: 401, readable: true }, failure: null },
+  ],
+  cleanup: { contextClosed: true, browserClosed: true },
+  failure: null,
+});
 
 describe("Node-only local Platform credential selection", () => {
   it("prefers only the top-level key in the active Codex file over the environment", async () => {
@@ -98,6 +111,208 @@ describe("local production network safeguards", () => {
     const oversized = [{ role: "user", content: "é".repeat(2200) }];
     expect(() => inspectRequest({ ...request(), expectedMessages: oversized, body: JSON.stringify({ model: MODEL, stream: false, messages: oversized }) })).toThrow("unexpected inference");
     expect(() => inspectRequest({ ...request(), expectedMessages: null })).toThrow("unexpected inference");
+  });
+});
+
+describe("browser CORS evidence and live-run gate", () => {
+  it("accepts only the three supported command-line modes", () => {
+    expect(parseLiveArguments([])).toBe("live");
+    expect(parseLiveArguments(["--preflight"])).toBe("preflight");
+    expect(parseLiveArguments(["--check-cors"])).toBe("cors");
+    for (const args of [["--preflight", "--check-cors"], ["--preflight", "--other"], ["--unknown"], ["live"]]) {
+      expect(() => parseLiveArguments(args)).toThrow("Use no option");
+    }
+  });
+
+  it("validates both endpoint labels, their exact preflight headers, and readable 401 responses", () => {
+    expect(() => assertCorsResult(validCorsResult())).not.toThrow();
+
+    const missingEndpoint = validCorsResult();
+    missingEndpoint.endpoints.pop();
+    expect(() => assertCorsResult(missingEndpoint)).toThrow("evidence is missing");
+
+    const mislabeled = validCorsResult();
+    mislabeled.endpoints[0]!.endpoint = "chat/completions";
+    expect(() => assertCorsResult(mislabeled)).toThrow("evidence is missing");
+
+    const extraHeader = validCorsResult();
+    extraHeader.endpoints[1]!.preflight.requestedHeaders.push("x-unexpected");
+    expect(() => assertCorsResult(extraHeader)).toThrow("evidence is missing");
+
+    const unreadable = validCorsResult();
+    unreadable.endpoints[0]!.response = { readable: false, status: null };
+    expect(() => assertCorsResult(unreadable)).toThrow("not browser-readable");
+
+    const redirect = validCorsResult();
+    redirect.endpoints[0]!.failure = "cors_redirect";
+    expect(() => assertCorsResult(redirect)).toThrow("redirect");
+
+    const timeout = validCorsResult();
+    timeout.endpoints[0]!.failure = "cors_timeout";
+    expect(() => assertCorsResult(timeout)).toThrow("timed out");
+
+    const cleanup = validCorsResult();
+    cleanup.cleanup.contextClosed = false;
+    expect(() => assertCorsResult(cleanup)).toThrow("cleanup");
+  });
+
+  it("records real CDP event shapes while returning sanitized preflight evidence", () => {
+    const collector = createCorsCollector();
+    const secret = "synthetic-untrusted-header-value";
+    const targetEvents = [
+      { id: "models-options", url: MODELS_URL, method: "OPTIONS", requestedMethod: "GET", requestedHeaders: "authorization" },
+      { id: "models-get", url: MODELS_URL, method: "GET" },
+      { id: "completions-options", url: COMPLETIONS_URL, method: "OPTIONS", requestedMethod: "POST", requestedHeaders: "content-type, authorization" },
+      { id: "completions-post", url: COMPLETIONS_URL, method: "POST" },
+    ];
+    for (const event of targetEvents) {
+      collector.observe("Network.requestWillBeSent", {
+        requestId: event.id,
+        request: {
+          url: event.url,
+          method: event.method,
+          headers: event.method === "OPTIONS" ? {
+            "access-control-request-method": event.requestedMethod,
+            "access-control-request-headers": event.requestedHeaders,
+          } : {},
+        },
+      });
+      if (event.method === "OPTIONS") {
+        collector.observe("Network.responseReceived", { requestId: event.id, response: { status: 204 } });
+      } else {
+        collector.observe("Network.responseReceived", { requestId: event.id, response: { status: 401 } });
+        collector.readable(event.url === MODELS_URL ? "models" : "chat/completions", { readable: true, status: 401 });
+      }
+    }
+    // An unrecognized requested header must make evidence fail, without being echoed into results.
+    collector.observe("Network.requestWillBeSentExtraInfo", {
+      requestId: "models-options",
+      headers: { "access-control-request-method": "GET", "access-control-request-headers": `authorization, x-private-${secret}` },
+    });
+    const evidence = collector.finish();
+    expect(evidence[0]?.preflight.matches).toBe(false);
+    expect(evidence[0]?.preflight.requestedHeaders).toEqual(["authorization"]);
+    expect(JSON.stringify(evidence)).not.toContain(secret);
+    expect(() => assertCorsResult({ ...validCorsResult(), endpoints: evidence })).toThrow("evidence is missing");
+  });
+
+  it("joins out-of-order CDP ExtraInfo headers and statuses to their requests", () => {
+    const collector = createCorsCollector();
+    const exchanges = [
+      { endpoint: "models", url: MODELS_URL, method: "GET", requestedHeaders: "authorization" },
+      { endpoint: "chat/completions", url: COMPLETIONS_URL, method: "POST", requestedHeaders: "content-type, authorization" },
+    ] as const;
+    for (const [index, exchange] of exchanges.entries()) {
+      const optionsId = `options-${index}`;
+      const actualId = `actual-${index}`;
+      collector.observe("Network.requestWillBeSentExtraInfo", {
+        requestId: optionsId,
+        headers: {
+          "access-control-request-method": exchange.method,
+          "access-control-request-headers": exchange.requestedHeaders,
+        },
+      });
+      collector.observe("Network.responseReceivedExtraInfo", { requestId: optionsId, statusCode: 204 });
+      collector.observe("Network.requestWillBeSent", { requestId: optionsId, request: { url: exchange.url, method: "OPTIONS", headers: {} } });
+
+      collector.observe("Network.responseReceivedExtraInfo", { requestId: actualId, statusCode: 401 });
+      collector.observe("Network.requestWillBeSent", { requestId: actualId, request: { url: exchange.url, method: exchange.method, headers: {} } });
+      collector.readable(exchange.endpoint, { readable: true, status: 401 });
+    }
+    const result = { ...validCorsResult(), endpoints: collector.finish() };
+    expect(result.endpoints.map(({ preflight, response }) => [preflight.status, response.status])).toEqual([[204, 401], [204, 401]]);
+    expect(() => assertCorsResult(result)).not.toThrow();
+  });
+
+  it("runs credential, release, CORS, and allowance checks in order", async () => {
+    const order: string[] = [];
+    const result = await prepareLiveRun({
+      env: { PLAYGROUND_RELEASE_SHA: "b".repeat(40) },
+      selectCredential: async () => { order.push("credential"); return { key, source: "synthetic" }; },
+      verifyRelease: async (sha) => { order.push(`release:${sha}`); },
+      checkCors: async (sha) => { order.push(`cors:${sha}`); return validCorsResult(); },
+      openAllowance: async () => { order.push("allowance"); return "open"; },
+    });
+    expect(order).toEqual(["credential", `release:${"b".repeat(40)}`, `cors:${"b".repeat(40)}`, "allowance"]);
+    expect(result.budget).toBe("open");
+  });
+
+  it("does not open the allowance when any local precheck fails", async () => {
+    const stages = ["credential", "release", "cors"] as const;
+    for (const failingStage of stages) {
+      const order: string[] = [];
+      const openAllowance = vi.fn(async () => "open");
+      await expect(prepareLiveRun({
+        env: { PLAYGROUND_RELEASE_SHA: "c".repeat(40) },
+        selectCredential: async () => {
+          order.push("credential");
+          if (failingStage === "credential") throw new Error("synthetic credential failure");
+          return { key, source: "synthetic" };
+        },
+        verifyRelease: async () => {
+          order.push("release");
+          if (failingStage === "release") throw new Error("synthetic release failure");
+        },
+        checkCors: async () => {
+          order.push("cors");
+          if (failingStage === "cors") return { ...validCorsResult(), failure: "cors_preflight" };
+          return validCorsResult();
+        },
+        openAllowance,
+      })).rejects.toThrow();
+      expect(order).toEqual(failingStage === "credential" ? ["credential"] : failingStage === "release" ? ["credential", "release"] : ["credential", "release", "cors"]);
+      expect(openAllowance).not.toHaveBeenCalled();
+    }
+
+    for (const env of [{ CI: "true" }, { DEBUG: "pw:*" }, { PWDEBUG: "1" }]) {
+      const selectCredential = vi.fn(async () => ({ key, source: "synthetic" }));
+      const openAllowance = vi.fn(async () => "open");
+      await expect(prepareLiveRun({
+        env: { ...env, PLAYGROUND_RELEASE_SHA: "d".repeat(40) },
+        selectCredential,
+        verifyRelease: async () => {},
+        checkCors: async () => validCorsResult(),
+        openAllowance,
+      })).rejects.toBeInstanceOf(LiveTestFailure);
+      expect(selectCredential).not.toHaveBeenCalled();
+      expect(openAllowance).not.toHaveBeenCalled();
+    }
+  });
+
+  it("reports cleanup failure even when the injected context closes before throwing", async () => {
+    const calls: string[] = [];
+    let launchEnv: NodeJS.ProcessEnv | undefined;
+    const session = { on: vi.fn(), send: vi.fn(async () => {}) };
+    const context = {
+      newPage: async () => ({
+        goto: async () => ({ status: () => 200 }),
+        url: () => "https://local.example.test/",
+        evaluate: async () => ({ readable: true, status: 401, timedOut: false }),
+      }),
+      newCDPSession: async () => session,
+      close: async () => { calls.push("context-closed"); throw new Error("synthetic cleanup detail"); },
+    };
+    const browser = {
+      newContext: async () => context,
+      close: async () => { calls.push("browser-closed"); },
+    };
+    const fakeChromium = { launch: async ({ env: browserEnv }: { env: NodeJS.ProcessEnv }) => { launchEnv = browserEnv; return browser; } };
+    const result = await collectBrowserCors({
+      chromium: fakeChromium as never,
+      origin: "https://local.example.test",
+      navigationUrl: "https://local.example.test/",
+      targets: [
+        { endpoint: "models", url: MODELS_URL, method: "GET" },
+        { endpoint: "chat/completions", url: COMPLETIONS_URL, method: "POST" },
+      ],
+      env: { OPENAI_API_KEY: key, SYNTHETIC_SETTING: "preserved" },
+    });
+    expect(launchEnv?.OPENAI_API_KEY).toBeUndefined();
+    expect(launchEnv?.SYNTHETIC_SETTING).toBe("preserved");
+    expect(calls).toEqual(["context-closed", "browser-closed"]);
+    expect(result.cleanup).toEqual({ contextClosed: false, browserClosed: true });
+    expect(result.failure).toBe("cleanup");
+    expect(JSON.stringify(result)).not.toContain("synthetic cleanup detail");
   });
 });
 

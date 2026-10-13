@@ -16,7 +16,9 @@ label. Branching and connections preserve the captured conversation history.
 
 ## Canvas interactions
 
-- A prompt uses one model. Models come from the live `/llm/v1/models` catalog.
+- A prompt uses one model. Models come from the active provider’s live `/llm/v1/models` or OpenAI
+  `/v1/models` catalog. Catalog presence does not guarantee Chat Completions
+  compatibility; model selection stays manual.
   The picker opens near the upper-left of its box, focuses its search field,
   and offers compact effort choices directly. Multi-model-per-prompt behavior
   is not the product default; any later multi-model work needs a separate
@@ -40,7 +42,9 @@ credentials out of browser code. It requests the priority service tier and
 defaults to xhigh effort when the selected model supports it; effort is
 selectable per prompt. SVG drawings are passive inline vectors.
 
-The hosted setup offers two inference connections. OpenAI users enter an API
+The hosted setup offers exactly **Use OpenAI API key** and **Continue with
+Devneya**. Hosted Codex is deferred; local Codex support and historical
+authentication research are retained. OpenAI users enter an API
 key; setup validates it with the authenticated `/v1/models` catalog request and
 uses the selected model for Chat Completions. The key stays in this browser's
 `localStorage`, never in the workspace document or its export. ChatGPT
@@ -53,9 +57,11 @@ source, fixtures, `.env` files, or Git history.
 The Connection control is at the upper-right of the canvas. It offers Change
 connection and Disconnect. There is one active inference connection at a time.
 Switching connections keeps the same canvas and waits for active runs to settle
-as cancelled before the screen changes.
+as cancelled before the screen changes. Disconnect removes the active
+connection and its OpenAI key while retaining the workspace; Devneya Sign out
+remains a separate action.
 
-For future ChatGPT account linking and plan-funded inference, see the dated
+For historical ChatGPT account linking and plan-funded inference research, see the dated
 feasibility and implementation note in [HANDOFF.md](HANDOFF.md). That is a
 separate integration from the OpenAI API-key connection, local Codex sign-in,
 and Devneya authentication.
@@ -77,3 +83,11 @@ The retired generated-workspace experiments and their persistence shapes are
 kept for compatibility and history, but are not mounted in the current app and
 are not current acceptance criteria. Their fixtures can replay captured model
 output. They do not make multi-model prompts the current product direction.
+
+## Release validation — 2026-10-13
+
+The two-provider behavior passed 330 unit tests and all 69 Chromium browser
+checks, including provider persistence, cancellation before switching, and
+credential-free export. The genuine production CORS probe passed for both
+OpenAI endpoints with successful cleanup. Publishing and live inference remain
+blocked by missing release access/configuration; see [HANDOFF.md](HANDOFF.md).

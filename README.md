@@ -7,9 +7,10 @@ The clean-cutover flow playground for `playground.devneya.com`. It is a React + 
 The spatial-chat look is the product: cream prompts, grey answers, yellow notes, overlay Context, grouped single-select models, and compact flow chrome. See `PRODUCT_NOTES.md`.
 
 The current implementation and cross-machine resume notes are on
-`release/openai-provider-setup`; see [HANDOFF.md](HANDOFF.md) for the requested
-third Codex connection, actual browser feasibility results, and unresolved
-release prerequisites.
+`release/openai-provider-setup`; see [HANDOFF.md](HANDOFF.md) for the current
+two-provider release, historical browser authentication
+research, and release prerequisites. Hosted Codex is deferred; existing local
+Codex development support is retained.
 
 ### Local development
 
@@ -21,22 +22,19 @@ npm ci
 npm run dev
 ```
 
-Optional `.env.local` values for the Devneya connection:
+For the Devneya connection, supply the approved public `VITE_GOTRUE_ANON_KEY`
+through the process environment, with `VITE_API_BASE_URL=https://api.devneya.com`.
+Keep credentials out of `.env` files, source, fixtures, and Git history.
 
-```env
-VITE_API_BASE_URL=https://api.devneya.com
-VITE_GOTRUE_ANON_KEY=...
-```
+On first launch, choose **Use OpenAI API key** or **Continue with Devneya**. The OpenAI choice requests a standard OpenAI API key, saves it in this browser's `localStorage`, and calls the authenticated `GET https://api.openai.com/v1/models` endpoint to validate it and load the live catalog. It sends no inference request during setup. ChatGPT subscriptions do not pay for API usage. The model picker uses those returned model IDs; choose a model manually because the catalog also contains models that may not support Chat Completions.
 
-On first launch, choose **Provide OpenAI/ChatGPT key** or **Start immediately with Devneya**. The OpenAI choice requests a standard OpenAI API key, saves it in this browser's `localStorage`, and calls the authenticated `GET https://api.openai.com/v1/models` endpoint to validate it and load the live catalog. It sends no inference request during setup. ChatGPT subscriptions do not pay for API usage. The model picker uses those returned model IDs; choose a model manually because the catalog also contains models that may not support Chat Completions.
-
-The Devneya choice uses GoTrue sign-in, obtains a Bifrost virtual key from `/account/key` with the GoTrue JWT, and sends completions to `/llm/v1/chat/completions` with only the Bifrost key. A 403 on `/account/key` is an inactive or blocked account, not CORS (playground origin is already allowed). Activate the plan on `https://app.devneya.com/`. Its catalog comes from `GET /llm/v1/models`. The top-right Connection menu provides Change connection and Disconnect; it also links to the Devneya Profile and Dashboard when connected there.
+The Devneya choice uses GoTrue sign-in, obtains a Bifrost virtual key from `/account/key` with the GoTrue JWT, and sends completions to `/llm/v1/chat/completions` with only the Bifrost key. A 403 on `/account/key` is an inactive or blocked account, not CORS (playground origin is already allowed). Activate the plan on `https://app.devneya.com/`. Its catalog comes from `GET /llm/v1/models`. The top-right Connection menu provides Change connection and Disconnect; it also links to the Devneya Profile and Dashboard when connected there. Both actions retain the workspace and settle active runs as cancelled before changing screens. Disconnect removes the active connection, including the stored OpenAI key; Devneya Sign out is a separate action.
 
 ### Product boundaries
 
 - Nodes are Text and Generation only. Text may be manual or a read-only generated result.
 - Each Generation takes up to 8 Text inputs, graph cycles are rejected, and only successful results can be reused as inputs for threading.
-- A run snapshots its inputs and instruction, creates one result per selected model, runs models concurrently, and records failures without retrying or overwriting results.
+- Each prompt selects one model. A run snapshots its inputs and instruction and records failures without retrying or overwriting results. Older execution histories retain their original shape.
 - Named flows are persisted in one IndexedDB record (`devneya-playground`, `workspaces`, key `browser-workspace`) shared across providers and Devneya accounts in this browser. Existing older per-user records are left untouched.
 - Workspace export/import uses the versioned `devneya-flow-v3` (older versions still import) JSON format.
 - Supabase is used only for GoTrue auth; no Supabase database, storage, or realtime client is used.
@@ -49,12 +47,18 @@ npm run typecheck
 npm run lint
 npm test
 npm run test:coverage
-npm run build:validation
+npm audit --omit=dev
+npm audit
+VITE_API_BASE_URL=https://api.devneya.com VITE_GOTRUE_ANON_KEY=validation-public-anon-key npm run build:validation
 npm run verify:bundle
 npm run build:mock
 npm run verify:mock-artifact
 npm run verify:bundle
-npm run test:browser-integration
+npm run test:browser-integration -- --workers=1
+npm run build:prod
+npm run verify:artifact
+npm run verify:bundle
+git diff --check
 ```
 
 Vitest covers domain transitions, execution lifecycle invalidation, provider API boundaries, persistence fallback and save coalescing, setup, connection replacement, and auth UI states. Mock-backed Playwright browser integration covers model fan-out, partial failure, cancellation, the shared browser workspace, export/import, and error responses. Real-server functional E2E remains a separate, explicit local command described below.
@@ -67,13 +71,27 @@ Use `npm run test:browser-integration:evidence` for local mock-browser evidence,
 
 For a production deployment with Devneya sign-in enabled, provide the public GoTrue anonymous key, then run `npm run build:prod`, `npm run verify:artifact`, and `npm run verify:bundle`. A static build can also serve OpenAI connections without that key. The production bundle budget is 350 KB gzip JavaScript; the mock bundle has a separately reported 400 KB gzip allowance for its intentional MSW browser runtime.
 
+The 2026-10-13 implementation checks passed: 330 unit tests, all 69 Chromium
+browser checks, typecheck, lint, coverage, both audits (zero vulnerabilities),
+validation/mock builds, and artifact/bundle inspection. The genuine production
+CORS probe passed with upstream OPTIONS 200 and readable synthetic 401 for
+both OpenAI endpoints; context/browser cleanup succeeded. Production-mode
+compilation and inspection also pass without GoTrue configuration, but the
+configured two-provider release is blocked by missing GitHub access, Platform
+key, and approved public GoTrue configuration. No paid requests or deployment
+occurred. See [HANDOFF.md](HANDOFF.md) for exact evidence and resume gates.
+
 ### Deployment
 
 `.github/workflows/deploy.yml` validates every pull request and deploys only after validation on `main`. Deterministic checks, the mock artifact, browser integration, build, and Pages deployment stay in Actions; live provider checks run locally. The production build requires the GitHub Actions secret `VITE_SUPABASE_PUBLIC_KEY`, which the workflow maps to `VITE_GOTRUE_ANON_KEY`. If it is missing, the build stops before artifact upload. The uploaded `dist/` includes `release.json` with the full source commit SHA. `public/CNAME` keeps the custom domain `playground.devneya.com`. Full `npm audit` (including devDependencies) must be clean or Validate never reaches deploy.
 
-Before publishing, run the credential preflight. After deployment, run the local OpenAI release check against `https://playground.devneya.com` with the deployed full release commit SHA:
+Before publishing, require GitHub push/merge/Pages-settings access, the Actions
+secret named below, the approved public GoTrue production configuration,
+a successful credential preflight, and a successful synthetic CORS check.
+After deployment, run the local OpenAI release check against `https://playground.devneya.com` with the deployed full release commit SHA:
 
 ```bash
+node scripts/run-openai-live.mjs --check-cors
 node scripts/run-openai-live.mjs --preflight
 PLAYGROUND_RELEASE_SHA=<full-commit-sha> npm run test:e2e:openai:live
 ```
@@ -84,12 +102,29 @@ The live check makes exactly two non-streaming calls to `gpt-6-luna`. The UTF-8 
 
 The ignored `release-evidence/openai-provider-setup-budget.json` ledger and exclusive lock enforce the allowance across corrective deployment SHAs. Keep the ledger throughout this release. Forwarded requests that fail or time out still count. There is no tracing, HAR, video, storage-state export, or automatic screenshot capture.
 
-Known verification gap discovered on 2026-10-13: installed Playwright routing
-synthesizes browser OPTIONS responses. The live runner still needs an
-independent genuine-preflight check before publication or live certification.
-See [the saved browser research](HANDOFF.md#actual-browser-feasibility-checks--2026-10-13)
-and `scripts/check-codex-browser-feasibility.mjs`, which preserves real
-preflights and uses synthetic credentials only.
+`--check-cors` reads no credential file and consumes no paid allowance. It
+launches a fresh Chromium context with service workers blocked and validated
+TLS, loads the production `robots.txt` origin, and sends a synthetic invalid
+bearer to both OpenAI endpoints. CDP Network observation must see upstream
+OPTIONS with the intended methods and header names, successful preflights,
+and browser-readable 401 responses. No routing or Fetch interception is
+installed in this context. Sanitized evidence, including cleanup and failures,
+is saved under ignored `release-evidence/openai-cors/<UTC>/`.
+
+The full runner checks credential selection, deployed release metadata, and
+this genuine CORS result before opening the paid allowance. It retains CORS
+evidence even if that stage fails, and reports it separately from guarded UI
+inference. Exactly one runner mode is accepted: no option, `--preflight`, or
+`--check-cors`. Historical Codex research in HANDOFF remains historical.
+
+Publish the complete reviewed release branch through a PR to `main`. Wait for
+checks on the reviewed head, record the latest successful Pages deployment SHA
+as the rollback baseline, enable and verify Pages HTTPS enforcement, and
+squash-merge with `--match-head-commit`. Wait for the merged SHA's exact push
+workflow and deployment. Fresh requests must see HTTPS 200, an HTTP-to-HTTPS
+redirect, matching `/release.json`, both setup choices, a protected artifact
+without mocks or credentials, and Devneya configuration before the bounded
+live command. Preserve the cumulative ledger across corrective deployments.
 
 If a security issue or regression requires rollback after deployment, revert through a PR and preserve local-only CI or dependency patches while preparing it.
 
@@ -99,7 +134,7 @@ Required Actions secret:
 
 ### Local Codex playground
 
-Run `npm run dev:codex` and open `http://127.0.0.1:3002/`. This uses the existing Codex sign-in on this computer. Available models and reasoning levels come from the live catalog; the local default prefers the requested `gpt-6.1-sol` when available. Open the model picker to search the live catalog; search receives focus automatically, and effort choices appear under the selected model. Requests default to xhigh when supported and request Fast service through `priority`; acceleration is not guaranteed. Credentials remain server-side. Hosted builds continue to use the Devneya API.
+Run `npm run dev:codex` and open `http://127.0.0.1:3002/`. This uses the existing Codex sign-in on this computer. Available models and reasoning levels come from the live catalog; the local default prefers the requested `gpt-6.1-sol` when available. Open the model picker to search the live catalog; search receives focus automatically, and effort choices appear under the selected model. Requests default to xhigh when supported and request Fast service through `priority`; acceleration is not guaranteed. Credentials remain server-side. Hosted builds offer the two API-key and Devneya connections described above.
 
 The canvas toolbar has neutral New prompt, Upload and Note buttons. New prompts and notes go into nearby free space, receive a brief highlight and focus for editing. Save as note creates an editable copy to the answer’s right, moving into nearby free space when needed. Canvas zoom and focus are saved per flow. New results stay above the bottom fifth of the canvas when space allows. The original prompt, answer and note boxes retain Georgia serif content typography and the Devneya wordmark.
 

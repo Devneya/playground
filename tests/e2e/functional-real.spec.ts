@@ -71,7 +71,7 @@ const credentialsFor = (accountIndex: number) => {
 };
 
 const startDevneyaConnection = async (page: Page) => {
-  const startDevneya = page.getByRole("button", { name: "Start immediately with Devneya" });
+  const startDevneya = page.getByRole("button", { name: "Continue with Devneya" });
   if (await startDevneya.isVisible().catch(() => false)) await startDevneya.click();
 };
 
@@ -164,7 +164,7 @@ test.describe("real-server functional E2E", () => {
     await expect(page).toHaveTitle("Devneya Playground");
     await startDevneyaConnection(page);
     await expect(page.getByLabel("Email")).toBeVisible({ timeout: 60_000 });
-    await expect(page.getByRole("button", { name: "Start immediately with Devneya" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Continue with Devneya" })).toHaveCount(0);
     await resetBrowserWorkspace(page);
     await page.reload({ waitUntil: "domcontentloaded" });
   });
