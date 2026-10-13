@@ -6,6 +6,11 @@ The clean-cutover flow playground for `playground.devneya.com`. It is a React + 
 
 The spatial-chat look is the product: cream prompts, grey answers, yellow notes, overlay Context, grouped single-select models, and compact flow chrome. See `PRODUCT_NOTES.md`.
 
+The current implementation and cross-machine resume notes are on
+`release/openai-provider-setup`; see [HANDOFF.md](HANDOFF.md) for the requested
+third Codex connection, actual browser feasibility results, and unresolved
+release prerequisites.
+
 ### Local development
 
 Node.js 22 and npm are required. The repository pins the supported major in .nvmrc and package.json.
@@ -78,6 +83,13 @@ PLAYGROUND_RELEASE_SHA=<full-commit-sha> npm run test:e2e:openai:live
 The live check makes exactly two non-streaming calls to `gpt-6-luna`. The UTF-8 serialized messages are limited to 4,096 bytes, and `max_completion_tokens` is 4,096 including reasoning. It does not retry. Setup has a 30-second limit and each completion has a 130-second limit. A release may have at most one corrective run, for a maximum of four calls and $0.10 total across the release. Failures are recorded only as sanitized categories such as 401, 403, model unavailable, quota, or CORS. The runner disconnects and cleans up its isolated context; ignored evidence is written only under `release-evidence/<sha>/<UTC>/openai-live` and contains sanitized data.
 
 The ignored `release-evidence/openai-provider-setup-budget.json` ledger and exclusive lock enforce the allowance across corrective deployment SHAs. Keep the ledger throughout this release. Forwarded requests that fail or time out still count. There is no tracing, HAR, video, storage-state export, or automatic screenshot capture.
+
+Known verification gap discovered on 2026-10-13: installed Playwright routing
+synthesizes browser OPTIONS responses. The live runner still needs an
+independent genuine-preflight check before publication or live certification.
+See [the saved browser research](HANDOFF.md#actual-browser-feasibility-checks--2026-10-13)
+and `scripts/check-codex-browser-feasibility.mjs`, which preserves real
+preflights and uses synthetic credentials only.
 
 If a security issue or regression requires rollback after deployment, revert through a PR and preserve local-only CI or dependency patches while preparing it.
 

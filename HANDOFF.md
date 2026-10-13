@@ -1,5 +1,39 @@
 # Playground handoff
 
+## Resume on another computer — 2026-10-13
+
+Repository: `Devneya/playground`. Continue on
+`release/openai-provider-setup`, which contains the implementation commit
+`f679cb2cae64d30803e09794aa1be4ffd9bd8039` and these saved research notes.
+Fetch and switch to that branch before pulling; pulling `main` alone will not
+retrieve this work. No PR, merge, or production deployment was performed.
+
+Read this file and `PRODUCT_NOTES.md` before changing the implementation.
+The latest requested direction adds a Codex choice alongside Devneya and the
+OpenAI API. The user rejected a local helper for the hosted Codex choice.
+Hosted OAuth, a hosted bridge, and changes to the original browser-only
+architecture remain undecided. Do not assume those changes are authorized.
+
+Two unresolved release prerequisites remain: obtain a local Platform API key
+for the original OpenAI test, and correct the runner's genuine-preflight
+verification described below. The native Codex backend currently fails CORS
+from our production origin. No successful Codex OAuth login or authenticated
+Codex inference was verified by these feasibility probes.
+
+Credentials and browser workspaces do not travel through Git. On the new
+machine, recheck its own Codex authentication. For the original OpenAI runner,
+set `CODEX_HOME` to that machine's Codex directory if needed, since its unset
+fallback is `/home/alex/.codex/auth.json`; alternatively use an existing
+`OPENAI_API_KEY` process variable. Never substitute an OAuth token for the
+required Platform key. Release usage to date is zero forwarded completions
+and $0.00; preserve the cumulative four-request/$0.10 allowance across machines.
+
+The sanitized research findings are recorded below, and the reusable probe is
+tracked at `scripts/check-codex-browser-feasibility.mjs`. Generated evidence,
+reports, builds, dependencies, credentials, and IndexedDB workspaces remain
+local and ignored. Nothing necessary to understand the findings depends on
+the ignored evidence directory surviving this machine.
+
 ## Accepted direction
 
 - Keep the original React Flow boxes with Georgia serif content and neutral
@@ -45,6 +79,178 @@
 - For suitable independent delegation, `AGENTS.md` calls for `gpt-6-luna` with
   xhigh reasoning when that is expected to save total time and tokens.
 
+## Authentication discussion — 2026-10-13
+
+The requested next setup direction is three explicit choices: **Devneya**,
+**OpenAI API**, and **Codex**. This expands the earlier release's two hosted
+connections. The current code has two hosted setup buttons and an existing
+`local-codex` adapter used by `npm run dev:codex`; a selectable hosted Codex
+connection has not been implemented.
+
+Endpoint and credential mechanics:
+
+- `https://chatgpt.com/backend-api/codex/responses` and
+  `https://api.openai.com/v1/responses` are different inference endpoints.
+  The HTTP flows use HTTPS, JSON, bearer credentials, and Responses-style
+  streaming events. Similar transport does not establish identical accepted
+  fields, model access, or catalog shapes.
+- The local bridge in `src/api/local-codex.mjs` reads the machine's cached
+  `tokens.access_token` and optional `tokens.account_id`, then sends the bearer
+  token and applicable `ChatGPT-Account-ID` to the Codex backend. It uses
+  Responses requests with `stream: true` and `store: false`, and keeps the
+  credentials in the server runtime. This explains how local Playground use
+  can use the existing Codex sign-in without a separately supplied Platform
+  key. It does not establish that any particular historical test was live.
+- An OpenAI SDK can be configured to send equivalent HTTP requests in
+  principle: use `https://chatgpt.com/backend-api/codex` as the base URL,
+  without `/responses`, because `responses.create` appends that route. Passing
+  an OAuth token as `api_key` places it in the bearer header; it does not
+  perform Codex login or OAuth token renewal. Use a valid Codex credential,
+  applicable account headers, and a compatible request. This exact SDK plus
+  Codex-backend configuration has not been live-verified here; the existing
+  bridge uses `fetch`.
+- API keys and OAuth access tokens have the same bearer-header mechanism but
+  represent different authorization and usage accounts. A Platform API key
+  belongs to the Platform billing context. A Codex ChatGPT sign-in uses the
+  ChatGPT identity and its entitlements. A separate Sign in with ChatGPT grant
+  with `chatgpt.tokens.use.direct` can authorize eligible public Responses API
+  calls using ChatGPT plan usage; do not assume a cached Codex login token has
+  that grant.
+
+References: [Codex backend and account headers](https://learn.chatgpt.com/docs/enterprise/sign-in-with-chatgpt-through-a-gateway),
+[OpenAI SDK configuration](https://developers.openai.com/api/reference/python),
+[public API ChatGPT-plan inference](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference),
+and [Sign in with ChatGPT scopes and eligibility](https://developers.openai.com/siwc/quickstart).
+
+Recommended setup presentation: `Continue with Devneya`, `Use OpenAI API key`,
+and `Use Codex`. Remove the ambiguous `OpenAI/ChatGPT key` label. Keep one
+active connection and the same canvas across all three, with separate
+credentials, authenticated catalogs, connection validation, and disconnect
+behavior.
+
+The user rejected the local-helper recommendation for the Codex option.
+The third connection must not depend on a local companion server. Whether
+this means browser OAuth sign-in or entry of an existing Codex access token
+is still being clarified; do not present token entry as an OAuth login.
+A static hosted page cannot read the machine's `auth.json`. Browser OAuth
+requires a supported registration, redirect and token flow with the
+applicable eligibility. Direct browser calls using an entered Codex token
+require verification of the actual browser request path, including CORS;
+Node HTTP compatibility alone does not establish browser compatibility.
+The existing Vite bridge accepts same-origin local requests only. No
+credential value is recorded in these notes.
+
+Runtime clarification: the production React app executes API calls in the
+browser. Node.js builds the static files; GitHub Pages runs no Node.js API
+server. The existing local Codex mode instead makes upstream calls through
+the Node.js Vite bridge. CORS is enforced by browsers for cross-origin script
+requests, not by native HTTP clients such as Node.js or curl. Such clients
+still need valid credentials, applicable headers, and compatible requests;
+the CORS findings alone do not verify authenticated inference.
+
+Other documented Codex authentication mechanisms include Platform API-key
+login, ChatGPT sign-in, enterprise Codex access tokens for trusted automation,
+and workload identity federation for eligible managed workspaces. Browser
+and device-code sign-in are ways to obtain the ChatGPT OAuth credential,
+not additional inference providers. Availability and credentials must be
+checked on the machine where work resumes. See [Codex authentication](https://learn.chatgpt.com/docs/auth),
+[enterprise access tokens](https://learn.chatgpt.com/docs/enterprise/access-tokens),
+and [workload identity federation](https://developers.openai.com/api/docs/guides/workload-identity-federation).
+
+Browser-sign-in feasibility was rechecked against the official docs on
+2026-10-13. OAuth can issue an access token after a browser authorization and
+code exchange with PKCE; it does not retrieve the cached Codex credential.
+The documented hosted website flow requires a registered OAuth client,
+callback, and backend, and is currently a limited partner trial. Its standard
+identity-only contract does not require an inference access token. ChatGPT
+plan inference needs its own authorized scopes. The publicly documented OSS
+self-registration flow requires a `127.0.0.1` callback listener and uses the
+public Responses API, so it does not establish a helper-free static hosted
+flow or native Codex-backend access. The desired browser-sign-in UX is still
+conditional on a supported hosted inference registration and runtime.
+
+### Actual browser feasibility checks — 2026-10-13
+
+A fresh local Chromium context loaded `https://playground.devneya.com`
+(HTTPS 200) and tested cross-origin requests with synthetic credentials.
+No real access token, refresh token, or API key was transmitted; no inference
+request or completed login occurred. Service workers were blocked, certificate
+validation stayed enabled, and Playwright request routing was disabled for
+the decisive run so the browser's real CORS preflights were preserved.
+
+- Codex `/models` returned HTTP 400 to the actual browser OPTIONS request,
+  without `Access-Control-Allow-Origin`. Chromium then reported
+  `PreflightMissingAllowOriginHeader` and did not send the authenticated GET.
+  Independent OPTIONS requests to Codex `/responses` also returned 400 with
+  no allowed origin, both with and without the optional account header.
+  Therefore direct browser calls to the native Codex backend are currently
+  blocked from this production origin before token authentication.
+- Both native and documented OAuth token endpoints returned browser-readable
+  errors (401 and 400 respectively) for an invalid authorization code, with
+  `Access-Control-Allow-Origin: *`. Device-code creation and polling endpoint
+  OPTIONS requests returned 200 with that allowed origin. This establishes
+  cross-origin reachability, not a completed or authorized sign-in; the earlier
+  blanket claim that browser token exchange cannot work was too broad.
+- The public OpenAI `/v1/models` control passed its real browser preflight
+  and returned a readable 401 for a synthetic invalid API key.
+- Read-only inspection of the current Codex token's declared scopes found
+  neither `chatgpt.tokens.use.direct` nor `resource.invoke`. The token was
+  decoded locally, and only these boolean findings were saved. The separate
+  documented public Responses plan-usage flow requires its own grant;
+  changing the native Codex token's destination is not an established solution.
+- Synthetic native authorization requests with both loopback and production
+  callback URLs encountered Cloudflare challenge responses. They do not prove
+  whether the hosted callback is accepted. Hosted app eligibility, a valid
+  login, renewal, model access, and inference were not verified. The already
+  observed Codex API CORS failure rules out the proposed direct native-backend
+  browser connection regardless of that callback question.
+
+Chromium was closed and the isolated context was cleared. Sanitized results,
+verification assertions, and the synthetic probe are in the ignored local
+directory `release-evidence/codex-feasibility/2026-10-13T14-43-29.261Z/`.
+
+Portable record of the decisive run (2026-10-13 14:43:29 UTC):
+
+| Check | Observed result |
+| --- | --- |
+| Production HTTPS origin | 200, `https://playground.devneya.com` |
+| Browser Codex model OPTIONS | 400, no allowed origin; `PreflightMissingAllowOriginHeader` |
+| Codex Responses OPTIONS, with/without account header | Both 400, no allowed origin; no inference POST sent |
+| Native OAuth token endpoint, synthetic invalid code | Browser-readable 401, allowed origin `*` |
+| Documented OAuth token endpoint, synthetic invalid code | Browser-readable 400, allowed origin `*` |
+| Device-code creation/polling OPTIONS | Both 200, allowed origin `*`; no device login attempted |
+| Public OpenAI models control | OPTIONS 200, browser-readable invalid-key 401, allowed origin `*` |
+| Native authorization callback checks | Both 403 Cloudflare challenge; callback acceptance inconclusive |
+| Scope inspection of this machine's cached token | Neither direct-plan-usage nor resource-invoke grant declared |
+| Credential transmission / inference / cost | Synthetic values only / zero / $0.00 |
+| Cleanup | Isolated storage cleared, context and Chromium closed |
+
+Reproduce the synthetic transport probe from the repository root after
+installing dependencies and Chromium:
+
+```sh
+npm ci
+npx playwright install chromium
+node scripts/check-codex-browser-feasibility.mjs
+```
+
+The tracked probe uses no credential file and never completes login or sends
+inference. It makes actual network requests from this machine, writes a
+sanitized summary and a copy of itself under ignored `release-evidence/`, and
+uses the public native client identifier only for invalid-code diagnostics.
+That identifier is not a registered hosted application. Run it locally with
+CI and Playwright debug logging unset. Inspect the recorded results; endpoint
+reachability does not imply granted inference permission.
+
+Testing caveat: this installed Playwright version synthesizes OPTIONS 204
+responses when Chromium request routing is enabled, even when a handler uses
+`route.continue()`. Its source implements this in `coreBundle.js` under
+`isInterceptedOptionsPreflight`. Response-level CORS still applies, but routed
+tests alone cannot establish that the real server accepts preflights. The
+OpenAI release runner needs an independent genuine-preflight check before
+publication/live certification; the earlier synthetic response-CORS test did
+not establish that property.
+
 ## Future: Sign in with ChatGPT
 
 Checked 2026-10-04 against [OpenAI's Sign in with ChatGPT docs](https://developers.openai.com/siwc/quickstart): **plan-funded inference is feasible for an eligible open-source local client.** An eligible user can explicitly grant `chatgpt.tokens.use.direct`; Plus/Pro plan usage or available credits can then cover eligible requests without an API key. This calls the public Responses API using the user's OAuth access token. It does not sign Devneya into ChatGPT's website, embed ChatGPT Web, expose their chats/GPTs, or reuse a browser session. ChatGPT identity alone does not grant inference permission.
@@ -87,6 +293,15 @@ Implementation notes:
 
 ## Validation and UI coverage
 
+Cross-machine handoff checks on 2026-10-13 passed typecheck, lint, all 321 unit
+tests, coverage (96.01% statements, 92.06% branches), the tracked probe's
+syntax check, and `git diff --check`. This repeat used the currently installed
+Node 22.14.0; the earlier full release gates below used the pinned 22.23.2.
+`npm run test:e2e` was attempted again and stopped with the fixed missing-key
+message before launching Chromium or making API requests. No additional live
+usage was incurred. The synthetic probe was made portable and syntax/lint
+checked; its saved network findings come from the earlier decisive run.
+
 Release preparation on 2026-10-13 used Node 22.23.2. All 321 unit tests and 54
 mocked Chromium checks passed, along with typecheck, lint, coverage, both npm
 audits (zero vulnerabilities), validation/mock/production builds, artifact
@@ -96,7 +311,7 @@ the response-stage redirect guard preserves normal responses and prevents a
 request to the redirect target. A second synthetic check confirmed that real
 Chromium CORS blocking still applies while requests use `route.continue()`.
 
-The release remains local on `release/openai-provider-setup`: credential
+The release is prepared on `release/openai-provider-setup`: credential
 preflight failed because the active Codex auth file has ChatGPT sign-in only
 and the executing environment has no Platform key. No OpenAI live request, PR,
 merge, deployment, or HTTPS setting change was made. The refreshed existing
@@ -122,6 +337,10 @@ perform live inference. Retired experiments remain in code and persistence for
 history/compatibility, but are not mounted and are not current acceptance.
 
 ## Release checks
+
+The prepared lockfile contains compatible patches: `brace-expansion` 1.1.21
+and 5.0.12, `source-map-js` 1.2.2, and `undici` 8.11.2. Keep dependency ranges
+and bundle budgets unchanged; do not use `npm audit fix --force`.
 
 GitHub Actions keeps deterministic validation, mock browser integration, the
 production build, and GitHub Pages deployment. The real-server Devneya E2E is
@@ -172,3 +391,37 @@ republishing, and the single corrective run. An unresolved regression or
 security failure requires a new revert PR, the release gates, and Pages
 redeployment; never reset or force-push `main`. Report a failed rollback as
 incomplete restoration.
+
+## Saved publication procedure
+
+Publication remains pending and must stop while local credential preflight
+fails. Resolve the genuine-preflight runner gap before certifying browser
+compatibility. Rerun the full deterministic gates on Node 22.23.2: typecheck,
+lint, unit tests, coverage, production and full audits, validation build and
+bundle check, mock build/artifact/bundle checks, browser integration with one
+worker, then production build/artifact/bundle checks and `git diff --check`.
+Finish with the production artifact because mock builds overwrite `dist/`.
+
+Use `/snap/gh/current/gh` and verify `auth status` before GitHub operations.
+Create the PR from `release/openai-provider-setup` to `main` with title
+`Add OpenAI connection setup and local production verification`; describe
+the actual final behavior and checks without credentials or local evidence.
+Wait for required checks and squash-merge normally. Before merging, refresh
+the last successful Pages deployment SHA; the saved baseline is
+`4e928547f9582727e35310b25546d910b176eb60`.
+
+Enable Pages HTTPS enforcement with:
+
+```sh
+/snap/gh/current/gh api --method PUT repos/Devneya/playground/pages -F https_enforced=true
+```
+
+Wait for the merged SHA's workflow to build and deploy. Require valid
+production HTTPS 200, HTTP redirecting to HTTPS, `/release.json` matching the
+merge SHA, the fresh setup screen, and an artifact without mock code or API
+keys. Then run the local OpenAI test with that SHA. It must complete all
+scenarios with exactly two successful `gpt-6-luna` responses, numeric usage,
+and successful persisted OpenAI executions. The final execution report must
+give the URL, deployed SHA, actual gates, request count/usage/cost, ignored
+evidence path, and cleanup result. Do not claim deployment or live verification
+complete based only on the preparation checks or synthetic Codex probes.
