@@ -1,18 +1,23 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { useState } from "react";
+import { useEffect, useState, type PropsWithChildren, type ReactNode } from "react";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import type { Session, User } from "@supabase/supabase-js";
 import type * as AccountApi from "../../src/api/account";
 import { AuthProvider } from "../../src/auth/AuthProvider";
-import { AuthContext, useAuth, type AuthActions } from "../../src/auth/useAuth";
+import { useAuth } from "../../src/auth/useAuth";
 import { WorkspaceProvider } from "../../src/features/workspace/WorkspaceContext";
 import { useWorkspace } from "../../src/features/workspace/useWorkspace";
+import { ConnectionProvider } from "../../src/features/connection/ConnectionProvider";
+import { useConnectionSettings } from "../../src/features/connection/useConnectionSettings";
 import { InMemoryWorkspaceRepository } from "../../src/persistence/InMemoryWorkspaceRepository";
 import type { PlaygroundNode } from "../../src/domain/types";
 import { createStarterWorkspace } from "../../src/domain/workspaceFactory";
+import { BROWSER_WORKSPACE_ID } from "../../src/persistence/browserWorkspaceIdentity";
+import { toGoTrueAccessToken } from "../../src/api/credentials";
+import type { WorkspaceRepository } from "../../src/persistence/WorkspaceRepository";
 
 const authMocks = vi.hoisted(() => {
   let authListener: ((event: string, session: Session | null) => void) | undefined;
@@ -75,15 +80,6 @@ const AuthErrorProbe = () => {
   </>;
 };
 
-const staticAuthActions: AuthActions = {
-  login: vi.fn(async () => {}),
-  signup: vi.fn(async () => {}),
-  sendRecovery: vi.fn(async () => {}),
-  updatePassword: vi.fn(async () => {}),
-  signInWithOAuth: vi.fn(async () => {}),
-  signOut: vi.fn(async () => {}),
-};
-
 const WorkspaceProbe = () => {
   const workspace = useWorkspace();
   const flow = workspace.activeFlow;
@@ -116,6 +112,10 @@ const WorkspaceProbe = () => {
     <button type="button" onClick={() => prompt && workspace.dispatch({ type: "node/edit-instruction", flowId: flow.id, nodeId: prompt.id, instruction: "component text" })}>edit</button>
     <button type="button" onClick={() => prompt && workspace.dispatch({ type: "node/set-models", flowId: flow.id, nodeId: prompt.id, modelIds: ["model-a"] })}>select</button>
     <button type="button" onClick={() => prompt && void workspace.runGeneration(prompt.id).completed}>run</button>
+    <button type="button" onClick={() => prompt && workspace.dispatch({ type: "node/set-models", flowId: flow.id, nodeId: prompt.id, modelIds: ["retired-model"] })}>select-retired-model</button>
+    <button type="button" onClick={() => prompt && workspace.dispatch({ type: "node/set-models", flowId: flow.id, nodeId: prompt.id, modelIds: [] })}>clear-model-selection</button>
+    <button type="button" onClick={() => invoke(() => prompt && workspace.runGeneration(prompt.id).completed)}>run-guarded</button>
+    <button type="button" onClick={() => invoke(() => prompt && workspace.runGeneration(prompt.id, "run-time instruction").completed)}>run-with-instruction</button>
     <button type="button" onClick={() => workspace.addNode(addNode)}>add</button>
     <button type="button" onClick={workspace.undo}>undo</button>
     <button type="button" onClick={workspace.redo}>redo</button>
@@ -142,7 +142,19 @@ const WorkspaceProbe = () => {
   </>;
 };
 
-const signedInValue = (session: Session) => ({ session, user: session.user, initializing: false, recovery: false, ...staticAuthActions });
+const DevneyaSession = ({ session, children }: PropsWithChildren<{ session: Session | null }>) => {
+  const { setDevneyaSession, clearDevneyaSession } = useConnectionSettings();
+  useEffect(() => {
+    if (session) void setDevneyaSession(toGoTrueAccessToken(session.access_token), session.user.email ?? null);
+    else clearDevneyaSession();
+    return clearDevneyaSession;
+  }, [clearDevneyaSession, session, setDevneyaSession]);
+  return children;
+};
+
+const connectedWorkspace = (workspace: ReactNode, { repository = new InMemoryWorkspaceRepository(), session = makeSession() }: { repository?: WorkspaceRepository; session?: Session | null } = {}) => (
+  <ConnectionProvider initialProvider="devneya"><DevneyaSession session={session}><WorkspaceProvider repository={repository}>{workspace}</WorkspaceProvider></DevneyaSession></ConnectionProvider>
+);
 
 beforeAll(() => apiServer.listen({ onUnhandledRequest: "error" }));
 afterEach(() => { apiServer.resetHandlers(); vi.clearAllMocks(); });
@@ -219,7 +231,7 @@ describe("WorkspaceProvider", () => {
   it("loads the catalog and key, edits and saves, runs, creates flows, and clears safely", async () => {
     const repository = new InMemoryWorkspaceRepository();
     const user = userEvent.setup();
-    render(<AuthContext.Provider value={signedInValue(makeSession())}><WorkspaceProvider repository={repository}><WorkspaceProbe /></WorkspaceProvider></AuthContext.Provider>);
+    render(connectedWorkspace(<WorkspaceProbe />, { repository }));
     await waitFor(() => expect(screen.getByTestId("workspace-status")).toHaveTextContent("ready"));
     await waitFor(() => expect(screen.getByTestId("models-status")).toHaveTextContent("ready"));
     await waitFor(() => expect(screen.getByTestId("key-status")).toHaveTextContent("ready"));
@@ -227,7 +239,7 @@ describe("WorkspaceProvider", () => {
     await user.click(screen.getByRole("button", { name: "select" }));
     await waitFor(() => expect(screen.getByTestId("save-status")).toHaveTextContent("saved"));
     await waitFor(async () => {
-      const saved = await repository.load("user-a");
+      const saved = await repository.load(BROWSER_WORKSPACE_ID);
       expect(saved?.flows[0]?.nodes.some((node) => node.data.kind === "generation" && node.data.instruction === "component text")).toBe(true);
     });
     await user.click(screen.getByRole("button", { name: "run" }));
@@ -240,7 +252,7 @@ describe("WorkspaceProvider", () => {
     await user.click(screen.getByRole("button", { name: "rename-flow" }));
     await user.click(screen.getByRole("button", { name: "clear" }));
     await waitFor(() => expect(screen.getByTestId("text-value")).toHaveTextContent(""));
-    expect(await repository.load("user-a")).toBeNull();
+    expect((await repository.load(BROWSER_WORKSPACE_ID))?.flows).toHaveLength(1);
   });
 
   it("surfaces catalog and account-key failures without claiming readiness", async () => {
@@ -248,14 +260,19 @@ describe("WorkspaceProvider", () => {
       http.get("https://api.devneya.com/llm/v1/models", () => HttpResponse.json({ error: "catalog down" }, { status: 503 })),
       http.get("https://api.devneya.com/account/key", () => HttpResponse.json({ error: "key down" }, { status: 403 })),
     );
-    render(<AuthContext.Provider value={signedInValue(makeSession("user-b"))}><WorkspaceProvider repository={new InMemoryWorkspaceRepository()}><WorkspaceProbe /></WorkspaceProvider></AuthContext.Provider>);
+    render(connectedWorkspace(<WorkspaceProbe />, { session: makeSession("user-b") }));
     await waitFor(() => expect(screen.getByTestId("models-status")).toHaveTextContent("error"));
     await waitFor(() => expect(screen.getByTestId("key-status")).toHaveTextContent("error"));
     expect(screen.getByTestId("error")).toHaveTextContent(/catalog down|key down|Request failed/);
+    apiServer.use(http.get("https://api.devneya.com/account/key", () => HttpResponse.json({ key: "sk-bf-provider-test" })));
+    await userEvent.setup().click(screen.getByRole("button", { name: "reload-key" }));
+    await waitFor(() => expect(screen.getByTestId("key-status")).toHaveTextContent("ready"));
+    await userEvent.setup().click(screen.getByRole("button", { name: "run-guarded" }));
+    expect(screen.getByTestId("action-error")).toHaveTextContent(/catalog down|model catalog is not ready/i);
   });
 
   it("supports a signed-out provider without loading a user workspace", async () => {
-    render(<AuthContext.Provider value={{ session: null, user: null, initializing: false, recovery: false, ...staticAuthActions }}><WorkspaceProvider repository={new InMemoryWorkspaceRepository()}><WorkspaceProbe /></WorkspaceProvider></AuthContext.Provider>);
+    render(connectedWorkspace(<WorkspaceProbe />, { session: null }));
     await waitFor(() => expect(screen.getByTestId("workspace-status")).toHaveTextContent("ready"));
     expect(screen.getByTestId("key-status")).toHaveTextContent("idle");
   });
@@ -263,7 +280,7 @@ describe("WorkspaceProvider", () => {
 
   it("covers signed-out command guards and workspace action no-ops", async () => {
     const user = userEvent.setup();
-    render(<AuthContext.Provider value={{ session: null, user: null, initializing: false, recovery: false, ...staticAuthActions }}><WorkspaceProvider repository={new InMemoryWorkspaceRepository()}><WorkspaceProbe /></WorkspaceProvider></AuthContext.Provider>);
+    render(connectedWorkspace(<WorkspaceProbe />, { session: null }));
     await waitFor(() => expect(screen.getByTestId("workspace-status")).toHaveTextContent("ready"));
     await user.click(screen.getByRole("button", { name: "reload-key" }));
     await user.click(screen.getByRole("button", { name: "duplicate-missing" }));
@@ -275,7 +292,7 @@ describe("WorkspaceProvider", () => {
     await user.click(screen.getByRole("button", { name: "undo" }));
     await user.click(screen.getByRole("button", { name: "redo" }));
     expect(screen.getByTestId("key-status")).toHaveTextContent("idle");
-    expect(screen.getByTestId("action-error")).toHaveTextContent(/account key is not ready/i);
+    expect(screen.getByTestId("action-error")).toHaveTextContent(/key is not ready/i);
   });
 
   it("covers reload, export, import errors, and guarded invalid runs", async () => {
@@ -284,7 +301,7 @@ describe("WorkspaceProvider", () => {
     Object.defineProperty(URL, "createObjectURL", { configurable: true, value: createObjectUrl });
     Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: revokeObjectUrl });
     const user = userEvent.setup();
-    render(<AuthContext.Provider value={signedInValue(makeSession("user-controls"))}><WorkspaceProvider repository={new InMemoryWorkspaceRepository()}><WorkspaceProbe /></WorkspaceProvider></AuthContext.Provider>);
+    render(connectedWorkspace(<WorkspaceProbe />, { session: makeSession("user-controls") }));
     await waitFor(() => expect(screen.getByTestId("workspace-status")).toHaveTextContent("ready"));
     await waitFor(() => expect(screen.getByTestId("models-status")).toHaveTextContent("ready"));
     await waitFor(() => expect(screen.getByTestId("key-status")).toHaveTextContent("ready"));
@@ -303,13 +320,36 @@ describe("WorkspaceProvider", () => {
     await waitFor(() => expect(screen.getByTestId("action-error")).toHaveTextContent(/choose a prompt/i));
   });
 
+  it("requires a current model selection and forwards a send-time instruction", async () => {
+    let submittedMessages: unknown;
+    apiServer.use(http.post("https://api.devneya.com/llm/v1/chat/completions", async ({ request }) => {
+      submittedMessages = (await request.json() as { messages: unknown }).messages;
+      return HttpResponse.json({ choices: [{ message: { content: "component result" } }] });
+    }));
+    const user = userEvent.setup();
+    render(connectedWorkspace(<WorkspaceProbe />));
+    await waitFor(() => expect(screen.getByTestId("models-status")).toHaveTextContent("ready"));
+    await waitFor(() => expect(screen.getByTestId("key-status")).toHaveTextContent("ready"));
+
+    await user.click(screen.getByRole("button", { name: "select-retired-model" }));
+    await user.click(screen.getByRole("button", { name: "run-guarded" }));
+    expect(screen.getByTestId("action-error")).toHaveTextContent(/no longer available/i);
+
+    await user.click(screen.getByRole("button", { name: "select" }));
+    await user.click(screen.getByRole("button", { name: "run-with-instruction" }));
+    await waitFor(() => expect(screen.getByTestId("batch-count")).toHaveTextContent("1"));
+    await waitFor(() => expect(submittedMessages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: "user", content: "run-time instruction" }),
+    ])));
+  });
+
   it("restores an existing workspace and reports a failed save", async () => {
     const repository = new InMemoryWorkspaceRepository();
     const saved = createStarterWorkspace(() => crypto.randomUUID());
     const firstPrompt = saved.flows[0]?.nodes.find((node) => node.data.kind === "generation");
     if (firstPrompt?.data.kind === "generation") firstPrompt.data.instruction = "restored text";
-    await repository.save("user-a", saved);
-    render(<AuthContext.Provider value={signedInValue(makeSession())}><WorkspaceProvider repository={repository}><WorkspaceProbe /></WorkspaceProvider></AuthContext.Provider>);
+    await repository.save(BROWSER_WORKSPACE_ID, saved);
+    render(connectedWorkspace(<WorkspaceProbe />, { repository }));
     await waitFor(() => expect(screen.getByTestId("text-value")).toHaveTextContent("restored text"));
 
     const failingRepository = {
@@ -317,7 +357,7 @@ describe("WorkspaceProvider", () => {
       save: vi.fn(async () => { throw new Error("quota exceeded"); }),
       delete: vi.fn(async () => {}),
     };
-    render(<AuthContext.Provider value={signedInValue(makeSession("user-b"))}><WorkspaceProvider repository={failingRepository}><WorkspaceProbe /></WorkspaceProvider></AuthContext.Provider>);
+    render(connectedWorkspace(<WorkspaceProbe />, { repository: failingRepository, session: makeSession("user-b") }));
     await waitFor(() => expect(screen.getAllByTestId("workspace-status")[1]).toHaveTextContent("ready"));
     await userEvent.setup().click(screen.getAllByRole("button", { name: "edit" })[1]!);
     await waitFor(() => expect(screen.getAllByTestId("error")[1]).toHaveTextContent("quota exceeded"));
@@ -329,7 +369,7 @@ describe("WorkspaceProvider", () => {
       save: vi.fn(async () => {}),
       delete: vi.fn(async () => {}),
     };
-    render(<AuthContext.Provider value={signedInValue(makeSession("user-b"))}><WorkspaceProvider repository={repository}><WorkspaceProbe /></WorkspaceProvider></AuthContext.Provider>);
+    render(connectedWorkspace(<WorkspaceProbe />, { repository, session: makeSession("user-b") }));
     await waitFor(() => expect(screen.getByTestId("error")).toHaveTextContent("saved record unreadable"));
     expect(screen.getByTestId("workspace-status")).toHaveTextContent("ready");
   });
@@ -340,7 +380,7 @@ describe("shared workspace execution lifecycle", () => {
   it("applies and undoes model changes, clears a failed run, and checks the model", async () => {
     apiServer.use(http.post("https://api.devneya.com/llm/v1/chat/completions", () => HttpResponse.json({ choices: [{ message: { content: JSON.stringify(surfaceResult) } }] })));
     const user = userEvent.setup();
-    render(<AuthContext.Provider value={signedInValue(makeSession())}><WorkspaceProvider repository={new InMemoryWorkspaceRepository()}><WorkspaceProbe /></WorkspaceProvider></AuthContext.Provider>);
+    render(connectedWorkspace(<WorkspaceProbe />));
     await waitFor(() => expect(screen.getByTestId("key-status")).toHaveTextContent("ready"));
     await user.click(screen.getByRole("button", { name: "surface-invalid" }));
     expect(screen.getByTestId("action-error")).toHaveTextContent("Choose an available model");
@@ -366,7 +406,7 @@ describe("shared workspace execution lifecycle", () => {
     const pending = new Promise<void>((resolve) => { release = resolve; });
     apiServer.use(http.post("https://api.devneya.com/llm/v1/chat/completions", async () => { await pending; return HttpResponse.json({ choices: [{ message: { content: JSON.stringify(surfaceResult) } }] }); }));
     const user = userEvent.setup();
-    render(<AuthContext.Provider value={signedInValue(makeSession())}><WorkspaceProvider repository={new InMemoryWorkspaceRepository()}><WorkspaceProbe /></WorkspaceProvider></AuthContext.Provider>);
+    render(connectedWorkspace(<WorkspaceProbe />));
     await waitFor(() => expect(screen.getByTestId("key-status")).toHaveTextContent("ready"));
     await user.click(screen.getByRole("button", { name: "surface-run" }));
     expect(screen.getByTestId("surface-running")).toHaveTextContent("surface-");
@@ -380,7 +420,7 @@ describe("shared workspace execution lifecycle", () => {
   });
   it("requires a credential", async () => {
     const user = userEvent.setup();
-    render(<AuthContext.Provider value={{ session: null, user: null, initializing: false, recovery: false, ...staticAuthActions }}><WorkspaceProvider repository={new InMemoryWorkspaceRepository()}><WorkspaceProbe /></WorkspaceProvider></AuthContext.Provider>);
+    render(connectedWorkspace(<WorkspaceProbe />, { session: null }));
     await waitFor(() => expect(screen.getByTestId("workspace-status")).toHaveTextContent("ready"));
     await user.click(screen.getByRole("button", { name: "surface-run" }));
     expect(screen.getByTestId("action-error")).toHaveTextContent("key is not ready");

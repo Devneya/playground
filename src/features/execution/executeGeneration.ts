@@ -9,7 +9,7 @@ import { getInputSnapshots, getNode } from "../../domain/graph";
 import { LIMITS, utf8ByteLength } from "../../domain/limits";
 import { placeNewResultNodes, RESULT_COL_STRIDE } from "../../domain/resultPlacement";
 import { cardHeight } from "../../domain/spatialLayout";
-import type { Clock, ExecutionBatch, ExecutionError, FlowDocument, IdFactory, PlaygroundEdge, PlaygroundNode, Usage } from "../../domain/types";
+import type { Clock, ExecutionBatch, ExecutionError, FlowDocument, IdFactory, InferenceProvider, PlaygroundEdge, PlaygroundNode, Usage } from "../../domain/types";
 import { isGenerationNode } from "../../domain/types";
 import type { WorkspaceAction } from "../../domain/workspaceReducer";
 
@@ -17,6 +17,7 @@ type RunOptions = {
   flow: FlowDocument;
   generationNodeId: string;
   virtualKey: CompletionCredential;
+  provider?: InferenceProvider;
   idFactory: IdFactory;
   clock: Clock;
   dispatch(action: WorkspaceAction): void;
@@ -71,6 +72,7 @@ export const startGenerationRun = (options: RunOptions): GenerationRun => {
   const executions = modelIds.map((modelId, index) => ({
     id: idFactory(),
     modelId,
+    ...(options.provider ? { provider: options.provider } : {}),
     ...(prompt.data.modelEfforts?.[modelId] ? { reasoningEffort: prompt.data.modelEfforts[modelId] } : {}),
     status: "pending" as const,
     startedAt,
@@ -101,7 +103,7 @@ export const startGenerationRun = (options: RunOptions): GenerationRun => {
     instruction,
     inputs,
     context,
-    executions: executions.map(({ id, modelId, reasoningEffort, status, startedAt: executionStartedAt, outputNodeId }) => ({ id, modelId, ...(reasoningEffort ? { reasoningEffort } : {}), status, startedAt: executionStartedAt, outputNodeId })),
+    executions: executions.map(({ id, modelId, provider, reasoningEffort, status, startedAt: executionStartedAt, outputNodeId }) => ({ id, modelId, ...(provider ? { provider } : {}), ...(reasoningEffort ? { reasoningEffort } : {}), status, startedAt: executionStartedAt, outputNodeId })),
   };
   const controller = new AbortController();
   const externalAbort = options.signal;
@@ -121,7 +123,7 @@ export const startGenerationRun = (options: RunOptions): GenerationRun => {
         lastUpdate = performance.now();
         emit({ type: "execution/progress", flowId: flow.id, batchId, executionId: execution.id, text: content, message: stage, characters: content.length });
       };
-      const result = typeof virtualKey === "object"
+      const result = typeof virtualKey === "object" && virtualKey.kind === "local-codex"
         ? await streamCompletion(virtualKey, { ...request, instructions: drawingInstructions }, controller.signal, (delta) => { content += delta; report(); }, (progress) => { if (stage !== progress.text) { stage = progress.text; report(true); } })
         : await createChatCompletion(virtualKey, request, controller.signal);
       if (utf8ByteLength(result.content) > LIMITS.maxGeneratedBytes) throw new ApiError("invalid_response", "The answer exceeded the canvas text limit. Try a narrower question.");

@@ -30,8 +30,10 @@ const forbiddenMarkers = [
   "garage",
   "presign",
   "Devneya Space",
+  "No local OpenAI Platform API key is available",
 ];
 const forbiddenPatterns = [
+  /\bsk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{20,}/g,
   /sk-bf-[A-Za-z0-9_-]{20,}/g,
   /(?:password|access[_-]?token|refresh[_-]?token)\s*[:=]\s*["'][^"']+["']/gi,
 ];

@@ -13,6 +13,12 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
 
   useEffect(() => {
     let mounted = true;
+    const syncRefresh = () => {
+      if (document.visibilityState === "visible") void supabase.auth.startAutoRefresh?.();
+      else void supabase.auth.stopAutoRefresh?.();
+    };
+    document.addEventListener("visibilitychange", syncRefresh);
+    syncRefresh();
     void supabase.auth.getSession().then(({ data, error }) => {
       if (!mounted) return;
       if (error) {
@@ -27,6 +33,8 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
     });
     return () => {
       mounted = false;
+      document.removeEventListener("visibilitychange", syncRefresh);
+      void supabase.auth.stopAutoRefresh?.();
       subscription.subscription.unsubscribe();
     };
   }, []);

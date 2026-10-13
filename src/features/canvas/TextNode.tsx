@@ -122,7 +122,7 @@ export const TextNode = ({ id, data: flowData }: NodeProps<TextFlowNode>) => {
     <CardRail
       context={<ContextDisclosure
         count={contextCount}
-        meta={generated ? <div className="context-detail-meta"><span>Source prompt</span><strong>{sourcePrompt ? displayGenerationTitle(sourcePrompt.data.title) : batch?.generationNodeId ?? "Prompt"}</strong><span>Following</span><strong>{followingCount}</strong></div> : undefined}
+        meta={generated ? <div className="context-detail-meta"><span>Source prompt</span><strong>{sourcePrompt ? displayGenerationTitle(sourcePrompt.data.title) : batch?.generationNodeId ?? "Prompt"}</strong><span>Provider</span><strong>{execution?.provider ?? "Unknown"}</strong><span>Following</span><strong>{followingCount}</strong></div> : undefined}
         entries={thread}
       />}
       action={generated

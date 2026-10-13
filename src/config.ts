@@ -1,5 +1,5 @@
 export const useLocalCodex = import.meta.env.DEV && import.meta.env.VITE_LOCAL_CODEX === "true";
-export const apiBaseUrl = (useLocalCodex ? "/local-api" : import.meta.env.VITE_API_BASE_URL || "https://api.devneya.com").replace(/\/+$/, "");
+export const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || "https://api.devneya.com").replace(/\/+$/, "");
 const parseBoolean = (value: unknown) => value === "true";
 
 export const gotrueAnonKey = import.meta.env.VITE_GOTRUE_ANON_KEY || (import.meta.env.MODE === "test" ? "test-public-anon-key" : "");

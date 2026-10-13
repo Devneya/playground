@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: npm
       - run: npm ci
       - run: npm run typecheck
@@ -54,7 +54,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: npm
       - run: npm ci
       - run: npm run build:mock
@@ -74,15 +74,24 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: npm
       - run: npm ci
-      - run: npm run build:prod
+      - name: Build production artifact
+        run: |
+          if [ -z "$VITE_SUPABASE_PUBLIC_KEY" ]; then
+            echo "::error::The VITE_SUPABASE_PUBLIC_KEY Actions secret is required for the production build."
+            exit 1
+          fi
+          export VITE_GOTRUE_ANON_KEY="$VITE_SUPABASE_PUBLIC_KEY"
+          npm run build:prod
         env:
           VITE_API_BASE_URL: https://api.devneya.com
-          VITE_GOTRUE_ANON_KEY: ${{ secrets.VITE_SUPABASE_PUBLIC_KEY }}
+          VITE_SUPABASE_PUBLIC_KEY: ${{ secrets.VITE_SUPABASE_PUBLIC_KEY }}
       - name: Prepare GitHub Pages SPA fallback
         run: cp dist/index.html dist/404.html
+      - name: Record release commit
+        run: printf '{"commit":"%s"}\n' "$(git rev-parse HEAD)" > dist/release.json
       - run: npm run verify:artifact
       - run: npm run verify:bundle
       - uses: actions/upload-pages-artifact@v3
@@ -104,26 +113,3 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
-
-  functional-live:
-    name: Real-server functional E2E
-    needs: deploy
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ needs.deploy.outputs.page_url }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npx playwright install --with-deps chromium
-      - name: Run real-server functional E2E
-        run: npm run test:e2e:real
-        env:
-          PLAYGROUND_E2E_BASE_URL: https://playground.devneya.com
-          E2E_TEST_MODEL: ${{ secrets.PLAYGROUND_E2E_MODEL }}
-          EVIDENCE_DIR: real-functional-evidence

@@ -16,6 +16,7 @@ if (!files.some((path) => path.endsWith("/mockServiceWorker.js"))) throw new Err
 const textFiles = files.filter((path) => /\.(?:html|js|css|json|txt)$/.test(path));
 const forbidden = [/sk-bf-(?!mock-key-for-tests-only)[A-Za-z0-9_-]{12,}/g, /192\.168\.10\.14/g];
 const findings = [];
+for (const path of files) if (/\/auth-vendor[^/]*\.js$/.test(path)) findings.push(`${path}: contains production authentication vendor code`);
 for (const path of textFiles) {
   const content = readFileSync(path, "utf8");
   for (const pattern of forbidden) { pattern.lastIndex = 0; if (pattern.test(content)) findings.push(`${path}: matches ${pattern}`); }

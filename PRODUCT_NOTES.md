@@ -40,15 +40,25 @@ credentials out of browser code. It requests the priority service tier and
 defaults to xhigh effort when the selected model supports it; effort is
 selectable per prompt. SVG drawings are passive inline vectors.
 
-Production remains GoTrue authentication plus the Bifrost API and account
-virtual key. Keep GoTrue JWTs separate from Bifrost keys. Never add secrets,
-local auth files, or machine credentials to source, fixtures, `.env` files, or
-Git history.
+The hosted setup offers two inference connections. OpenAI users enter an API
+key; setup validates it with the authenticated `/v1/models` catalog request and
+uses the selected model for Chat Completions. The key stays in this browser's
+`localStorage`, never in the workspace document or its export. ChatGPT
+subscription billing is separate from API usage. Devneya users sign in through
+GoTrue, then the client obtains a Bifrost virtual key and calls the Devneya
+OpenAI-compatible Chat Completions endpoint. Keep GoTrue JWTs separate from
+Bifrost keys. Never add secrets, local auth files, or machine credentials to
+source, fixtures, `.env` files, or Git history.
+
+The Connection control is at the upper-right of the canvas. It offers Change
+connection and Disconnect. There is one active inference connection at a time.
+Switching connections keeps the same canvas and waits for active runs to settle
+as cancelled before the screen changes.
 
 For future ChatGPT account linking and plan-funded inference, see the dated
-feasibility and implementation note in [HANDOFF.md](HANDOFF.md). It is a
-separate opt-in connection from both local Codex sign-in and production
-Devneya authentication.
+feasibility and implementation note in [HANDOFF.md](HANDOFF.md). That is a
+separate integration from the OpenAI API-key connection, local Codex sign-in,
+and Devneya authentication.
 
 Text and SVG uploads are limited to 64 KB. Images and PDFs are limited to
 2 MB each, with a 4 MB combined request-file limit.
@@ -56,10 +66,12 @@ Text and SVG uploads are limited to 64 KB. Images and PDFs are limited to
 ## Persistence and experiments
 
 Workspaces save locally in IndexedDB, in the `devneya-playground` database's
-`workspaces` object store. Drafts and workspace changes debounce for 800 ms;
-page-exit handling flushes pending saves, and the IndexedDB transaction is
-explicitly committed so reloads retain the latest state. Camera zoom, focus,
-and manual panning persist. Automatic placements use measured box dimensions.
+`workspaces` object store, under one `browser-workspace` record shared by
+providers and Devneya accounts in this browser. Older per-user records are left
+untouched. Drafts and workspace changes debounce for 800 ms; page-exit handling
+flushes pending saves, and the IndexedDB transaction is explicitly committed so
+reloads retain the latest state. Camera zoom, focus, and manual panning persist.
+Automatic placements use measured box dimensions.
 
 The retired generated-workspace experiments and their persistence shapes are
 kept for compatibility and history, but are not mounted in the current app and

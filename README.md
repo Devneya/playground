@@ -2,7 +2,7 @@
 
 **Devneya Playground** — a spatial chat canvas: write, branch, compare, and follow thought on a mind-map board.
 
-The clean-cutover flow playground for `playground.devneya.com`. It is a React + TypeScript + Vite static site deployed to GitHub Pages; runtime workspace data stays in the signed-in user’s browser.
+The clean-cutover flow playground for `playground.devneya.com`. It is a React + TypeScript + Vite static site deployed to GitHub Pages; runtime workspace data stays in this browser and is shared by its inference connections.
 
 The spatial-chat look is the product: cream prompts, grey answers, yellow notes, overlay Context, grouped single-select models, and compact flow chrome. See `PRODUCT_NOTES.md`.
 
@@ -16,23 +16,26 @@ npm ci
 npm run dev
 ```
 
-Optional `.env.local` values:
+Optional `.env.local` values for the Devneya connection:
 
 ```env
 VITE_API_BASE_URL=https://api.devneya.com
 VITE_GOTRUE_ANON_KEY=...
 ```
 
-The app discovers models from `GET /llm/v1/models`, obtains a Bifrost virtual key from `/account/key` using the GoTrue JWT, and sends completions to `/llm/v1/chat/completions` with only the Bifrost key. A 403 on `/account/key` is an inactive or blocked account, not CORS (playground origin is already allowed). Activate the plan on `https://app.devneya.com/`. Live models are the API catalog, not the mock four-provider list. The account menu links Profile and Dashboard there; Sign out stays in playground.
+On first launch, choose **Provide OpenAI/ChatGPT key** or **Start immediately with Devneya**. The OpenAI choice requests a standard OpenAI API key, saves it in this browser's `localStorage`, and calls the authenticated `GET https://api.openai.com/v1/models` endpoint to validate it and load the live catalog. It sends no inference request during setup. ChatGPT subscriptions do not pay for API usage. The model picker uses those returned model IDs; choose a model manually because the catalog also contains models that may not support Chat Completions.
+
+The Devneya choice uses GoTrue sign-in, obtains a Bifrost virtual key from `/account/key` with the GoTrue JWT, and sends completions to `/llm/v1/chat/completions` with only the Bifrost key. A 403 on `/account/key` is an inactive or blocked account, not CORS (playground origin is already allowed). Activate the plan on `https://app.devneya.com/`. Its catalog comes from `GET /llm/v1/models`. The top-right Connection menu provides Change connection and Disconnect; it also links to the Devneya Profile and Dashboard when connected there.
 
 ### Product boundaries
 
 - Nodes are Text and Generation only. Text may be manual or a read-only generated result.
 - Each Generation takes up to 8 Text inputs, graph cycles are rejected, and only successful results can be reused as inputs for threading.
 - A run snapshots its inputs and instruction, creates one result per selected model, runs models concurrently, and records failures without retrying or overwriting results.
-- Named flows are persisted in IndexedDB (`devneya-playground`, `workspaces`) under the authenticated user ID.
+- Named flows are persisted in one IndexedDB record (`devneya-playground`, `workspaces`, key `browser-workspace`) shared across providers and Devneya accounts in this browser. Existing older per-user records are left untouched.
 - Workspace export/import uses the versioned `devneya-flow-v3` (older versions still import) JSON format.
 - Supabase is used only for GoTrue auth; no Supabase database, storage, or realtime client is used.
+- Provider credentials are kept separately from the workspace document and workspace exports.
 
 ### Verification
 
@@ -49,23 +52,38 @@ npm run verify:bundle
 npm run test:browser-integration
 ```
 
-Vitest covers domain transitions, execution lifecycle invalidation, API boundaries, persistence fallback and save coalescing, and auth UI states. Mock-backed Playwright browser integration covers model fan-out, partial failure, cancellation, isolation, export/import, and error responses. Real-server functional E2E is a separate mandatory release gate.
+Vitest covers domain transitions, execution lifecycle invalidation, provider API boundaries, persistence fallback and save coalescing, setup, connection replacement, and auth UI states. Mock-backed Playwright browser integration covers model fan-out, partial failure, cancellation, the shared browser workspace, export/import, and error responses. Real-server functional E2E remains a separate, explicit local command described below.
 
 For deterministic browser integration without production credentials, use the mock build. It is test-only and is never deployed to GitHub Pages. These tests are not functional E2E.
 
-For real-server functional E2E, set `PLAYGROUND_E2E_BASE_URL` to the deployed pre-production or production HTTPS URL and optionally `E2E_TEST_MODEL`, then run `npm run test:e2e:real`. This is the mandatory real pre-production/production functional gate: it never uses mocks or stored user credentials. Each run creates two disposable mailboxes, registers real accounts, confirms the real GoTrue email link, logs in, opens only a Dodo test/sandbox checkout with the documented test card, verifies activation, exercises the app, verifies two-account isolation, cancels and deletes the accounts, revokes their tokens, deletes the mailboxes, and fails on any lifecycle or test failure. Screenshots are captured only when `EVIDENCE_DIR` is set.
+The existing Devneya real-server functional E2E is an explicit local command, `npm run test:e2e:real`. It accepts `PLAYGROUND_E2E_BASE_URL` and optionally `E2E_TEST_MODEL`; each run creates two disposable mailboxes and accounts, confirms the real GoTrue email links, opens a Dodo test/sandbox checkout with the documented test card, verifies activation and shared browser workspace behavior, then cancels and deletes the accounts, revokes their tokens, and deletes the mailboxes. It is not run by GitHub Actions or by the OpenAI live release check.
 
 Use `npm run test:browser-integration:evidence` for local mock-browser evidence, or `npm run test:e2e:real:evidence` for real-server evidence. Each command creates an ignored `release-evidence/<commit>/<timestamp>/` directory containing unaltered screenshots, isolated Playwright report/trace data when present, sanitized browser/network observations, an evidence summary, test metadata, and `SHA256SUMS`; evidence is local-only and must never be committed or uploaded. Mock browser integration is regression evidence, not functional E2E.
 
-For a protected production build, provide the real public GoTrue anonymous key, then run `npm run build:prod`, `npm run verify:artifact`, and `npm run verify:bundle`. The production bundle budget is 350 KB gzip JavaScript; the mock bundle has a separately reported 400 KB gzip allowance for its intentional MSW browser runtime.
+For a production deployment with Devneya sign-in enabled, provide the public GoTrue anonymous key, then run `npm run build:prod`, `npm run verify:artifact`, and `npm run verify:bundle`. A static build can also serve OpenAI connections without that key. The production bundle budget is 350 KB gzip JavaScript; the mock bundle has a separately reported 400 KB gzip allowance for its intentional MSW browser runtime.
 
 ### Deployment
 
-`.github/workflows/deploy.yml` validates every pull request and deploys only after validation on `main`. The build publishes the `dist/` artifact through GitHub Pages. `public/CNAME` keeps the custom domain `playground.devneya.com`. Full `npm audit` (including devDependencies) must be clean or Validate never reaches deploy. Post-deploy real E2E can fail on an external disposable-mail 502 even when Pages succeeded.
+`.github/workflows/deploy.yml` validates every pull request and deploys only after validation on `main`. Deterministic checks, the mock artifact, browser integration, build, and Pages deployment stay in Actions; live provider checks run locally. The production build requires the GitHub Actions secret `VITE_SUPABASE_PUBLIC_KEY`, which the workflow maps to `VITE_GOTRUE_ANON_KEY`. If it is missing, the build stops before artifact upload. The uploaded `dist/` includes `release.json` with the full source commit SHA. `public/CNAME` keeps the custom domain `playground.devneya.com`. Full `npm audit` (including devDependencies) must be clean or Validate never reaches deploy.
+
+Before publishing, run the credential preflight. After deployment, run the local OpenAI release check against `https://playground.devneya.com` with the deployed full release commit SHA:
+
+```bash
+node scripts/run-openai-live.mjs --preflight
+PLAYGROUND_RELEASE_SHA=<full-commit-sha> npm run test:e2e:openai:live
+```
+
+`npm run test:e2e` delegates to `npm run test:e2e:openai:live`. The live run requires `PLAYGROUND_RELEASE_SHA`, matching production `release.json`, and an enforced HTTP-to-HTTPS redirect. The runner reads the top-level `OPENAI_API_KEY` from `${CODEX_HOME}/auth.json` (when `CODEX_HOME` is set), or `/home/alex/.codex/auth.json`, then falls back to an existing `OPENAI_API_KEY` in the executing process environment. It transmits the key only in the HTTPS Authorization header directly to `api.openai.com`. It never uses OAuth tokens. The runner refuses CI and debug environments; a missing API key stops the release before publication. Preflight launches no browser and sends no API requests.
+
+The live check makes exactly two non-streaming calls to `gpt-6-luna`. The UTF-8 serialized messages are limited to 4,096 bytes, and `max_completion_tokens` is 4,096 including reasoning. It does not retry. Setup has a 30-second limit and each completion has a 130-second limit. A release may have at most one corrective run, for a maximum of four calls and $0.10 total across the release. Failures are recorded only as sanitized categories such as 401, 403, model unavailable, quota, or CORS. The runner disconnects and cleans up its isolated context; ignored evidence is written only under `release-evidence/<sha>/<UTC>/openai-live` and contains sanitized data.
+
+The ignored `release-evidence/openai-provider-setup-budget.json` ledger and exclusive lock enforce the allowance across corrective deployment SHAs. Keep the ledger throughout this release. Forwarded requests that fail or time out still count. There is no tracing, HAR, video, storage-state export, or automatic screenshot capture.
+
+If a security issue or regression requires rollback after deployment, revert through a PR and preserve local-only CI or dependency patches while preparing it.
 
 Required Actions secret:
 
-- `VITE_GOTRUE_ANON_KEY`
+- `VITE_SUPABASE_PUBLIC_KEY` (mapped by the workflow to `VITE_GOTRUE_ANON_KEY`)
 
 ### Local Codex playground
 

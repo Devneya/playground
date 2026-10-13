@@ -78,7 +78,11 @@ export const ModelPicker = ({ title, modelIds, models, status, error, onReload, 
   const visible = needle ? models.filter((model) => model.id.toLowerCase().includes(needle)) : models;
   const groups = groupModels(visible);
   const pillLabel = (multiple ? modelIds.join(" · ") : selectedId) || "Select model";
-  const selectedEffort = selectedId ? modelEfforts?.[selectedId] ?? defaultEffort(models.find(model => model.id === selectedId)) : undefined;
+  const selectedModel = selectedId ? models.find(model => model.id === selectedId) : undefined;
+  const selectedModelEffort = selectedId ? modelEfforts?.[selectedId] : undefined;
+  const selectedEffort = selectedModelEffort && selectedModel?.supportedReasoningEfforts?.includes(selectedModelEffort)
+    ? selectedModelEffort
+    : defaultEffort(selectedModel);
   return <div className="model-picker-root nodrag" ref={rootRef}>
     <button type="button" className="model-pill" aria-label={`${title} model picker`} aria-expanded={open} title={pillLabel} onClick={() => setOpen((value) => !value)}>
       <span className="model-pill-label">{pillLabel}</span>

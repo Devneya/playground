@@ -12,9 +12,10 @@ const waitForMockWorker = async (page: Page) => page.evaluate(async () => {
 });
 
 const prepare = async (page: Page, scenario: string) => {
-  await page.goto("/");
-  await waitForMockWorker(page);
-  await expect(page.getByLabel("Email")).toBeVisible({ timeout: 15_000 });
+  // Establish this origin without booting the app so its early workspace save
+  // cannot repopulate IndexedDB while the test fixture is being reset.
+  await page.route("**/favicon.ico", (route) => route.fulfill({ status: 204 }));
+  await page.goto("/robots.txt");
   await page.evaluate(async (scenarioName) => {
     localStorage.clear();
     sessionStorage.clear();
@@ -23,10 +24,9 @@ const prepare = async (page: Page, scenario: string) => {
       const request = indexedDB.deleteDatabase("devneya-playground");
       request.onsuccess = () => resolve();
       request.onerror = () => resolve();
-      request.onblocked = () => resolve();
     });
   }, scenario);
-  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.goto("/");
   await waitForMockWorker(page);
   await expect(page.getByLabel("Email")).toBeVisible({ timeout: 15_000 });
 };

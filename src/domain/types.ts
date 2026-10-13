@@ -7,6 +7,8 @@ import type { ReasoningEffort } from "./reasoning";
 import type { StoredFile, UploadInfo } from "./files";
 export type EntityId = string;
 
+export type InferenceProvider = "devneya" | "openai" | "local-codex";
+
 export type Position = { x: number; y: number };
 
 export type Viewport = { x: number; y: number; zoom: number };
@@ -112,6 +114,7 @@ export type ExecutionError = {
 export type ModelExecution = {
   id: EntityId;
   modelId: string;
+  provider?: InferenceProvider;
   reasoningEffort?: ReasoningEffort;
   status: "pending" | "success" | "failed" | "cancelled";
   startedAt: string;
@@ -162,7 +165,7 @@ export type Model = {
   id: string;
   object: "model";
   created: number;
-  owned_by: "devneya";
+  owned_by: string;
   supportedReasoningEfforts?: ReasoningEffort[] | undefined;
   defaultReasoningEffort?: ReasoningEffort | undefined;
 };

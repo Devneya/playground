@@ -4,6 +4,7 @@ import { fetchJson } from "./http";
 import { ApiError } from "./errors";
 import type { CompletionCredential } from "./credentials";
 import type { ReasoningEffort } from "../domain/reasoning";
+import { createOpenAIChatCompletion } from "./openai";
 
 export type ChatCompletionRequest = { model: string; messages: CompletionMessage[]; stream: false; instructions?: string; reasoning_effort?: ReasoningEffort };
 export type ChatCompletionResult = { content: string; usage?: Usage };
@@ -27,6 +28,7 @@ const normalizeUsage = (value: unknown): Usage | undefined => {
 };
 
 export const createChatCompletion = async (key: CompletionCredential, request: ChatCompletionRequest, signal?: AbortSignal): Promise<ChatCompletionResult> => {
+  if (typeof key === "object" && key.kind === "openai") return createOpenAIChatCompletion(key.apiKey, request, signal);
   if (typeof key === "object") {
     if (!config.useLocalCodex) throw new ApiError("invalid_response", "Local Codex is only available in local development.");
     const result = await fetchJson("/local-api/completion", { method: "POST", headers: { "Content-Type": "application/json", "X-Devneya-Local": "1" }, body: JSON.stringify({ ...request, instructions: request.instructions ?? "Answer the user's request directly in plain text." }) }, config.completionTimeoutMs, signal);

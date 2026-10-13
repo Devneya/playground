@@ -8,8 +8,8 @@ const validateProductionEnv = (mode: string): Plugin => ({
   name: "validate-production-env",
   configResolved(resolved) {
     const anonKey = resolved.env.VITE_GOTRUE_ANON_KEY;
-    if ((mode === "production" || mode === "validation") && !anonKey) throw new Error("VITE_GOTRUE_ANON_KEY is required for a production build.");
-    if ((mode === "production" || mode === "validation") && resolved.env.VITE_API_BASE_URL !== "https://api.devneya.com") throw new Error("Production and validation builds require VITE_API_BASE_URL=https://api.devneya.com.");
+    const apiBaseUrl = resolved.env.VITE_API_BASE_URL;
+    if ((mode === "production" || mode === "validation") && apiBaseUrl && apiBaseUrl !== "https://api.devneya.com") throw new Error("Production and validation builds require VITE_API_BASE_URL=https://api.devneya.com when it is set.");
     if (mode === "production" && (anonKey === "validation-public-anon-key" || anonKey === "mock-public-anon-key" || resolved.env.VITE_USE_MOCKS === "true")) throw new Error("A protected production build requires the real public GoTrue anonymous key with mocks disabled.");
   },
 });

@@ -16,9 +16,10 @@ const waitForMockWorker = async (page: Page) => page.evaluate(async () => {
 });
 
 const prepare = async (page: Page, scenario: string) => {
-  await page.goto("/");
-  await waitForMockWorker(page);
-  await expect(page.getByLabel("Email")).toBeVisible({ timeout: 15_000 });
+  // Establish this origin without booting the app so its early workspace save
+  // cannot repopulate IndexedDB while the test fixture is being reset.
+  await page.route("**/favicon.ico", (route) => route.fulfill({ status: 204 }));
+  await page.goto("/robots.txt");
   await page.evaluate(async (scenarioName) => {
     localStorage.clear();
     sessionStorage.clear();
@@ -27,10 +28,9 @@ const prepare = async (page: Page, scenario: string) => {
       const request = indexedDB.deleteDatabase("devneya-playground");
       request.onsuccess = () => resolve();
       request.onerror = () => resolve();
-      request.onblocked = () => resolve();
     });
   }, scenario);
-  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.goto("/");
   await waitForMockWorker(page);
   await expect(page.getByLabel("Email")).toBeVisible({ timeout: 15_000 });
 };
@@ -123,10 +123,10 @@ test.afterEach(async ({ page }, testInfo) => {
 });
 
 test.describe("mocked workspace flows", () => {
-  test("links Profile and Dashboard from the account menu to the Devneya app", async ({ page }) => {
+  test("links Profile and Dashboard from the connection menu to the Devneya app", async ({ page }) => {
     await prepare(page, "default");
     await signIn(page);
-    await page.getByRole("button", { name: "Account" }).click();
+    await page.getByRole("button", { name: "Connection" }).click();
     await expect(page.getByRole("link", { name: "Profile" })).toHaveAttribute("href", "https://app.devneya.com/account");
     await expect(page.getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "https://app.devneya.com/");
     await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
@@ -256,7 +256,7 @@ test.describe("mocked workspace flows", () => {
     await expect(page.locator(".generated-content").filter({ hasText: "Mock result" })).toHaveCount(0);
   });
 
-  test("keeps separate browser workspaces isolated by user", async ({ page }) => {
+  test("keeps one browser workspace when the Devneya account changes", async ({ page }) => {
     await prepare(page, "default");
     await signIn(page, "user-a@example.test");
     await page.getByLabel("Prompt 1 instruction").fill("USER_A_PRIVATE_TEXT");
@@ -266,20 +266,19 @@ test.describe("mocked workspace flows", () => {
     await page.reload({ waitUntil: "domcontentloaded" });
     await expect(page.locator(".catalog-dot.live")).toBeVisible({ timeout: 15_000 });
     await expect(page.getByLabel("Prompt 1 instruction")).toHaveValue("USER_A_PRIVATE_TEXT", { timeout: 15_000 });
-  await page.getByRole("button", { name: "Account" }).click();
+    await page.getByRole("button", { name: "Connection" }).click();
     await page.getByRole("button", { name: "Sign out" }).click();
     await expect(page.getByLabel("Email")).toBeVisible();
 
     await signIn(page, "user-b@example.test");
-    await expect(page.getByLabel("Prompt 1 instruction")).toHaveValue("");
+    await expect(page.getByLabel("Prompt 1 instruction")).toHaveValue("USER_A_PRIVATE_TEXT");
     await page.getByLabel("Prompt 1 instruction").fill("USER_B_PRIVATE_TEXT");
     await expect(page.getByText("Saved locally")).toBeVisible();
-  await page.getByRole("button", { name: "Account" }).click();
+    await page.getByRole("button", { name: "Connection" }).click();
     await page.getByRole("button", { name: "Sign out" }).click();
 
     await signIn(page, "user-a@example.test");
-    await expect(page.getByLabel("Prompt 1 instruction")).toHaveValue("USER_A_PRIVATE_TEXT");
-    await expect(page.getByLabel("Prompt 1 instruction")).not.toHaveValue("USER_B_PRIVATE_TEXT");
+    await expect(page.getByLabel("Prompt 1 instruction")).toHaveValue("USER_B_PRIVATE_TEXT");
   });
 
   test("exports without credentials, clears, and imports a workspace", async ({ page }) => {
@@ -310,7 +309,7 @@ test.describe("mocked workspace flows", () => {
     await expect(page.getByText("Model catalog unavailable")).toBeVisible();
     await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
 
-  await page.getByRole("button", { name: "Account" }).click();
+    await page.getByRole("button", { name: "Connection" }).click();
     await page.getByRole("button", { name: "Sign out" }).click();
     await prepare(page, "key-error");
     await signIn(page);
@@ -503,15 +502,15 @@ test("recovers from one catalog and account-key failure", async ({ page }) => {
   await generation(page).getByRole("button", { name: "Retry" }).click();
   await expect(page.locator(".catalog-dot.live")).toBeVisible();
 
-  await page.getByRole("button", { name: "Account" }).click();
+  await page.getByRole("button", { name: "Connection" }).click();
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page.getByLabel("Email")).toBeVisible();
   await prepare(page, "key-recover");
   await signIn(page);
-  await expect(page.getByRole("button", { name: "Retry account key" })).toBeVisible();
-  await page.getByRole("button", { name: "Retry account key" }).click();
+  await expect(page.getByRole("button", { name: "Retry connection" })).toBeVisible();
+  await page.getByRole("button", { name: "Retry connection" }).click();
   await expect(generation(page).getByRole("button", { name: "Send prompt" })).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Retry account key" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Retry connection" })).toHaveCount(0);
 });
 
 test("keeps the editor within a mobile viewport", async ({ page }) => {

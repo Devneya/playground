@@ -55,6 +55,7 @@ export const GenerationNode = ({ id, data: flowData }: NodeProps<GenerationFlowN
   const runningBatchId = runningBatch?.id ?? activeRunIds[id] ?? localRunId;
   const showDraft = !latestBatch;
   const displayTitle = displayGenerationTitle(data.title);
+  const modelSelectionReady = modelsStatus === "ready" && data.modelIds.length > 0 && data.modelIds.every((modelId) => models.some((model) => model.id === modelId));
 
   const resizeInstruction = useCallback(() => {
     if (globalThis.CSS?.supports("field-sizing", "content")) return;
@@ -87,8 +88,8 @@ export const GenerationNode = ({ id, data: flowData }: NodeProps<GenerationFlowN
     if (!showDraft) return;
     if (event.nativeEvent.isComposing || event.key !== "Enter" || event.shiftKey) return;
     if (event.ctrlKey || event.metaKey) event.preventDefault();
-    else if (virtualKey && data.modelIds.length > 0 && instructionReady && !runningBatchId) event.preventDefault();
-    if ((event.ctrlKey || event.metaKey || !event.shiftKey) && virtualKey && data.modelIds.length > 0 && instructionReady && !runningBatchId) run();
+    else if (virtualKey && modelSelectionReady && instructionReady && !runningBatchId) event.preventDefault();
+    if ((event.ctrlKey || event.metaKey || !event.shiftKey) && virtualKey && modelSelectionReady && instructionReady && !runningBatchId) run();
   };
 
   const editableInputs = inputs.map((edge, index) => {
@@ -129,12 +130,12 @@ export const GenerationNode = ({ id, data: flowData }: NodeProps<GenerationFlowN
               placeholder={`Ask ${data.modelIds[0] ?? "a model"}`}
             />
           </label>
-          <button type="button" className="send-button" aria-label="Send prompt" title="Send prompt" onClick={run} disabled={!showDraft || !virtualKey || data.modelIds.length === 0 || !instructionReady || !!runningBatchId}><CardIcon name="send" size={15} /></button>
+          <button type="button" className="send-button" aria-label="Send prompt" title="Send prompt" onClick={run} disabled={!showDraft || !virtualKey || !modelSelectionReady || !instructionReady || !!runningBatchId}><CardIcon name="send" size={15} /></button>
         </div>
         <div className="stale-model-list" role="group" aria-label="Unavailable selected models">
           {data.modelIds.filter((modelId) => !models.some((model) => model.id === modelId)).map((modelId) => <span className="model-option stale-model" key={modelId}><span>{modelId}</span><button type="button" className="icon-button nodrag nopan" disabled={!showDraft} onClick={() => dispatch({ type: "node/set-models", flowId: activeFlow.id, nodeId: id, modelIds: data.modelIds.filter((item) => item !== modelId).slice(0, 1) })} aria-label={`Remove ${modelId}`}><CardIcon name="close" size={13} /></button></span>)}
         </div>
-        {(runError || !virtualKey) && <p className="form-error node-error" role={runError || keyStatus === "error" ? "alert" : undefined}>{runError || keyError || (keyStatus === "loading" ? "Account key is loading; sign in to run." : "Account key is not ready yet.")} {keyStatus === "error" && <button type="button" className="small-button nodrag nopan" onClick={reloadKey}>Retry account key</button>}</p>}
+        {(runError || !virtualKey) && <p className="form-error node-error" role={runError || keyStatus === "error" ? "alert" : undefined}>{runError || keyError || (keyStatus === "loading" ? "Checking your connection…" : "Connection is not ready yet.")} {keyStatus === "error" && <button type="button" className="small-button nodrag nopan" onClick={reloadKey}>Retry connection</button>}</p>}
       </>
     </div>
     <CardRail
