@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { expect, type Page } from "@playwright/test";
+import { authEmailLinkFrom, type AuthEmailMessage, type AuthEmailType } from "./auth-email";
 
 const mailApis = ["https://api.mail.gw", "https://api.mail.tm"] as const;
 const apiOrigin = "https://api.devneya.com";
@@ -71,6 +72,7 @@ const activeMailDomain = async (mailApi: string) => {
       if (domain) return domain;
       lastError = "no active domain returned";
     } catch (error) {
+      if (error instanceof DisposableMailError && (error.status === 429 || error.status >= 500)) throw error;
       lastError = error instanceof Error ? error.message : "unknown domain request error";
     }
     await new Promise((resolve) => setTimeout(resolve, 2_000));
@@ -83,6 +85,7 @@ const activeMailDomain = async (mailApi: string) => {
 export const createDisposableMailbox = async (): Promise<RealTestAccount> => {
   let lastError: unknown;
   for (const mailApi of mailApis) {
+    let createdAccount = false;
     try {
       const domain = await activeMailDomain(mailApi);
       const address = `devneya-release-${randomBytes(10).toString("hex")}@${domain}`;
@@ -93,6 +96,7 @@ export const createDisposableMailbox = async (): Promise<RealTestAccount> => {
         body: JSON.stringify({ address, password }),
       });
       if (!created.id) throw new Error("Disposable-mail service returned no account id.");
+      createdAccount = true;
       const session = await jsonRequest<{ token?: string }>(mailApi, "/token", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -102,7 +106,8 @@ export const createDisposableMailbox = async (): Promise<RealTestAccount> => {
       return { mailApi, id: created.id, address, password, token: session.token, subscriptionActive: false };
     } catch (error) {
       lastError = error;
-      if (!(error instanceof DisposableMailError) || error.status !== 429) throw error;
+      // Switch services only before creation; never orphan a created mailbox by retrying elsewhere.
+      if (createdAccount || !(error instanceof DisposableMailError) || (error.status !== 429 && error.status < 500)) throw error;
     }
   }
   throw lastError instanceof Error ? lastError : new Error("No disposable-mail service was available.");
@@ -117,45 +122,26 @@ export const deleteDisposableMailbox = async (account: RealTestAccount) => {
   });
 };
 
-type MailMessage = { id?: string; to?: Array<{ address?: string }>; text?: string; html?: string[] };
-
-const decodeHtml = (value: string) => value
-  .replace(/&amp;/g, "&")
-  .replace(/&quot;/g, '"')
-  .replace(/&#x27;|&#39;/g, "'")
-  .replace(/&lt;/g, "<")
-  .replace(/&gt;/g, ">");
-
-const confirmationUrlFrom = (message: MailMessage, expectedAddress: string, expectedOrigin: string) => {
-  if (message.to && !message.to.some((recipient) => recipient.address === expectedAddress)) return null;
-  const body = decodeHtml([message.text ?? "", ...(message.html ?? [])].join("\n"));
-  const match = body.match(/https:\/\/api\.devneya\.com\/auth\/verify\?[^\s"'<>]+/);
-  if (!match) return null;
-  const url = new URL(match[0]);
-  if (url.protocol !== "https:" || url.hostname !== "api.devneya.com" || url.pathname !== "/auth/verify") throw new Error("Signup email contained an invalid Devneya confirmation URL.");
-  if (url.searchParams.get("type") !== "signup") throw new Error("Signup email confirmation URL had the wrong token type.");
-  const redirect = url.searchParams.get("redirect_to");
-  if (!redirect || new URL(redirect).origin !== new URL(expectedOrigin).origin) throw new Error("Signup email confirmation URL had the wrong redirect origin.");
-  return url.toString();
-};
-
-export const waitForSignupConfirmation = async (account: RealTestAccount, expectedOrigin: string) => {
+export const waitForAuthEmail = async (account: RealTestAccount, expectedOrigin: string, type: AuthEmailType) => {
   const deadline = Date.now() + mailTimeoutMs;
   let lastMessageCount = 0;
   while (Date.now() < deadline) {
-    const messages = await jsonRequest<MailMessage[] | { "hydra:member"?: MailMessage[] }>(account.mailApi, "/messages?page=1", { headers: { Authorization: `Bearer ${account.token}` } });
+    const messages = await jsonRequest<Array<AuthEmailMessage & { id?: string }> | { "hydra:member"?: Array<AuthEmailMessage & { id?: string }> }>(account.mailApi, "/messages?page=1", { headers: { Authorization: `Bearer ${account.token}` } });
     const members = Array.isArray(messages) ? messages : messages["hydra:member"] ?? [];
     lastMessageCount = members.length;
     for (const summary of members) {
       if (!summary.id) continue;
-      const message = await jsonRequest<MailMessage>(account.mailApi, `/messages/${encodeURIComponent(summary.id)}`, { headers: { Authorization: `Bearer ${account.token}` } });
-      const link = confirmationUrlFrom(message, account.address, expectedOrigin);
+      const message = await jsonRequest<AuthEmailMessage>(account.mailApi, `/messages/${encodeURIComponent(summary.id)}`, { headers: { Authorization: `Bearer ${account.token}` } });
+      const link = authEmailLinkFrom(message, account.address, expectedOrigin, type);
       if (link) return link;
     }
     await new Promise((resolve) => setTimeout(resolve, 5_000));
   }
-  throw new Error(`Timed out waiting for the signup confirmation email (${lastMessageCount} mailbox messages observed).`);
+  const label = type === "signup" ? "signup confirmation" : "password recovery";
+  throw new Error(`Timed out waiting for the ${label} email (${lastMessageCount} mailbox messages observed).`);
 };
+
+export const waitForSignupConfirmation = (account: RealTestAccount, expectedOrigin: string) => waitForAuthEmail(account, expectedOrigin, "signup");
 
 export const sessionAccessToken = async (page: Page) => page.evaluate(() => {
   for (let index = 0; index < localStorage.length; index += 1) {

@@ -1,8 +1,10 @@
-import { createClient, type SupportedStorage } from "@supabase/supabase-js";
+import type { SupportedStorage } from "@supabase/supabase-js";
 import { apiBaseUrl, config, gotrueAnonKey } from "../config";
+import { AUTH_STORAGE_KEY, createGoTrueClient } from "./createGoTrueClient";
+
+export { AUTH_STORAGE_KEY } from "./createGoTrueClient";
 
 if (!gotrueAnonKey && !config.useMocks && import.meta.env.MODE !== "test") throw new Error("Missing VITE_GOTRUE_ANON_KEY for the production authentication client.");
-export const AUTH_STORAGE_KEY = "devneya-playground-auth";
 const AUTH_STORAGE_PREFIX = `${AUTH_STORAGE_KEY}:`;
 
 const storage: SupportedStorage = {
@@ -17,30 +19,7 @@ const storage: SupportedStorage = {
   },
 };
 
-const rewriteAuthUrl = (input: RequestInfo | URL): RequestInfo | URL => {
-  const inputUrl = input instanceof Request ? input.url : input.toString();
-  const url = new URL(inputUrl, globalThis.location?.origin ?? apiBaseUrl);
-  const base = new URL(apiBaseUrl);
-  if (url.origin === base.origin && (url.pathname === "/auth/v1" || url.pathname.startsWith("/auth/v1/"))) {
-    url.pathname = url.pathname.replace(/^\/auth\/v1/, "/auth");
-  }
-  if (input instanceof Request) return new Request(url, input);
-  return url;
-};
-
-const authFetch: typeof fetch = (input, init) => globalThis.fetch(rewriteAuthUrl(input), init);
-
-export const supabase = createClient(apiBaseUrl, gotrueAnonKey, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true,
-    flowType: "pkce",
-    storageKey: AUTH_STORAGE_KEY,
-    storage,
-  },
-  global: { fetch: authFetch },
-});
+export const supabase = createGoTrueClient({ baseUrl: apiBaseUrl, clientKey: gotrueAnonKey, storage });
 
 export const clearAuthStorage = () => {
   const localStorage = globalThis.localStorage;

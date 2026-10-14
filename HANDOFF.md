@@ -1,5 +1,102 @@
 # Playground handoff
 
+## Current authentication publication — 2026-10-14
+
+This is the latest publication plan and overrides earlier OpenAI release gates
+below. The operator waived the paid OpenAI certification and its credential
+preflight for this publication. Do not run `npm run test:e2e` or the paid
+OpenAI runner for this release. Its existing allowance ledger, lock, and
+request caps remain intact for a later explicitly authorized run.
+
+The current release uses a fresh random public GoTrue client value. GitHub
+Actions reads the repository variable `PLAYGROUND_GOTRUE_CLIENT_KEY` first and
+passes it to the existing build-time `VITE_GOTRUE_ANON_KEY` setting. If the
+variable is absent, the workflow retains compatibility with the existing
+`VITE_SUPABASE_PUBLIC_KEY` Actions secret; leave that secret untouched. Set the
+new variable for this release and use that same value for both authentication
+smoke phases. It is public browser configuration, distinct from user JWTs,
+Bifrost virtual keys, and inference credentials. Do not ask the user for an
+anonymous key. If the random value fails an authentication step, stop and
+analyze the failure; do not silently retry the proof with the old secret.
+The smoke can use `PLAYGROUND_BASELINE_CLIENT_KEY` only to clean up the
+disposable account after the random-key attempt has failed; that run still
+fails and cannot count as authentication proof.
+
+The **prepublication random-key proof passed** on 2026-10-14; the deployed
+browser phase remains pending until the merged SHA serves. The same non-JWT
+value passed real signup, PKCE confirmation, rejected-password/correct login,
+refresh and authenticated user lookup, recovery, password update, sign-out,
+and complete cleanup, without using the baseline key. This establishes that
+this Devneya GoTrue deployment accepts the random public client value; it is
+not an inference credential or a promise about other Supabase deployments.
+`npm run test:auth:live` accepts
+`PLAYGROUND_AUTH_SMOKE_PHASE=prepublish` or `deployed` and reads the same
+random value through process-only `VITE_GOTRUE_ANON_KEY`. Each phase creates one
+disposable mailbox and account, then checks signup, email confirmation, login,
+refresh, recovery, password update, sign-out, and cleanup. The deployed phase
+also checks the browser flow and requires `PLAYGROUND_RELEASE_SHA` to match the
+production `release.json`. The smoke does not open checkout, request a
+subscription, or send inference. It checks generated OAuth URLs without
+performing external OAuth consent. Playwright tracing, HAR, screenshots,
+videos, and storage-state export are disabled.
+
+Keep sanitized evidence under the ignored
+`release-evidence/gotrue-random-key/<UTC>/` directory. Record the deployed SHA
+and evidence location outside source after publication. A targeted auth URL
+rewrite addresses the observed OAuth navigation mismatch: generated
+`/auth/v1/authorize` URLs return 404, while `/auth/authorize` is the working
+GoTrue route; the rewrite preserves the PKCE query parameters.
+
+### Authentication findings and execution steps
+
+- Signup, recovery, and OAuth callbacks must use the full root URL
+  `https://playground.devneya.com/`, including its trailing slash. The live
+  server's `GOTRUE_URI_ALLOW_LIST` is
+  `https://*.devneya.com/**,https://devneya.com/**`. Sending only the origin
+  fell back to `GOTRUE_SITE_URL=https://app.devneya.com`; the smoke rejected
+  that email instead of accepting the wrong destination. The client now
+  constructs the root URL consistently. No server configuration was changed.
+- The production API still serves image revision
+  `f198eadca7ffc2b2a9ea5c08d9f22a303440b172`, with whole-second session
+  revocation comparisons. A fresh cleanup JWT deleted in its issuance second
+  was accepted by `/account/usage` and provisioned an inactive key. The test
+  resources were removed, and subsequent replay returned 401 and GoTrue user
+  lookup returned 403. The smoke waits 1.2 seconds before deletion and requires
+  both GoTrue-user absence and API replay rejection. This is a pre-existing
+  backend limitation, not a random-key failure; this frontend release does not
+  deploy the broader API changes already present on the API repository main.
+- `api.mail.gw` returned 502. Mailbox setup can try `api.mail.tm` after bounded
+  service failure only before account creation; it never abandons an account
+  to try another service. Both failed attempts were analyzed, and every
+  disposable account, inactive key, and mailbox was removed.
+- Final deterministic gates passed: **428 unit tests in 57 files**, typecheck,
+  lint, coverage (96.75% statements / 93.46% branches), both audits (zero
+  vulnerabilities), all **91 Chromium browser tests**, validation/mock builds,
+  artifact checks, and fixed bundle limits. The production build after the
+  callback fix passed inspection: 794,612 JavaScript bytes / 233,845 gzip.
+  Genuine unrouted OpenAI CORS passed with OPTIONS and readable synthetic 401s;
+  no paid inference ran.
+
+To complete publication: set and fingerprint-verify the preferred Actions
+variable using the exact value from the passing proof; retain the old secret.
+Review and commit the complete PR 6 branch, verify no Cursor co-author trailer,
+push, and wait for checks on that exact head. Record the last successful Pages
+deployment (not a later failed legacy E2E job) as rollback baseline. Verify
+Pages HTTPS enforcement and HTTP redirect; squash-merge with
+`--match-head-commit`. Wait for the exact merged SHA's main-push validation,
+production inspection, and Pages deployment. Require `release.json` to match,
+inspect the downloaded Pages artifact, and run the deployed auth-only phase
+with the same value and full SHA. Record final SHA, cleanup, and evidence in
+the ignored evidence/report without changing the certified source commit.
+If an auth phase fails, stop for diagnosis without key substitution or a
+billing/inference test. Normal targeted fixes/revert PRs are available; never
+force-push main or silently broaden deployment to other services.
+
+Evidence: `release-evidence/gotrue-random-key/2026-10-14T13-00-56Z/`.
+The public value is kept in memory/process configuration; only its SHA-256
+fingerprint is recorded. Failed confirmation and same-second cleanup results
+remain alongside the passing prepublication proof and final local logs.
+
 ## Current provider-picker implementation — 2026-10-14
 
 Branch: `feature/api-key-provider-picker`, based on the complete prepared

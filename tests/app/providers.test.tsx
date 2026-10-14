@@ -32,7 +32,7 @@ const authMocks = vi.hoisted(() => {
     signUp: vi.fn(async () => ({ error: null })),
     resetPasswordForEmail: vi.fn(async () => ({ error: null })),
     updateUser: vi.fn(async () => ({ error: null })),
-    signInWithOAuth: vi.fn(async () => ({ error: null })),
+    signInWithOAuth: vi.fn(async () => ({ data: { url: "https://api.devneya.com/auth/v1/authorize?provider=google" }, error: null })),
     signOut: vi.fn(async () => ({ error: null })),
   };
   return { authListener: () => authListener, session, supabaseAuth, clearAuthStorage: vi.fn() };
@@ -157,23 +157,32 @@ const connectedWorkspace = (workspace: ReactNode, { repository = new InMemoryWor
 );
 
 beforeAll(() => apiServer.listen({ onUnhandledRequest: "error" }));
-afterEach(() => { apiServer.resetHandlers(); vi.clearAllMocks(); });
+afterEach(() => { apiServer.resetHandlers(); vi.clearAllMocks(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 afterAll(() => apiServer.close());
 
 describe("AuthProvider", () => {
   it("restores a session, forwards auth actions, enters recovery, and cleans up logout", async () => {
     authMocks.supabaseAuth.getSession.mockResolvedValueOnce({ data: { session: authMocks.session }, error: null } as never);
     const user = userEvent.setup();
+    const assign = vi.fn<(url: string) => void>();
+    vi.stubGlobal("location", { origin: "https://playground.example.test", assign });
     render(<AuthProvider><AuthProbe /></AuthProvider>);
     await waitFor(() => expect(screen.getByTestId("auth-state")).toHaveTextContent("signed-in"));
     await user.click(screen.getByRole("button", { name: "login" }));
     await user.click(screen.getByRole("button", { name: "signup" }));
     await user.click(screen.getByRole("button", { name: "recovery" }));
+    const providerUrl = "https://api.devneya.com/auth/v1/authorize?provider=google&redirect_to=https%3A%2F%2Fplayground.example.test%2F&code_challenge=synthetic%2Bchallenge&code_challenge_method=s256";
+    authMocks.supabaseAuth.signInWithOAuth.mockResolvedValueOnce({ data: { url: providerUrl }, error: null } as never);
     await user.click(screen.getByRole("button", { name: "oauth" }));
     expect(authMocks.supabaseAuth.signInWithPassword).toHaveBeenCalledWith({ email: "person@example.test", password: "password123" });
-    expect(authMocks.supabaseAuth.signUp).toHaveBeenCalled();
-    expect(authMocks.supabaseAuth.resetPasswordForEmail).toHaveBeenCalled();
-    expect(authMocks.supabaseAuth.signInWithOAuth).toHaveBeenCalledWith(expect.objectContaining({ provider: "google" }));
+    expect(authMocks.supabaseAuth.signUp).toHaveBeenCalledWith({ email: "person@example.test", password: "password123", options: { emailRedirectTo: "https://playground.example.test/" } });
+    expect(authMocks.supabaseAuth.resetPasswordForEmail).toHaveBeenCalledWith("person@example.test", { redirectTo: "https://playground.example.test/" });
+    expect(authMocks.supabaseAuth.signInWithOAuth).toHaveBeenCalledWith({
+      provider: "google",
+      options: { redirectTo: "https://playground.example.test/", skipBrowserRedirect: true },
+    });
+    expect(assign).toHaveBeenCalledWith(providerUrl.replace("/auth/v1/authorize", "/auth/authorize"));
+    expect(new URL(assign.mock.calls[0]![0]).search).toBe(new URL(providerUrl).search);
     authMocks.authListener()?.("SIGNED_OUT", null);
     authMocks.authListener()?.("SIGNED_IN", authMocks.session);
     authMocks.authListener()?.("PASSWORD_RECOVERY", authMocks.session);
@@ -298,6 +307,7 @@ describe("WorkspaceProvider", () => {
   it("covers reload, export, import errors, and guarded invalid runs", async () => {
     const createObjectUrl = vi.fn(() => "blob:test");
     const revokeObjectUrl = vi.fn();
+    const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
     Object.defineProperty(URL, "createObjectURL", { configurable: true, value: createObjectUrl });
     Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: revokeObjectUrl });
     const user = userEvent.setup();
@@ -310,6 +320,7 @@ describe("WorkspaceProvider", () => {
     await waitFor(() => expect(screen.getByTestId("models-status")).toHaveTextContent("ready"));
     await waitFor(() => expect(screen.getByTestId("key-status")).toHaveTextContent("ready"));
     await user.click(screen.getByRole("button", { name: "export" }));
+    expect(anchorClick).toHaveBeenCalledOnce();
     expect(createObjectUrl).toHaveBeenCalled();
     expect(revokeObjectUrl).toHaveBeenCalledWith("blob:test");
     await user.click(screen.getByRole("button", { name: "import-invalid" }));

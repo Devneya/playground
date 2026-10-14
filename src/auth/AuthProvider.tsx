@@ -3,10 +3,14 @@ import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
 import { revokeSession } from "../api/account";
 import { toGoTrueAccessToken } from "../api/credentials";
 import { normalizeApiError } from "../api/errors";
+import { apiBaseUrl } from "../config";
 import { clearAuthStorage, supabase } from "./gotrueClient";
+import { rewriteGoTrueAuthUrl } from "./createGoTrueClient";
 import { AuthContext, type AuthState } from "./useAuth";
 
 const authError = (error: unknown) => normalizeApiError(error).message;
+// GoTrue's domain allowlist includes a path; the root callback needs its slash.
+const authRedirectUrl = () => new URL("/", globalThis.location.origin).href;
 
 export const AuthProvider = ({ children }: PropsWithChildren) => {
   const [state, setState] = useState<AuthState>({ session: null, user: null, initializing: true, recovery: false });
@@ -45,11 +49,11 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
       if (error) throw new Error(authError(error));
     },
     async signup(email: string, password: string) {
-      const { error } = await supabase.auth.signUp({ email, password, options: { emailRedirectTo: globalThis.location?.origin } });
+      const { error } = await supabase.auth.signUp({ email, password, options: { emailRedirectTo: authRedirectUrl() } });
       if (error) throw new Error(authError(error));
     },
     async sendRecovery(email: string) {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: globalThis.location?.origin });
+      const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: authRedirectUrl() });
       if (error) throw new Error(authError(error));
     },
     async updatePassword(password: string) {
@@ -58,8 +62,13 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
       setState((previous) => ({ ...previous, recovery: false }));
     },
     async signInWithOAuth(provider: "google" | "github") {
-      const { error } = await supabase.auth.signInWithOAuth({ provider, options: { redirectTo: globalThis.location?.origin } });
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: { redirectTo: authRedirectUrl(), skipBrowserRedirect: true },
+      });
       if (error) throw new Error(authError(error));
+      if (!data.url) throw new Error("Could not generate the OAuth sign-in URL.");
+      globalThis.location.assign(rewriteGoTrueAuthUrl(data.url, apiBaseUrl));
     },
     async signOut() {
       const accessToken = state.session?.access_token;

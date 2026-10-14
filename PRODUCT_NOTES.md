@@ -48,6 +48,19 @@ Custom connections require HTTPS, a bearer API key, and a live `/models` catalog
 
 Devneya still signs in through GoTrue, exchanges its JWT for a Bifrost virtual key through `/account/key`, and uses the Devneya OpenAI-compatible endpoints. Keep these credentials separate. Hosted Codex is deferred; historical research and local development support remain.
 
+The GoTrue client rewrites generated OAuth authorization URLs from
+`/auth/v1/authorize` to Devneya's `/auth/authorize` route. The former returned
+404; the corrected route responds with a redirect while preserving the PKCE
+parameters. This checks URL construction, not consent at an external OAuth
+provider.
+
+Signup, recovery, and OAuth return to the full Playground root URL with a
+trailing `/`. Without it, the deployed GoTrue allowlist falls back to
+`app.devneya.com`. The random non-JWT public client value passed real
+prepublication authentication and complete cleanup; authenticated requests
+still use issued user JWTs. The older API's same-second revocation limitation
+is documented in HANDOFF; this release changes no backend service.
+
 The Connection control is at the upper-right of the canvas. It offers Change
 connection and Disconnect. There is one active inference connection at a time.
 Switching connections keeps the same canvas and waits for active runs to settle
@@ -80,13 +93,18 @@ output. They do not make multi-model prompts the current product direction.
 
 ## Release validation — 2026-10-14
 
-The provider picker passed 412 unit tests and all 91 Chromium browser checks,
+The final implementation passed 428 unit tests and all 91 Chromium browser checks,
 including all eight API-key journeys, persistence, cancelled runs before
 switching, credential-free export, form accessibility, and real unrouted
 OPTIONS exchanges for native headers and custom paths. Coverage, both audits,
 all builds, and artifact/bundle limits passed. The separate genuine OpenAI
 production CORS probe passed with successful cleanup. This is synthetic and
-deterministic verification. Existing GitHub helper access, the Actions public
-GoTrue secret, and the configured production build have been verified; Pages
-enforces HTTPS. The agreed OpenAI live release certification remains pending
-a local Platform key. See [HANDOFF.md](HANDOFF.md).
+deterministic verification. Pages enforces HTTPS. The latest publication uses
+the preferred public Actions variable `PLAYGROUND_GOTRUE_CLIENT_KEY`, mapped
+to the build-time `VITE_GOTRUE_ANON_KEY`, while retaining the existing
+`VITE_SUPABASE_PUBLIC_KEY` secret as fallback. The random-value auth proof is
+passed before publication; deployed browser certification remains pending.
+Do not claim both phases passed until the actual deployed run finishes. The operator
+waived OpenAI credential preflight and paid live certification for this
+publication. Existing paid-runner guards and caps remain unchanged. See
+[HANDOFF.md](HANDOFF.md).

@@ -22,9 +22,14 @@ npm ci
 npm run dev
 ```
 
-For the Devneya connection, supply the approved public `VITE_GOTRUE_ANON_KEY`
-through the process environment, with `VITE_API_BASE_URL=https://api.devneya.com`.
-Keep credentials out of `.env` files, source, fixtures, and Git history.
+For the Devneya connection, supply `VITE_GOTRUE_ANON_KEY` through the process
+environment, with `VITE_API_BASE_URL=https://api.devneya.com`. GitHub Actions
+prefers the repository variable `PLAYGROUND_GOTRUE_CLIENT_KEY` and maps it to
+that build-time setting. If the variable is absent, the workflow keeps the
+existing `VITE_SUPABASE_PUBLIC_KEY` secret as a compatibility fallback; leave
+that secret untouched. The client value is public browser configuration, not a
+user token or provider credential. Keep runtime values out of `.env` files,
+source, fixtures, and Git history.
 
 On first launch, **Continue with Devneya** is the primary choice. **Use an API key** opens a provider picker for OpenAI, Anthropic, Google Gemini, OpenRouter, Groq, Mistral, DeepSeek, and Custom OpenAI-compatible. One active key is saved in this browser's `localStorage`, separately from the workspace. Setup loads the provider's live catalog without inference; OpenRouter also checks its protected `/key` endpoint. Choose a model manually: catalog presence does not guarantee generation authorization, protocol compatibility, or attachment support. OpenAI API billing is separate from ChatGPT subscriptions.
 
@@ -71,37 +76,97 @@ For deterministic browser integration without production credentials, use the mo
 
 The existing Devneya real-server functional E2E is an explicit local command, `npm run test:e2e:real`. It accepts `PLAYGROUND_E2E_BASE_URL` and optionally `E2E_TEST_MODEL`; each run creates two disposable mailboxes and accounts, confirms the real GoTrue email links, opens a Dodo test/sandbox checkout with the documented test card, verifies activation and shared browser workspace behavior, then cancels and deletes the accounts, revokes their tokens, and deletes the mailboxes. It is not run by GitHub Actions or by the OpenAI live release check.
 
+The release-only `npm run test:auth:live` command checks GoTrue with one
+disposable account and mailbox per phase. Set `PLAYGROUND_AUTH_SMOKE_PHASE`
+to `prepublish` or `deployed`, and provide the same random public value used
+for `PLAYGROUND_GOTRUE_CLIENT_KEY` through process-only
+`VITE_GOTRUE_ANON_KEY`. Each phase checks signup and email confirmation, login,
+refresh, recovery and password update, sign-out, and cleanup. The deployed
+phase also checks the browser flow and requires `PLAYGROUND_RELEASE_SHA` to
+match production `release.json`. It never opens checkout, requests a
+subscription, or sends inference. Generated OAuth URLs are checked without
+external OAuth consent. If the random value fails, stop and analyze; do not
+silently rerun the proof with the existing secret. Trace, HAR, screenshot,
+video, and storage-state capture are disabled. Keep sanitized local evidence
+under ignored `release-evidence/gotrue-random-key/<UTC>/` and record the final
+deployed SHA and evidence location outside source. The prepublication proof
+passed; the deployed browser phase follows publication. See [HANDOFF.md](HANDOFF.md).
+
 Use `npm run test:browser-integration:evidence` for local mock-browser evidence, or `npm run test:e2e:real:evidence` for real-server evidence. Each command creates an ignored `release-evidence/<commit>/<timestamp>/` directory containing unaltered screenshots, isolated Playwright report/trace data when present, sanitized browser/network observations, an evidence summary, test metadata, and `SHA256SUMS`; evidence is local-only and must never be committed or uploaded. Mock browser integration is regression evidence, not functional E2E.
 
-For a production deployment with Devneya sign-in enabled, provide the public GoTrue anonymous key, then run `npm run build:prod`, `npm run verify:artifact`, and `npm run verify:bundle`. A static build can also serve API-key connections without that configuration. The production bundle budget is 350 KB gzip JavaScript; the mock bundle has a separately reported 400 KB gzip allowance for its intentional MSW browser runtime.
+For a production deployment with Devneya sign-in enabled, set the repository
+variable `PLAYGROUND_GOTRUE_CLIENT_KEY`; Actions maps it to
+`VITE_GOTRUE_ANON_KEY` and retains `VITE_SUPABASE_PUBLIC_KEY` as a compatibility
+fallback. Then run `npm run build:prod`, `npm run verify:artifact`, and
+`npm run verify:bundle`. Production requires this public client configuration
+so Devneya sign-in can initialize. The production bundle budget is 350 KB gzip
+JavaScript; the mock bundle has a separately reported 400 KB gzip allowance
+for its intentional MSW browser runtime.
 
-The 2026-10-14 provider-picker checks passed: **412 unit tests in 54 files**,
+The 2026-10-14 final checks passed: **428 unit tests in 57 files**,
 **91 Chromium browser tests**, typecheck, lint, coverage, both audits (zero
 vulnerabilities), all three builds, and artifact/bundle checks. Whole checked
-coverage is 96.73% statements / 93.35% branches. Production JavaScript is
-233,705 gzip bytes with the existing public Devneya configuration; mock is
-340,610. Limits and dependencies are unchanged.
+coverage is 96.75% statements / 93.46% branches. Production JavaScript is
+233,845 gzip bytes with the verified random public client value; mock is
+340,610. Limits and dependency ranges are unchanged.
 The genuine OpenAI CORS probe passed and its isolated context/browser closed.
 
 Existing GitHub access works through Git's credential helper, and the Actions
-secret `VITE_SUPABASE_PUBLIC_KEY` is present. It supplies the public key
-required by the current full Supabase client constructor; it is not a user
-or inference credential. This frontend requirement does not establish that
-standalone GoTrue itself needs a project key; see the handoff findings.
-The configured production build and a read-only Devneya auth check passed.
-Pages now enforces HTTPS. Authenticated OpenAI release certification still
-needs a local Platform key; the static app and users bringing their own keys
-do not require an application-owned OpenAI key. No paid requests occurred.
-See [HANDOFF.md](HANDOFF.md) for the verified access findings and release gates.
+secret `VITE_SUPABASE_PUBLIC_KEY` remains present as a compatibility fallback.
+The latest publication uses a fresh random public GoTrue client value through
+the preferred repository variable. Real prepublication authentication passed
+with it, including account/mailbox cleanup. Browser certification follows the
+deployment. Auth callbacks include a trailing `/` to match the server's URL
+allowlist; OAuth navigation also rewrites `/auth/v1/authorize` to `/auth/authorize`.
+The older production API has a known same-second revocation limitation; the
+cleanup test deletes in a later second and requires token rejection. Details
+and cleanup evidence are recorded in [HANDOFF.md](HANDOFF.md).
+The operator waived the paid OpenAI certification and credential preflight for
+this publication, so do not run `npm run test:e2e`. See [HANDOFF.md](HANDOFF.md)
+for the current smoke phases and older access findings.
 
 ### Deployment
 
-`.github/workflows/deploy.yml` validates every pull request and deploys only after validation on `main`. Deterministic checks, the mock artifact, browser integration, build, and Pages deployment stay in Actions; live provider checks run locally. The production build requires the GitHub Actions secret `VITE_SUPABASE_PUBLIC_KEY`, which the workflow maps to `VITE_GOTRUE_ANON_KEY`. If it is missing, the build stops before artifact upload. The uploaded `dist/` includes `release.json` with the full source commit SHA. `public/CNAME` keeps the custom domain `playground.devneya.com`. Full `npm audit` (including devDependencies) must be clean or Validate never reaches deploy.
+`.github/workflows/deploy.yml` validates every pull request and deploys only
+after validation on `main`. Deterministic checks, the mock artifact, browser
+integration, build, and Pages deployment stay in Actions; live provider checks
+run locally. The production build prefers the GitHub Actions variable
+`PLAYGROUND_GOTRUE_CLIENT_KEY`, maps it to `VITE_GOTRUE_ANON_KEY`, and falls
+back to the existing `VITE_SUPABASE_PUBLIC_KEY` secret. The uploaded `dist/`
+includes `release.json` with the full source commit SHA. `public/CNAME` keeps
+the custom domain `playground.devneya.com`. Full `npm audit` (including
+devDependencies) must be clean or Validate never reaches deploy.
 
-Before publishing, require GitHub push/merge/Pages-settings access, the Actions
-secret named below, the approved public GoTrue production configuration,
-a successful credential preflight, and a successful synthetic CORS check.
-After deployment, run the local OpenAI release check against `https://playground.devneya.com` with the deployed full release commit SHA:
+For this publication, run the random-key authentication smoke before publishing
+and again against the deployed SHA. Keep `VITE_GOTRUE_ANON_KEY` in the process
+environment with the same random public value set in the Actions variable.
+The deployed phase also requires `PLAYGROUND_RELEASE_SHA` to match production
+`release.json`. The operator waived the OpenAI credential preflight and paid
+certification for this publication; do not run `npm run test:e2e`. Prior
+synthetic CORS evidence and the paid runner's ledger, lock, and caps remain
+unchanged for any later explicitly authorized run.
+
+Set `UTC_STAMP` once for both phases and `DEPLOYED_RELEASE_SHA` to the full
+deployed commit SHA before the second command. The test writes sanitized,
+local-only evidence under the ignored `release-evidence/gotrue-random-key/`
+directory. The proof is pending; if the random value fails, stop and analyze
+without silently switching to the fallback secret.
+
+```bash
+UTC_STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+PLAYGROUND_AUTH_SMOKE_PHASE=prepublish \
+PLAYGROUND_AUTH_EVIDENCE_DIR="release-evidence/gotrue-random-key/$UTC_STAMP" \
+npm run test:auth:live
+
+PLAYGROUND_AUTH_SMOKE_PHASE=deployed \
+PLAYGROUND_RELEASE_SHA="$DEPLOYED_RELEASE_SHA" \
+PLAYGROUND_AUTH_EVIDENCE_DIR="release-evidence/gotrue-random-key/$UTC_STAMP" \
+npm run test:auth:live
+```
+
+The optional OpenAI release command below remains available for a later
+explicitly authorized run against `https://playground.devneya.com` with the
+deployed full release commit SHA:
 
 ```bash
 node scripts/run-openai-live.mjs --check-cors
@@ -141,9 +206,12 @@ live command. Preserve the cumulative ledger across corrective deployments.
 
 If a security issue or regression requires rollback after deployment, revert through a PR and preserve local-only CI or dependency patches while preparing it.
 
-Required Actions secret:
+Actions configuration:
 
-- `VITE_SUPABASE_PUBLIC_KEY` (mapped by the workflow to `VITE_GOTRUE_ANON_KEY`)
+- `PLAYGROUND_GOTRUE_CLIENT_KEY` repository variable (preferred; mapped to
+  `VITE_GOTRUE_ANON_KEY`)
+- `VITE_SUPABASE_PUBLIC_KEY` existing secret (compatibility fallback; leave it
+  unchanged)
 
 ### Local Codex playground
 

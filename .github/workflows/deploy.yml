@@ -79,15 +79,14 @@ jobs:
       - run: npm ci
       - name: Build production artifact
         run: |
-          if [ -z "$VITE_SUPABASE_PUBLIC_KEY" ]; then
-            echo "::error::The VITE_SUPABASE_PUBLIC_KEY Actions secret is required for the production build."
+          if [ -z "$VITE_GOTRUE_ANON_KEY" ]; then
+            echo "::error::Public GoTrue client configuration is required for the production build."
             exit 1
           fi
-          export VITE_GOTRUE_ANON_KEY="$VITE_SUPABASE_PUBLIC_KEY"
           npm run build:prod
         env:
           VITE_API_BASE_URL: https://api.devneya.com
-          VITE_SUPABASE_PUBLIC_KEY: ${{ secrets.VITE_SUPABASE_PUBLIC_KEY }}
+          VITE_GOTRUE_ANON_KEY: ${{ vars.PLAYGROUND_GOTRUE_CLIENT_KEY || secrets.VITE_SUPABASE_PUBLIC_KEY }}
       - name: Prepare GitHub Pages SPA fallback
         run: cp dist/index.html dist/404.html
       - name: Record release commit
