@@ -79,15 +79,18 @@ The 2026-10-14 provider-picker checks passed: **412 unit tests in 54 files**,
 **91 Chromium browser tests**, typecheck, lint, coverage, both audits (zero
 vulnerabilities), all three builds, and artifact/bundle checks. Whole checked
 coverage is 96.73% statements / 93.35% branches. Production JavaScript is
-233,539 gzip bytes; mock is 340,610. Limits and dependencies are unchanged.
+233,705 gzip bytes with the existing public Devneya configuration; mock is
+340,610. Limits and dependencies are unchanged.
 The genuine OpenAI CORS probe passed and its isolated context/browser closed.
 
-Publication and authenticated live inference remain blocked by missing GitHub
-access, an OpenAI Platform key, and approved public GoTrue configuration. The
-production artifact compiles and contains no mocks or synthetic provider keys,
-but it does not configure Devneya sign-in without that public configuration.
-No paid requests or deployment occurred. See [HANDOFF.md](HANDOFF.md) for local
-evidence and the existing release gates.
+Existing GitHub access works through Git's credential helper, and the Actions
+secret `VITE_SUPABASE_PUBLIC_KEY` is present. It supplies public browser
+configuration for Devneya sign-in; it is not a user or inference credential.
+The configured production build and a read-only Devneya auth check passed.
+Pages now enforces HTTPS. Authenticated OpenAI release certification still
+needs a local Platform key; the static app and users bringing their own keys
+do not require an application-owned OpenAI key. No paid requests occurred.
+See [HANDOFF.md](HANDOFF.md) for the verified access findings and release gates.
 
 ### Deployment
 

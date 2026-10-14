@@ -86,5 +86,7 @@ switching, credential-free export, form accessibility, and real unrouted
 OPTIONS exchanges for native headers and custom paths. Coverage, both audits,
 all builds, and artifact/bundle limits passed. The separate genuine OpenAI
 production CORS probe passed with successful cleanup. This is synthetic and
-deterministic verification; authenticated live inference and publication
-remain blocked by missing access/configuration. See [HANDOFF.md](HANDOFF.md).
+deterministic verification. Existing GitHub helper access, the Actions public
+GoTrue secret, and the configured production build have been verified; Pages
+enforces HTTPS. The agreed OpenAI live release certification remains pending
+a local Platform key. See [HANDOFF.md](HANDOFF.md).

@@ -39,11 +39,14 @@ form accessibility, and actual OPTIONS acceptance/rejection on local ports.
 Checked whole coverage: 96.73% statements / 93.35% branches; API coverage:
 99.69% statements / 96.77% branches. `git diff --check` passed.
 
-Final production artifact: 20 files, 793,996 JavaScript bytes / 233,539 gzip.
+Configured production artifact: 20 files, 794,112 JavaScript bytes / 233,705 gzip.
 Validation: 794,145 / 233,633. Mock: 1,021,353 / 340,610. No dependencies or
 bundle/coverage limits changed. Production inspection now also rejects the
 new synthetic provider keys. The final `dist/` is the production artifact.
-It has no approved GoTrue configuration and is not a configured release.
+It uses the public anonymous configuration already served by the existing
+production site; `/auth/settings` returned HTTP 200, and the configured build,
+production-artifact inspection, and bundle check passed. The key was selected
+in memory from the deployed artifact and was not recorded in evidence or files.
 
 The genuine OpenAI CORS command passed with observed upstream OPTIONS 200,
 readable synthetic 401 responses, and successful context/browser cleanup.
@@ -54,13 +57,44 @@ network access because the Platform key is missing. Zero paid requests,
 inference tokens, and $0.00 estimated cost for this work and the cumulative
 release. The budget ledger remains absent and was not initialized.
 
-Changes are local and uncommitted. No push, PR, merge, deployment, or Pages
-settings operation was performed. Publication remains outside this local
-feature implementation. GitHub access,
-a Platform API key, approved public GoTrue configuration, and Actions secret
-verification remain external prerequisites. Never substitute the synthetic
-validation configuration for production configuration. Preserve the portable
-zero-usage ledger and existing live-run caps and lock policy.
+Implementation commit: `c06a644c18c566ac20a46f17c9d94e35ce001e40`
+(`Add API-key provider picker`). The operator has authorized committing and
+publishing the complete branch. Preserve the portable zero-usage ledger and
+existing live-run caps and lock policy. Never substitute the synthetic
+validation configuration for production configuration.
+
+### Release-access findings — 2026-10-14
+
+- GitHub access is available through the configured Git credential helper.
+  Repository API checks confirmed push and admin permissions. An empty
+  `gh auth status` result only describes the CLI's login store; it does not
+  establish that Git's existing credential is unavailable. Capture helper
+  output privately and supply its token only through the `GH_TOKEN` process
+  environment when invoking `gh`; never echo `git credential fill` output,
+  helper definitions, or token values. The temporary local wrapper
+  `/tmp/playground-gh-via-git.py` implements this without storing a token.
+  A new GitHub device login is unnecessary; the earlier device code expired.
+- `gh secret list` confirmed the existing Actions secret
+  `VITE_SUPABASE_PUBLIC_KEY`. The workflow maps it to
+  `VITE_GOTRUE_ANON_KEY`; listing reveals names, not values. No new key or
+  secret is required. This anonymous key is public browser configuration
+  for the GoTrue authentication client, distinct from user JWTs, Bifrost
+  virtual keys, and provider inference keys. Existing production already
+  publishes it, and its read-only authentication check passed.
+- Pages HTTPS enforcement is now enabled. The API reports
+  `https_enforced: true`; HTTP returned 301 to the expected HTTPS origin,
+  which returned 200 with normal TLS validation. This settings change did
+  not deploy the provider-picker source.
+- The remaining credential prerequisite is the local OpenAI Platform key
+  for the agreed preflight and bounded live release certification. Hosting
+  the static app and users supplying their own API keys do not require an
+  application-owned OpenAI key. Keep the pre-merge release gate until that
+  local credential is available. No paid request has been forwarded.
+
+Current remote PR/check/deployment state belongs in ignored release evidence;
+record final certification there without changing the certified source commit.
+These findings supersede the missing-access/configuration assumptions in the
+dated historical sections below.
 
 ## Previous two-provider release scope — 2026-10-13
 
@@ -522,8 +556,8 @@ Use GitHub CLI 2.102.0 and verify `gh auth status` before GitHub operations.
 This Linux machine has the pinned Node and CLI under
 `/home/ubuntu/.cache/devneya-release-tools/`; prepend their `bin` directories
 to PATH in each new shell.
-Create the PR from `release/openai-provider-setup` to `main` with title
-`Add OpenAI connection setup and local production verification`; describe
+Create the PR from `feature/api-key-provider-picker` to `main` with title
+`Add API-key providers and local production verification`; describe
 the actual final behavior and checks without credentials or local evidence.
 Wait for required checks on the final reviewed head and squash-merge normally
 with `--match-head-commit`; respect required reviews and merge queues. Before merging, refresh
