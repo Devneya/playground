@@ -8,7 +8,7 @@ type CardBox = { position: Position; height: number };
 export const panToRevealCard = (viewport: Viewport, card: CardBox, container: { width: number; height: number }, nodeWidth = LAYOUT.nodeWidth): Viewport | null => {
   const nodeRight = (card.position.x + nodeWidth) * viewport.zoom + viewport.x;
   const nodeBottom = (card.position.y + card.height) * viewport.zoom + viewport.y;
-  const visibleBottom = container.height - 48;
+  const visibleBottom = container.height * 0.8;
   let panY = 0;
   if (nodeBottom > visibleBottom) panY = nodeBottom - visibleBottom;
   const visibleRight = container.width - 24;

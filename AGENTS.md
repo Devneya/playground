@@ -1,8 +1,18 @@
 # AGENTS.md
 
+## Cost-aware agent delegation
+
+- Delegate suitable independent work to `gpt-6-luna` with `xhigh` reasoning when it is expected to save time and total tokens after setup, coordination, and handoff costs.
+- Apply this rule to ongoing work as well as new tasks. Keep immediate blockers, security-critical judgment, difficult integration, ambiguous architecture, and final synthesis with the main agent.
+- Do not delegate when the overhead erases the benefit. If the cheaper agent is unavailable, blocked, or unreliable, complete the work with the main agent or use a stronger model when necessary for correctness.
+
 ## Playground scope
 
 This repository is the clean-cutover Devneya Playground. It is a documentation-light React application, not a place for backend or provider-specific product logic.
+
+## Resuming work
+
+Read `HANDOFF.md` for the saved implementation state, local launch and validation commands. `PRODUCT_NOTES.md` records the accepted interface; retained experiments are not the default product.
 
 ## Required boundaries
 

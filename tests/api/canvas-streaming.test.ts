@@ -1,0 +1,81 @@
+import { afterEach, expect, it, vi } from "vitest";
+import { streamCompletion } from "../../src/api/streamCompletion";
+import { startGenerationRun } from "../../src/features/execution/executeGeneration";
+import { createStarterWorkspace } from "../../src/domain/workspaceFactory";
+import { reduceWorkspace } from "../../src/domain/workspaceReducer";
+import type { WorkspaceAction } from "../../src/domain/workspaceReducer";
+vi.mock("../../src/api/streamCompletion", () => ({ streamCompletion: vi.fn() }));
+const clock = { now: () => new Date("2026-10-04T12:00:00Z") };
+const createRun = () => {
+  let workspace = createStarterWorkspace(() => crypto.randomUUID(), clock);
+  const initial = workspace.flows[0]!;
+  const prompt = initial.nodes.find(node => node.data.kind === "generation")!;
+  const flow = { ...initial, nodes: initial.nodes.map(node => node.id !== prompt.id || node.data.kind !== "generation" ? node : { ...node, data: { ...node.data, modelIds: ["gpt-6.1-sol"] } }) };
+  workspace = { ...workspace, flows: [flow] };
+  const actions: WorkspaceAction[] = [];
+  const options = { flow, generationNodeId: prompt.id, virtualKey: { kind: "local-codex" as const }, idFactory: () => crypto.randomUUID(), clock, dispatch: (action: WorkspaceAction) => { actions.push(action); workspace = reduceWorkspace(workspace, action, { idFactory: () => crypto.randomUUID(), clock }); } };
+  return { options, actions, getWorkspace: () => workspace };
+};
+afterEach(() => vi.restoreAllMocks());
+it("shows output and counters before settlement, retains usage, and prevents late progress changing a completed answer", async () => {
+  let finish: (result: { content: string; usage: { totalTokens: number } }) => void = () => {};
+  vi.mocked(streamCompletion).mockImplementation(async (_key, _request, _signal, delta, progress) => {
+    progress({ text: "Sent", characters: 0 });
+    delta("# Hello"); progress({ text: "Receiving", characters: 7 });
+    delta("\n\n**World**"); progress({ text: "Receiving", characters: 18 });
+    return new Promise(resolve => { finish = resolve; });
+  });
+  const setup = createRun(), run = startGenerationRun(setup.options);
+  const pending = setup.getWorkspace().flows[0]!.batches[0]!.executions[0]!;
+  expect(pending.status).toBe("pending");
+  expect(pending.progress).toMatchObject({ characters: 7, message: "Receiving" });
+  expect(setup.actions.filter(action => action.type === "execution/progress")).toHaveLength(2);
+  finish({ content: "# Hello\n\n**World**", usage: { totalTokens: 22 } });
+  await run.completed;
+  expect(setup.actions.find(action => action.type === "execution/succeeded")).toMatchObject({ text: "# Hello\n\n**World**", usage: { totalTokens: 22 } });
+  const complete = setup.getWorkspace();
+  const late = reduceWorkspace(complete, { type: "execution/progress", flowId: setup.options.flow.id, batchId: run.batchId, executionId: pending.id, text: "late", message: "late", characters: 4 }, { idFactory: setup.options.idFactory, clock });
+  expect(late.flows[0]!.nodes.find(node => node.id === pending.outputNodeId)?.data).toMatchObject({ text: "# Hello\n\n**World**" });
+});
+it("extracts an actual drawing from a streamed answer and rejects invalid framing and oversized Unicode output", async () => {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="40"/></svg>';
+  vi.mocked(streamCompletion).mockImplementation(async (_key, _request, _signal, delta, progress) => {
+    delta(`\`\`\`svg\n${svg}\n\`\`\``); progress({ text: "Done", characters: svg.length });
+    return { content: `\`\`\`svg\n${svg}\n\`\`\`` };
+  });
+  const setup = createRun(); await startGenerationRun(setup.options).completed;
+  expect(setup.actions.find(action => action.type === "execution/succeeded")).toMatchObject({ images: [{ source: svg }], text: "Generated drawing." });
+  vi.mocked(streamCompletion).mockResolvedValue({ content: "🌱".repeat(66000) });
+  const big = createRun(); await startGenerationRun(big.options).completed;
+  expect(big.actions.find(action => action.type === "execution/failed")).toMatchObject({ error: { kind: "invalid_response" } });
+  expect(big.actions.some(action => action.type === "generation/continue")).toBe(false);
+  const base = setup.getWorkspace();
+  const started = setup.actions.find(action => action.type === "batch/started");
+  if (started?.type !== "batch/started") throw new Error("Missing batch");
+  const unchanged = reduceWorkspace(base, { type: "execution/progress", flowId: setup.options.flow.id, batchId: "unknown", executionId: "unknown", text: "", message: "", characters: 0 }, { idFactory: setup.options.idFactory, clock });
+  expect(unchanged.flows[0]?.nodes).toEqual(base.flows[0]?.nodes);
+});
+
+it("freezes model effort and file context, and carries effort into connected prompts", async () => {
+  const setup = createRun();
+  const reducerContext = { idFactory: setup.options.idFactory, clock };
+  const promptId = setup.options.generationNodeId;
+  setup.options.dispatch({ type: "node/set-effort", flowId: setup.options.flow.id, nodeId: promptId, modelId: "gpt-6.1-sol", effort: "low" });
+  const bytes = btoa("%PDF-1.4\n%%EOF");
+  const file = { name: "context.pdf", mimeType: "application/pdf" as const, size: atob(bytes).length, dataUrl: `data:application/pdf;base64,${bytes}` };
+  const fileId = crypto.randomUUID();
+  setup.options.dispatch({ type: "node/add", flowId: setup.options.flow.id, node: { id: fileId, position: { x: 0, y: 0 }, createdAt: clock.now().toISOString(), updatedAt: clock.now().toISOString(), data: { kind: "text", origin: "manual", title: "File", text: "", files: [file] } } });
+  setup.options.dispatch({ type: "input/add", flowId: setup.options.flow.id, edge: { id: crypto.randomUUID(), kind: "input", source: fileId, target: promptId, order: 0 } });
+  vi.mocked(streamCompletion).mockResolvedValue({ content: "Read the file." });
+  const run = startGenerationRun({ ...setup.options, flow: setup.getWorkspace().flows[0]! }); await run.completed;
+  expect(vi.mocked(streamCompletion).mock.calls.at(-1)?.[1]).toMatchObject({ reasoning_effort: "low", messages: [{ files: [file] }] });
+  const flow = setup.getWorkspace().flows[0]!;
+  expect(flow.batches[0]?.executions[0]?.reasoningEffort).toBe("low");
+  const continuation = flow.nodes.find(node => node.data.kind === "generation" && node.id !== promptId);
+  expect(continuation?.data).toMatchObject({ modelEfforts: { "gpt-6.1-sol": "low" } });
+  setup.options.dispatch({ type: "node/delete", flowId: flow.id, nodeId: fileId });
+  const duplicated = reduceWorkspace(setup.getWorkspace(), { type: "generation/duplicate", flowId: flow.id, sourceNodeId: promptId }, reducerContext);
+  expect(duplicated.flows[0]?.nodes.at(-1)?.data).toMatchObject({ modelEfforts: { "gpt-6.1-sol": "low" }, context: [{ files: [file] }] });
+  setup.options.dispatch({ type: "generation/continue", flowId: flow.id, sourceNodeId: flow.batches[0]!.executions[0]!.outputNodeId!, position: { x: 900, y: 50 }, sourceHandle: "text-output" });
+  expect(setup.getWorkspace().flows[0]?.nodes.at(-1)?.position).toEqual({ x: 900, y: 50 });
+});

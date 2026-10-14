@@ -22,6 +22,11 @@ export const errorFromResponse = async (response: Response): Promise<ApiError> =
       const record = body as Record<string, unknown>;
       if (typeof record.error === "string") message = record.error;
       if (typeof record.code === "string") code = record.code;
+      if (typeof record.error === "object" && record.error !== null) {
+        const detail = record.error as Record<string, unknown>;
+        if (typeof detail.message === "string") message = detail.message;
+        if (typeof detail.code === "string") code = detail.code;
+      }
     }
   } catch { /* keep the safe status message */ }
   return new ApiError("http", message, response.status, code);

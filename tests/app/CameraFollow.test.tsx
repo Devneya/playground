@@ -29,7 +29,7 @@ beforeEach(() => {
 it("reveals a new result within canvas bounds even when the canvas is offset on the page", () => {
   const { rerender } = render(<CameraFollow flowId="flow" nodes={[]} edges={[]} />);
   rerender(<CameraFollow flowId="flow" nodes={[result("new", 400, 500)]} edges={[]} />);
-  expect(camera.setViewport).toHaveBeenCalledWith({ x: -104, y: -188, zoom: 1 }, { duration: 400 });
+  expect(camera.setViewport).toHaveBeenCalledWith({ x: -104, y: -260, zoom: 1 }, { duration: 400 });
 });
 
 it("follows the added branch instead of an older, more distant node", () => {
@@ -46,10 +46,12 @@ it("reveals branches above and left of a panned, zoomed viewport", () => {
   expect(camera.setViewport).toHaveBeenCalledWith({ x: 24, y: 24, zoom: 0.5 }, { duration: 400 });
 });
 
-it("leaves toolbar additions and flow restoration to their own camera handlers", () => {
+it("centers toolbar additions and leaves flow restoration alone", () => {
   const manual: PlaygroundNode = { ...result("manual", 3000, 3000), data: { kind: "generation", title: "Prompt", instruction: "", modelIds: [] } };
   const { rerender } = render(<CameraFollow flowId="flow" nodes={[]} edges={[]} />);
   rerender(<CameraFollow flowId="flow" nodes={[manual]} edges={[]} />);
+  expect(camera.setViewport).toHaveBeenCalledWith({ x: -2840, y: -2880, zoom: 1 }, { duration: 400 });
+  camera.setViewport.mockClear();
   rerender(<CameraFollow flowId="other" nodes={[result("restored", 5000, 5000)]} edges={[]} />);
   expect(camera.setViewport).not.toHaveBeenCalled();
 });
@@ -59,5 +61,18 @@ it("follows a newly connected continuation prompt", () => {
   const prompt: PlaygroundNode = { ...result("prompt", 0, 700), data: { kind: "generation", title: "Prompt", instruction: "", modelIds: [] } };
   const { rerender } = render(<CameraFollow flowId="flow" nodes={[answer]} edges={[]} />);
   rerender(<CameraFollow flowId="flow" nodes={[answer, prompt]} edges={[{ id: "input", kind: "input", source: answer.id, target: prompt.id, order: 0 }]} />);
-  expect(camera.setViewport).toHaveBeenCalledWith({ x: 24, y: -388, zoom: 1 }, { duration: 400 });
+  expect(camera.setViewport).toHaveBeenCalledWith({ x: 24, y: -460, zoom: 1 }, { duration: 400 });
+});
+
+it("keeps room below a growing result and stops following when the person pans", () => {
+  const answer = result("answer", 400, 500);
+  const { rerender } = render(<CameraFollow flowId="flow" nodes={[]} edges={[]} interactionVersion={0} />);
+  rerender(<CameraFollow flowId="flow" nodes={[answer]} edges={[]} interactionVersion={0} />);
+  camera.getViewport.mockReturnValue({ x: -104, y: -260, zoom: 1 });
+  camera.setViewport.mockClear();
+  rerender(<CameraFollow flowId="flow" nodes={[{ ...answer, measuredHeight: 380 }]} edges={[]} interactionVersion={0} />);
+  expect(camera.setViewport).toHaveBeenCalledWith({ x: -104, y: -400, zoom: 1 }, { duration: 400 });
+  camera.setViewport.mockClear();
+  rerender(<CameraFollow flowId="flow" nodes={[{ ...answer, measuredHeight: 460 }]} edges={[]} interactionVersion={1} />);
+  expect(camera.setViewport).not.toHaveBeenCalled();
 });

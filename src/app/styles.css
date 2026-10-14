@@ -8,10 +8,22 @@
 
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; min-height: 100vh; background: #eee; }
-button, input, textarea { font: inherit; }
+button, input, textarea, select { font: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; opacity: .55; }
 .loading-screen, .auth-screen { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: radial-gradient(circle at 25% 0%, #f9efcd, transparent 40%), #f6f8fb; }
+.connection-screen { overflow-y: auto; }
+.connection-card { display: grid; gap: 10px; }
+.connection-card h1, .connection-card p { margin-bottom: 0; }
+.connection-options { display: grid; gap: 10px; margin: 12px 0 4px; }
+.connection-option { min-height: 42px; padding: 10px 14px; border: 1px solid #dce2eb; border-radius: 8px; background: #fff; color: #243148; font-weight: 700; text-align: left; }
+.connection-option:hover { border-color: #b45309; background: #fffaf0; }
+.connection-card form { display: grid; gap: 8px; margin-top: 8px; padding-top: 8px; border-top: 1px solid #e7ebf2; }
+.connection-card form button { justify-self: start; }
+.connection-hint { color: #5f6b7a; font-size: .76rem; line-height: 1.5; }
+.connection-hint a { color: #8a5a00; }
+.connection-back { justify-self: start; margin-top: 6px; }
+.connection-switch-link { position: fixed; z-index: 5; bottom: 18px; left: 50%; transform: translateX(-50%); border: 0; background: transparent; color: #8a5a00; text-decoration: underline; }
 .loading-mark { color: #8a5a00; font-weight: 700; letter-spacing: .02em; }
 .auth-card { width: min(100%, 440px); padding: 36px; border: 1px solid #e2e7f0; border-radius: 22px; background: #fff; box-shadow: 0 20px 55px #34405a14; }
 .auth-card h1, .canvas-toolbar h1 { margin: 4px 0 10px; font-size: clamp(1.7rem, 3vw, 2.2rem); line-height: 1.08; letter-spacing: -.04em; }
@@ -22,10 +34,10 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .auth-divider { display: flex; align-items: center; gap: 10px; margin: 18px 0; color: #667085; font-size: .8rem; }
 .auth-divider::before, .auth-divider::after { content: ""; height: 1px; flex: 1; background: #e7ebf2; }
 label { display: grid; gap: 7px; margin: 13px 0; color: #526179; font-size: .82rem; font-weight: 700; }
-input, textarea { width: 100%; border: 1px solid #d7dfeb; border-radius: 8px; background: #fff; color: #172033; outline: none; }
-input { padding: 10px 11px; }
+input, textarea, select { width: 100%; border: 1px solid #d7dfeb; border-radius: 8px; background: #fff; color: #172033; outline: none; }
+input, select { padding: 10px 11px; }
 textarea { resize: vertical; padding: 9px 10px; }
-input:focus, textarea:focus { border-color: #b45309; box-shadow: 0 0 0 3px #b4530926; }
+input:focus, textarea:focus, select:focus { border-color: #b45309; box-shadow: 0 0 0 3px #b4530926; }
 .primary-button { border: 0; border-radius: 8px; background: #ffc400; color: #221a00; padding: 10px 14px; font-weight: 750; }
 .primary-button:hover { background: #f0b400; }
 .auth-links { display: flex; justify-content: space-between; gap: 12px; margin-top: 18px; }
@@ -57,6 +69,7 @@ a.text-button { text-decoration: none; }
 .tool-glyph { font-size: 16px; line-height: 1.2; }
 .tool-caption { font-size: 9px; font-weight: 500; }
 .canvas-toolbar-floating button:disabled { opacity: .45; cursor: not-allowed; }
+.toolbar-separator { height: 1px; background: #e3e1da; margin: 5px 6px; }
 .flows-popover { position: absolute; z-index: 30; left: 150px; top: 50%; transform: translateY(-50%); width: 270px; max-height: 60vh; overflow: auto; border: 1px solid #dbe2ee; border-radius: 14px; background: #fff; box-shadow: 0 16px 40px #42506a30; padding: 14px; }
 .flows-popover-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; font-weight: 800; }
 .flow-list { display: grid; gap: 4px; }
@@ -174,8 +187,24 @@ a.text-button { text-decoration: none; }
   .spatial-chat .canvas-shell { padding-left: 0; margin-bottom: 84px; }
   .spatial-chat .canvas-toolbar-floating { top: auto; bottom: 0; left: 0; right: 0; transform: none; display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 0; border-radius: 0; padding: 2px; }
   .spatial-chat .canvas-toolbar-floating button { min-width: 0; padding: 4px 0; }
+  .spatial-chat .canvas-toolbar-floating .tool-caption { line-height: 11px; }
   .spatial-chat .canvas-navigation { grid-column: 1 / -1; margin-top: 1px; padding-top: 1px; }
   .spatial-chat .canvas-navigation .react-flow__controls { display: flex; flex-direction: row; justify-content: center; gap: 12px; }
   .spatial-chat .react-flow__attribution { bottom: 92px; }
   .flows-popover { left: 15px; width: min(270px, calc(100vw - 30px)); }
 }
+
+/* Typography retained from the panoramic workspace; original canvas geometry. */
+.brand-wordmark { font-size: 17px; font-weight: 650; letter-spacing: -.7px; color: #344437; }
+.brand-wordmark > span { font-size: 18px; font-weight: 300; color: #c0c4b6; margin: 0 8px; }
+.local-connection-note { font-size: 12px; line-height: 1.9; color: #546047; }
+.spatial-chat .brand-dot { width: 10px; height: 10px; background: #88996b; box-shadow: 3px 3px 0 #e1ca71; border-radius: 2px; }
+@media (max-width: 600px) { .brand-wordmark { display: none; } }
+
+.export-menu-root { position: relative; }
+.canvas-toolbar-floating:has(.export-menu) { overflow: visible; }
+.canvas-toolbar-floating .export-menu { position: absolute; z-index: 40; left: calc(100% + 12px); top: 0; width: 250px; padding: 8px; border: 1px solid #d8d0c4; border-radius: 10px; background: #fffdfa; box-shadow: 0 6px 24px #34463e22; }
+.canvas-toolbar-floating .export-menu button { align-items: flex-start; width: 100%; gap: 5px; padding: 10px; text-align: left; font-size: 14px; }
+.export-menu small { font-size: 11px; color: #64745e; }
+@media (max-width: 600px) { .canvas-toolbar-floating .export-menu { left: auto; right: 0; top: auto; bottom: calc(100% + 12px); } .spatial-chat .canvas-toolbar-floating { grid-template-columns: repeat(9, minmax(0, 1fr)); } }
+@media (max-width: 600px) { .toolbar-separator { display: none; } }

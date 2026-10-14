@@ -7,7 +7,7 @@ export const duplicateFlowWithFreshIds = (flow: FlowDocument, idFactory: IdFacto
   const executionIds = new Map(flow.batches.flatMap((batch) => batch.executions).map((execution) => [execution.id, idFactory()]));
   const now = clock.now().toISOString();
   const remapNode = (node: PlaygroundNode): PlaygroundNode => {
-    const base: PlaygroundNode = { ...node, id: nodeIds.get(node.id) ?? node.id, position: { ...node.position }, ...(node.placement ? { placement: { ...node.placement, anchorId: nodeIds.get(node.placement.anchorId) ?? node.placement.anchorId } } : {}), createdAt: now, updatedAt: now };
+    const base: PlaygroundNode = { ...node, id: nodeIds.get(node.id) ?? node.id, position: { ...node.position }, ...(node.placement ? { placement: { ...node.placement, anchorId: nodeIds.get(node.placement.anchorId) ?? node.placement.anchorId } } : {}), ...(node.gridPlacement ? { gridPlacement: { ...node.gridPlacement, anchorId: nodeIds.get(node.gridPlacement.anchorId) ?? node.gridPlacement.anchorId } } : {}), createdAt: now, updatedAt: now };
     if (node.data.kind === "generation") return { ...base, data: { ...node.data, ...(node.data.context ? { context: node.data.context.map((entry) => ({ ...entry, nodeId: nodeIds.get(entry.nodeId) ?? entry.nodeId })) } : {}), ...(node.data.branchedFrom ? { branchedFrom: { nodeId: nodeIds.get(node.data.branchedFrom.nodeId) ?? node.data.branchedFrom.nodeId, batchId: batchIds.get(node.data.branchedFrom.batchId) ?? node.data.branchedFrom.batchId } } : {}) } };
     if (node.data.kind === "text" && node.data.origin === "generated") {
       const batchId = node.data.batchId ? batchIds.get(node.data.batchId) ?? node.data.batchId : undefined;
@@ -30,7 +30,7 @@ export const duplicateFlowWithFreshIds = (flow: FlowDocument, idFactory: IdFacto
     generationNodeId: nodeIds.get(batch.generationNodeId) ?? batch.generationNodeId,
     inputs: batch.inputs.map((input) => ({ ...input, nodeId: nodeIds.get(input.nodeId) ?? input.nodeId })),
     ...(batch.context ? { context: batch.context.map((entry) => ({ ...entry, nodeId: nodeIds.get(entry.nodeId) ?? entry.nodeId })) } : {}),
-    executions: batch.executions.map((execution) => ({ ...execution, id: executionIds.get(execution.id) ?? execution.id, ...(execution.outputNodeId ? { outputNodeId: nodeIds.get(execution.outputNodeId) ?? execution.outputNodeId } : {}) })),
+    executions: batch.executions.map((execution) => ({ ...execution, id: executionIds.get(execution.id) ?? execution.id, ...(execution.additionalOutputNodeIds ? { additionalOutputNodeIds: execution.additionalOutputNodeIds.map((id) => nodeIds.get(id) ?? id) } : {}), ...(execution.outputNodeId ? { outputNodeId: nodeIds.get(execution.outputNodeId) ?? execution.outputNodeId } : {}) })),
   }));
-  return { ...flow, id: idFactory(), ...(requestedName ? { name: requestedName } : {}), nodes: flow.nodes.map(remapNode), edges, batches, createdAt: now, updatedAt: now, viewport: { ...flow.viewport } };
+  return { ...flow, ...(flow.experience ? { experience: structuredClone(flow.experience) } : {}), ...(flow.board ? { board: structuredClone(flow.board) } : {}), ...(flow.surface ? { surface: structuredClone(flow.surface) } : {}), id: idFactory(), ...(requestedName ? { name: requestedName } : {}), nodes: flow.nodes.map(remapNode), edges, batches, createdAt: now, updatedAt: now, viewport: { ...flow.viewport } };
 };

@@ -1,0 +1,78 @@
+import { expect, test } from "@playwright/test";
+import { readFile, writeFile } from "node:fs/promises";
+import type { Surface } from "../../src/domain/surface";
+
+test("the human plays, the state persists, and the second direction changes the experience", async ({ page }, info) => {
+  let requests = 0;
+  await page.route("**/local-api/completion", async (route) => {
+    requests++;
+    if (requests === 1) return route.fulfill({ json: JSON.parse(await readFile(new URL("../fixtures/scene-greeting.json", import.meta.url), "utf8")) });
+    const request = route.request().postDataJSON();
+    const context = JSON.parse(request.messages[0].content);
+    expect(context.workspace.objects.find((object: {id: string}) => object.id === "light_puzzle").state.moves).toBe(11);
+    await writeFile(info.outputPath("second-request.json"), JSON.stringify(request));
+    if (!process.env.SCENE_LIVE_SECOND) return route.fulfill({ json: JSON.parse(await readFile(process.env.SCENE_SECOND_RESPONSE ?? new URL("../fixtures/scene-revision.json", import.meta.url), "utf8")) });
+    return route.continue();
+  });
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto("/?view=surface");
+  await page.getByLabel("Work together", { exact: true }).fill("what's up?");
+  await page.getByRole("button", { name: "Make a move" }).click();
+  const frame = page.frameLocator('iframe[title="Connect the light"]');
+  await expect(frame.getByRole("button", { name: /^Tile 1,/ })).toBeVisible();
+  for (const tile of [2,3,3,4,4,4,5,7,7,8,9]) await frame.getByRole("button", { name: new RegExp(`^Tile ${tile},`) }).click();
+  await expect(frame.getByRole("heading", { name: "Circuit complete!" })).toBeVisible();
+  await expect(frame.locator("#moves")).toHaveText("11 turns");
+  const exportSurface = async (): Promise<Surface> => {
+    await expect(page.getByText("Saved locally", { exact: true })).toBeVisible();
+    const pending = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Export workspace" }).click();
+    const download = await pending;
+    const path = info.outputPath("workspace.json");
+    await download.saveAs(path);
+    const { workspace } = JSON.parse(await readFile(path, "utf8"));
+    return workspace.flows.find((flow: {id: string}) => flow.id === workspace.activeFlowId).surface;
+  };
+  const played = await exportSurface();
+  expect(played.objects.find((object) => object.id === "light_puzzle")?.state?.moves).toBe(11);
+  expect(requests).toBe(1);
+  await page.getByRole("button", { name: "Undo last change" }).click();
+  await expect(frame.locator("#moves")).toHaveText("10 turns");
+  await page.getByRole("button", { name: "Redo last change" }).click();
+  await expect(frame.getByRole("heading", { name: "Circuit complete!" })).toBeVisible();
+  await page.reload();
+  await expect(frame.getByRole("heading", { name: "Circuit complete!" })).toBeVisible();
+  await page.screenshot({ path: info.outputPath("played.png"), fullPage: true });
+  await page.getByRole("button", { name: "Change the work", exact: true }).click();
+  await page.getByLabel("Work together", { exact: true }).fill("I'm waiting for you tell something");
+  const responsePromise = page.waitForResponse((response) => response.url().endsWith("/local-api/completion"), { timeout: 610000 });
+  await page.getByRole("button", { name: "Make a move" }).click();
+  await expect(page.getByRole("complementary", { name: "Your requests" })).toContainText("I'm waiting for you tell something");
+  const response = await responsePromise;
+  const payload = await response.json();
+  await writeFile(info.outputPath("second-response.json"), JSON.stringify(payload));
+  expect(response.ok()).toBe(true);
+  await expect(page.getByRole("status").filter({ hasText: "Working…" })).toHaveCount(0);
+  await expect(page.locator(".work-error")).toHaveCount(0);
+  const revised = await exportSurface();
+  const scenes = revised.objects.filter((object) => object.kind === "scene");
+  expect(scenes.length).toBeGreaterThan(0);
+  // The model can propose a state-aware experiment using the existing instrument.
+  // A fresh HTML document is not required, but a meaningful new interaction is.
+  expect(scenes.some((scene) => scene.interaction !== played.objects.find((object) => object.id === scene.id)?.interaction)).toBe(true);
+  expect(scenes.find((scene) => scene.id === "light_puzzle")?.state).toEqual(played.objects.find((scene) => scene.id === "light_puzzle")?.state);
+  await expect(page.locator(".work-scene-cue")).toContainText("tile 3");
+  await frame.getByRole("button", { name: /^Tile 3,/ }).click();
+  await expect(frame.locator("#count")).toHaveText("3 / 9");
+  await expect(frame.locator("#moves")).toHaveText("12 turns");
+  await page.screenshot({ path: info.outputPath("experiment-result.png"), fullPage: true });
+  for (let i = 0; i < 3; i++) await frame.getByRole("button", { name: /^Tile 3,/ }).click();
+  await expect(frame.getByRole("heading", { name: "Circuit complete!" })).toBeVisible();
+  const last = page.frameLocator(".work-scene-stage iframe").last();
+  await expect(last.locator("button,input,select").first()).toBeVisible();
+  await writeFile(info.outputPath("second-visible-interface.txt"), await last.locator("body").innerText());
+  await page.screenshot({ path: info.outputPath("second-experience.png"), fullPage: true });
+  expect(requests).toBe(2);
+  expect(errors).toEqual([]);
+});

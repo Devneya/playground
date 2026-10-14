@@ -157,8 +157,8 @@ describe("workspace reducer", () => {
 
     expect(note).toMatchObject({
       id: "note-id",
-      position: { x: source.position.x + RESULT_COL_STRIDE, y: source.position.y - cardHeight(source) - CHAT_GAP },
-      placement: { anchorId: source.id, offsetX: RESULT_COL_STRIDE, direction: "above" },
+      position: { x: source.position.x + RESULT_COL_STRIDE, y: source.position.y + cardHeight(existingRight) + 24 },
+      placement: { anchorId: source.id, offsetX: RESULT_COL_STRIDE, direction: "right" },
       data: {
         kind: "text",
         origin: "manual",
@@ -217,7 +217,7 @@ describe("workspace reducer", () => {
     let duplicateIndex = 0;
     const duplicate = duplicateFlowWithFreshIds(nextFlow, () => `copy-${duplicateIndex++}`, clock);
     const duplicateNote = duplicate.nodes.find((node) => node.id === "copy-4")!;
-    expect(duplicateNote.placement).toEqual({ anchorId: "copy-1", offsetX: RESULT_COL_STRIDE, direction: "above" });
+    expect(duplicateNote.placement).toEqual({ anchorId: "copy-1", offsetX: RESULT_COL_STRIDE, direction: "right" });
     expect(duplicateNote.data).toMatchObject({
       source: {
         nodeId: "copy-1",

@@ -1,4 +1,14 @@
+import type { Surface } from "./surface";
+import type { MoveBoard } from "./moveBoard";
+import type { Experience } from "./experience";
+import type { CanvasArtifact, OutputSuggestions } from "./canvasReply";
+import type { StoredImage } from "./images";
+import type { ReasoningEffort } from "./reasoning";
+import type { StoredFile, UploadInfo } from "./files";
 export type EntityId = string;
+
+export type ApiKeyProviderId = "openai" | "anthropic" | "google" | "openrouter" | "groq" | "mistral" | "deepseek" | "custom";
+export type InferenceProvider = "devneya" | ApiKeyProviderId | "local-codex";
 
 export type Position = { x: number; y: number };
 
@@ -15,6 +25,9 @@ export type ManualTextData = {
   origin: "manual";
   title: string;
   text: string;
+  images?: StoredImage[];
+  files?: StoredFile[];
+  upload?: UploadInfo;
   source?: { nodeId: EntityId; batchId: EntityId; executionId: EntityId; modelId: string; instruction: string; text: string };
 };
 
@@ -23,8 +36,16 @@ export type GeneratedTextData = {
   origin: "generated";
   title: string;
   text: string;
+  images?: StoredImage[];
   batchId: EntityId;
   executionId: EntityId;
+  suggestions?: OutputSuggestions;
+  heading?: string;
+  presentation?: "idea" | "visual" | "support" | "atlas";
+  question?: string;
+  artifact?: CanvasArtifact;
+  wide?: boolean;
+  noted?: boolean;
 };
 
 export type GenerationData = {
@@ -32,6 +53,7 @@ export type GenerationData = {
   title: string;
   instruction: string;
   modelIds: string[];
+  modelEfforts?: Record<string, ReasoningEffort>;
   context?: ConversationEntry[];
   branchedFrom?: { nodeId: string; batchId: string };
 };
@@ -45,6 +67,7 @@ export type PlaygroundNode = {
   position: Position;
   measuredHeight?: number;
   placement?: { anchorId: string; offsetX: number; direction: "below" | "right" | "above" };
+  gridPlacement?: { anchorId: string; col: number; row: number; columns: number; below?: boolean; layout?: "spread" | "atlas"; span?: number };
   data: NodeData;
   createdAt: string;
   updatedAt: string;
@@ -75,9 +98,10 @@ export type InputSnapshot = {
   nodeId: EntityId;
   title: string;
   text: string;
+  files?: StoredFile[];
 };
 
-export type CompletionMessage = { role: "user" | "assistant"; content: string };
+export type CompletionMessage = { role: "user" | "assistant"; content: string; files?: StoredFile[] };
 
 export type ConversationEntry = CompletionMessage & { nodeId: EntityId; modelId?: string };
 
@@ -91,13 +115,17 @@ export type ExecutionError = {
 export type ModelExecution = {
   id: EntityId;
   modelId: string;
+  provider?: InferenceProvider;
+  reasoningEffort?: ReasoningEffort;
   status: "pending" | "success" | "failed" | "cancelled";
   startedAt: string;
   completedAt?: string;
   durationMs?: number;
   usage?: Usage;
   outputNodeId?: EntityId;
+  additionalOutputNodeIds?: EntityId[];
   error?: ExecutionError;
+  progress?: { message: string; characters: number };
 };
 
 export type ExecutionBatch = {
@@ -113,6 +141,9 @@ export type ExecutionBatch = {
 };
 
 export type FlowDocument = {
+  experience?: Experience;
+  board?: MoveBoard;
+  surface?: Surface;
   id: EntityId;
   name: string;
   nodes: PlaygroundNode[];
@@ -135,7 +166,9 @@ export type Model = {
   id: string;
   object: "model";
   created: number;
-  owned_by: "devneya";
+  owned_by: string;
+  supportedReasoningEfforts?: ReasoningEffort[] | undefined;
+  defaultReasoningEffort?: ReasoningEffort | undefined;
 };
 
 export type Clock = { now(): Date };

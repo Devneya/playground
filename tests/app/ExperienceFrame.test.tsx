@@ -1,0 +1,32 @@
+import { act, render } from "@testing-library/react";
+import { expect, it, vi } from "vitest";
+import { ExperienceFrame, experienceDocument } from "../../src/features/surface/ExperienceFrame";
+
+it("isolates generated code and accepts bounded, sequenced changes only from the current frame", () => {
+  const onCommit = vi.fn(), onError = vi.fn(), onEditing = vi.fn();
+  const props = { html: "<button>Change</button>", state: { diagram: { points: [1, 2] } }, title: "Working space", onCommit, onError, onEditing };
+  const { container, rerender } = render(<ExperienceFrame {...props} />);
+  const frame = container.querySelector("iframe")!;
+  const token = () => /const token="([^"]+)"/.exec(frame.srcdoc)![1];
+  const first = token();
+  const post = (source: MessageEventSource | null, data: unknown) => act(() => window.dispatchEvent(new MessageEvent("message", { source, data })));
+  const message = { type: "studio:commit", token: first, sequence: 1, state: { diagram: { points: [3, 4] } }, description: "Moved the point" };
+  expect(frame.getAttribute("sandbox")).toBe("allow-scripts");
+  for (const rule of ["connect-src 'none'", "frame-src 'none'", "form-action 'none'", "document.currentScript.remove()", "event.isTrusted"]) expect(frame.srcdoc).toContain(rule);
+  post(window, message); post(frame.contentWindow, { ...message, token: "wrong" });
+  post(frame.contentWindow, { ...message, sequence: -1 });
+  post(frame.contentWindow, { ...message, state: { bad: Infinity } });
+  expect(onCommit).not.toHaveBeenCalled(); expect(onError).toHaveBeenCalledTimes(1);
+  post(frame.contentWindow, message); post(frame.contentWindow, message);
+  expect(onCommit).toHaveBeenCalledExactlyOnceWith(message.state, message.description);
+  post(frame.contentWindow, { type: "studio:editing", token: first, active: true });
+  expect(onEditing).toHaveBeenCalledWith(true);
+  const original = frame.srcdoc;
+  rerender(<ExperienceFrame {...props} state={{ diagram: { points: [3, 4] } }} />);
+  expect(frame.srcdoc).toBe(original);
+  rerender(<ExperienceFrame {...props} html="<canvas></canvas>" />);
+  expect(token()).not.toBe(first);
+  post(frame.contentWindow, { ...message, sequence: 2 }); expect(onCommit).toHaveBeenCalledTimes(1);
+  const escaped = experienceDocument("<p>Work</p>", { text: '</script><img src="https://invalid.example">' }, "token");
+  expect(escaped).not.toContain('</script><img'); expect(escaped).toContain('\\u003c/script>');
+});

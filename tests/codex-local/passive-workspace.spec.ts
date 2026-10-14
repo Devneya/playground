@@ -1,0 +1,43 @@
+import { expect, test } from "@playwright/test";
+import { readFile, writeFile } from "node:fs/promises";
+
+test("an existing passive greeting becomes usable after the user's second prompt", async ({ page }, info) => {
+  let calls = 0;
+  await page.route("**/local-api/completion", async (route) => {
+    calls++;
+    if (calls === 1) return route.fulfill({ json: { content: JSON.stringify({ summary: "Added a simple starting prompt", operations: [{ op: "create", object: { id: "greeting", kind: "text", title: "Hey—what’s on your mind?", text: "Bring a question, a rough idea, or a decision you’re weighing. We can work through it here.", x: 24, y: 20, width: 900, height: 120, color: "ink" } }], actions: [] }) } });
+    if (!process.env.PASSIVE_LIVE) return route.fulfill({ json: JSON.parse(await readFile(process.env.PASSIVE_RESPONSE ?? new URL("../fixtures/scene-passive-recovery.json", import.meta.url), "utf8")) });
+    return route.continue();
+  });
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto("/?view=surface");
+  await page.getByLabel("Work together", { exact: true }).fill("what's up?");
+  await page.getByRole("button", { name: "Make a move" }).click();
+  await expect(page.getByRole("heading", { name: "Hey—what’s on your mind?" })).toBeVisible();
+  await page.getByRole("button", { name: "Change the work", exact: true }).click();
+  await page.getByLabel("Work together", { exact: true }).fill("I'm waiting for you tell something");
+  const pending = page.waitForResponse((response) => response.url().endsWith("/local-api/completion"), { timeout: 610000 });
+  await page.getByRole("button", { name: "Make a move" }).click();
+  const response = await pending;
+  await writeFile(info.outputPath("response.json"), JSON.stringify(await response.json()));
+  expect(response.ok()).toBe(true);
+  await expect(page.locator(".work-scene-stage iframe").first()).toBeVisible();
+  const frame = page.frameLocator(".work-scene-stage iframe").first();
+  await expect(frame.locator("button,input,select").first()).toBeVisible();
+  await expect(page.getByRole("complementary", { name: "Your requests" })).toContainText("what's up?");
+  await expect(page.getByRole("complementary", { name: "Your requests" })).toContainText("I'm waiting for you tell something");
+  await writeFile(info.outputPath("visible-interface.txt"), await frame.locator("body").innerText());
+  await page.screenshot({ path: info.outputPath("recovered-workspace.png"), fullPage: true });
+  await frame.getByRole("button", { name: "Select A", exact: true }).click();
+  await frame.getByRole("button", { name: "Select 7", exact: true }).click();
+  await frame.getByRole("button", { name: "Check my choices", exact: true }).click();
+  await expect(frame.locator("#feedback")).toContainText("Exactly: only A and 7 could break the rule");
+  await expect(frame.locator("[data-card='7'] .face")).toHaveText("7 ↔ E");
+  await expect(page.getByText("Saved locally", { exact: true })).toBeVisible();
+  await page.screenshot({ path: info.outputPath("interaction-result.png"), fullPage: true });
+  await page.reload();
+  await expect(frame.locator("#feedback")).toContainText("Exactly: only A and 7 could break the rule");
+  expect(errors).toEqual([]);
+  expect(calls).toBe(2);
+});

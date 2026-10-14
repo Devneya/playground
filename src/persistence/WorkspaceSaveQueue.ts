@@ -18,7 +18,7 @@ export class WorkspaceSaveQueue {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private queueVersion = 0;
 
-  public schedule(request: Omit<SaveRequest, "queueVersion">, delayMs = 350): void {
+  public schedule(request: Omit<SaveRequest, "queueVersion">, delayMs = 800): void {
     const queueVersion = ++this.queueVersion;
     this.pending = { ...request, queueVersion };
     request.onScheduled?.();

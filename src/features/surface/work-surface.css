@@ -1,0 +1,139 @@
+.work-surface { position: absolute; inset: 65px 0 30px 78px; color: #263b32; }
+.work-surface .react-flow { background: #f7f7f0; }
+.work-surface .react-flow__node { border: 0; border-radius: 0; background: none; box-shadow: none; }
+.work-surface .react-flow__edge-textbg { opacity: .95; }
+.work-object { position: relative; --tone: #334c42; --wash: #edf0e7; color: #293e34; padding: 14px 16px; border: 1px solid transparent; }
+.tone-moss { --tone: #497b56; --wash: #e6edde; }
+.tone-blue { --tone: #316d91; --wash: #e1edf1; }
+.tone-plum { --tone: #866394; --wash: #ece5ef; }
+.tone-coral { --tone: #b76449; --wash: #f5e5dc; }
+.tone-gold { --tone: #9c7419; --wash: #f2edda; }
+.work-object h2 { margin: 0 0 9px; color: var(--tone); font-size: 19px; line-height: 1.25; font-weight: 650; letter-spacing: -.45px; overflow-wrap: anywhere; }
+.work-object p { margin: 7px 0 0; font-size: 16px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.work-text { padding: 4px 6px; }
+.work-text h2 { font-size: 25px; letter-spacing: -1px; font-weight: 550; }
+.work-text p { max-width: 650px; color: #526454; }
+.work-region { border: 1px dashed color-mix(in srgb, var(--tone) 40%, transparent); border-radius: 20px; background: color-mix(in srgb, var(--wash) 70%, transparent); }
+.work-region h2 { font-size: 14px; text-transform: uppercase; letter-spacing: 1.1px; }
+.work-region p { max-width: 600px; font-size: 14px; color: #637461; }
+.work-token { padding: 12px 16px; border-radius: 16px; background: var(--wash); border: 1px solid color-mix(in srgb, var(--tone) 20%, transparent); box-shadow: 0 3px 0 color-mix(in srgb, var(--tone) 10%, transparent); }
+.work-token h2 { margin-bottom: 0; font-size: 18px; }
+.work-token p { font-size: 15px; line-height: 1.4; }
+.work-control { border-top: 3px solid var(--tone); padding-top: 10px; }
+.work-control h2 { margin: 0; font-size: 17px; }
+.work-control-value output { font-size: 32px; font-weight: 550; letter-spacing: -1px; color: var(--tone); }
+.work-control-value small, .work-metric-value small { font-size: 14px; font-weight: 400; letter-spacing: 0; }
+.work-control-value input { padding: 0; margin: 10px 0 4px; accent-color: var(--tone); box-shadow: none; border: 0; height: 20px; }
+.work-metric h2 { font-size: 15px; font-weight: 550; }
+.work-metric-value { display: block; font-size: 52px; line-height: 1.15; font-weight: 500; letter-spacing: -2px; color: var(--tone); }
+.work-metric-value.over-limit { color: #ac4738; }
+.work-metric p { font-size: 14px; color: #657160; }
+.work-bars { padding: 14px 0; }
+.work-bar-row { margin: 11px 0; }
+.work-bar-row > div:first-child { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; padding-bottom: 5px; }
+.work-bar-row strong { font-weight: 550; }
+.work-bar-track { height: 12px; border-radius: 3px; background: #dde4d855; }
+.work-bar-track i { display: block; height: 100%; background: var(--tone); border-radius: 3px; transition: width 120ms; }
+.work-object.work-selected { outline: 2px solid #6e8970; outline-offset: 4px; }
+.work-object .react-flow__handle { opacity: 0; width: 10px; height: 10px; background: #6e8970; }
+.work-object:hover .react-flow__handle, .work-object.work-selected .react-flow__handle { opacity: 1; }
+.work-edit { position: absolute; right: 0; top: -29px; border: 1px solid #b3c4ad; border-radius: 7px; padding: 4px 10px; font-size: 11px; background: #fff; color: #435d43; }
+.work-view-tools { position: absolute; top: 5px; left: 30px; display: flex; align-items: center; gap: 8px; }
+.work-view-tools button, .work-selection-tools button { border: 1px solid #d5ddcd; background: #f9fbf5; color: #46603e; border-radius: 8px; font-size: 12px; padding: 5px 10px; }
+.work-view-tools span { color: #6e7b64; font-size: 11px; margin-left: 8px; }
+.work-selection-tools { position: absolute; top: 45px; left: 30px; z-index: 10; display: flex; align-items: center; gap: 7px; padding: 8px; border: 1px solid #bdcbb4; border-radius: 12px; background: #fffffff2; box-shadow: 0 5px 25px #37432915; font-size: 12px; }
+.work-selection-tools > span { padding: 0 8px; color: #5c6a51; }
+.work-invitation { position: absolute; top: 21%; left: 50%; transform: translateX(-50%); width: min(680px,90%); text-align: center; pointer-events: none; }
+.work-invitation > span { font-size: 10px; letter-spacing: 2.5px; color: #7e8e6d; }
+.work-invitation h2 { margin: 17px 0; font: 400 50px/1.05 Georgia,serif; letter-spacing: -2px; color: #334b3b; }
+.work-invitation p { font-size: 17px; color: #6e7d65; line-height: 1.7; }
+.work-invitation > div { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; margin-top: 26px; pointer-events: all; }
+.work-invitation button { padding: 10px 14px; font-size: 13px; border: 1px solid #d1dbc6; background: transparent; border-radius: 30px; color: #4a643e; }
+.work-invitation button:hover { background: #edf2e6; }
+.work-command { position: absolute; z-index: 15; bottom: 12px; left: 50%; transform: translateX(-50%); width: min(820px,calc(100% - 60px)); background: #fffefa; padding: 14px; border: 1px solid #c8d2bf; border-radius: 18px; box-shadow: 0 12px 45px #243a2520; }
+.work-command form { display: flex; gap: 12px; align-items: center; }
+.work-command textarea { flex: 1; min-width: 0; font-size: 16px; resize: vertical; max-height: 130px; min-height: 44px; border: 0; background: transparent; padding: 10px 6px; color: #2e4736; }
+.work-command textarea:focus { box-shadow: none; }
+.work-command form > button { background: #365d42; border: 0; color: #fff; border-radius: 10px; padding: 12px 16px; font-size: 13px; white-space: nowrap; }
+.work-command-meta { display: flex; align-items: center; gap: 10px; margin-top: 5px; color: #728066; font-size: 10px; }
+.work-command-meta > button { margin-left: auto; border: 0; background: none; color: #68755d; font-size: 11px; }
+.work-command .model-picker-root { margin: 0; }
+.work-command .model-pill { font-size: 10px; padding: 4px 8px; background: #f5f7f0; border-color: #dce3d3; }
+.work-command .model-popover { bottom: 100%; top: auto; left: 0; margin: 0 0 12px; }
+.work-last-move { display: flex; align-items: start; gap: 12px; padding: 0 4px 10px; margin-bottom: 4px; border-bottom: 1px solid #e5e9de; font-size: 13px; line-height: 1.4; color: #49613e; max-height: 110px; overflow: auto; }
+.work-last-move > span { flex: 1; }
+.work-last-move button { border: 0; background: none; padding: 0; color: #698155; white-space: nowrap; font-size: 11px; }
+.work-error { color: #9e4234; }
+.work-suggestions { display: flex; gap: 8px; flex-wrap: wrap; padding-bottom: 7px; }
+.work-suggestions button { border: 0; border-radius: 6px; background: #f0f4e9; color: #4d6640; padding: 5px 9px; font-size: 11px; }
+.work-pending { display: flex; align-items: center; gap: 6px; }
+.work-pending i { width: 10px; height: 10px; border: 1.5px solid #d0dcc7; border-top-color: #456b41; border-radius: 50%; animation: work-spin 1s linear infinite; }
+.work-pending button { border: 0; background: none; color: #4a6240; font-size: 11px; text-decoration: underline; }
+@keyframes work-spin { to { transform: rotate(360deg); } }
+.work-edit-backdrop { position: fixed; inset: 0; background: #14241533; z-index: 60; display: grid; place-items: center; }
+.work-edit-dialog { background: #fffefa; border-radius: 16px; padding: 24px; width: min(460px,90vw); box-shadow: 0 15px 70px #14241530; }
+.work-edit-dialog h2 { margin: 0; font-size: 20px; }
+.work-edit-dialog label { color: #5a6c51; }
+.work-edit-dialog > div { display: flex; justify-content: end; gap: 10px; }
+.work-edit-dialog button { border: 1px solid #c7d3bf; border-radius: 8px; padding: 8px 12px; background: #eff4e8; color: #3c5938; }
+.workspace-mode { position: absolute; z-index: 21; top: 21px; right: 76px; border: 1px solid #d3dbcc; background: #fafcf5; color: #63765b; border-radius: 8px; padding: 5px 10px; font-size: 11px; }
+.work-surface .react-flow__controls { bottom: 16px; left: 10px; box-shadow: none; }
+@media (prefers-reduced-motion: reduce) { .work-pending i { animation: none; } .work-bar-track i { transition: none; } }
+@media (max-width: 700px) {
+ .work-surface { inset: 65px 0 82px; }
+ .work-view-tools { left: 10px; }
+ .work-view-tools span { display: none; }
+ .work-invitation h2 { font-size: 36px; }
+ .work-invitation { top: 13%; }
+ .work-command { width: calc(100% - 16px); padding: 10px; bottom: 8px; }
+ .work-command form > button { padding: 10px; font-size: 11px; }
+ .work-command textarea { font-size: 14px; }
+ .work-command-meta > span:not(.work-pending) { display: none; }
+ .work-selection-tools { left: 8px; max-width: calc(100% - 16px); flex-wrap: wrap; }
+ .workspace-mode { top: 52px; right: 10px; }
+ .work-surface .react-flow__controls { bottom: 156px; }
+}
+
+.work-relations { position: absolute; z-index: 12; right: 20px; top: 55px; width: 260px; max-height: 45%; overflow: auto; padding: 12px; background: #fffef9f5; border: 1px solid #d5ddcd; border-radius: 12px; box-shadow: 0 8px 24px #33402715; }
+.work-relations p { position: relative; margin: 0; padding: 10px 20px 10px 0; font-size: 12px; border-bottom: 1px solid #e6e9df; }
+.work-relations p:last-child { border: 0; }
+.work-relations strong, .work-relations span { display: block; }
+.work-relations strong { font-weight: 600; }
+.work-relations span { color: #6e7b64; margin: 5px 0; }
+.work-relations button { position: absolute; right: 0; top: 8px; border: 0; background: none; color: #718168; }
+
+/* Keep the human's direction alongside the workspace, not in a hidden log. */
+.work-surface > .react-flow { left: 260px; width: calc(100% - 260px); }
+.work-view-tools, .work-selection-tools { left: 285px; }
+.work-command { left: calc(50% + 130px); width: min(820px,calc(100% - 310px)); }
+.work-command-compact { padding: 10px 14px; }
+.work-command-meta .work-change-button { border: 1px solid #c9d5bf; border-radius: 8px; padding: 7px 12px; color: #365d42; font-size: 12px; background: #f2f5ea; }
+.work-requests { position: absolute; top: 8px; left: 22px; width: 215px; max-height: calc(100% - 45px); overflow: auto; padding: 0 12px 20px 0; }
+.work-requests h2 { font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; color: #68795b; margin: 0 0 30px; }
+.work-requests ol { margin: 0; padding: 0; list-style: none; border-left: 1px solid #d5decc; }
+.work-requests li { position: relative; padding: 0 0 25px 17px; }
+.work-request-number { display: block; font-size: 10px; color: #8b987f; margin-bottom: 7px; }
+.work-requests li p { margin: 0 0 8px; font-size: 15px; line-height: 1.45; overflow-wrap: anywhere; white-space: pre-wrap; color: #354d3c; }
+.work-requests li:last-child p { font-weight: 600; }
+.work-requests li button, .work-request-pending > span:last-child { padding: 0; border: 0; background: none; font-size: 11px; color: #7e8e6c; }
+.work-requests-empty { font-size: 13px; line-height: 1.6; color: #8a957d; }
+.work-request-pending { opacity: .7; }
+.work-invitation { left: calc(50% + 130px); width: min(680px,calc(100% - 290px)); }
+.work-object.work-scene { padding: 0; border: 0; }
+.work-scene-stage iframe { display: block; width: 100%; border: 0; background: transparent; }
+.work-scene-cue { display: flex; justify-content: space-between; gap: 20px; padding: 12px 2px; color: #506746; font-size: 13px; }
+.work-scene-cue small { font-size: 10px; color: #89947e; white-space: nowrap; }
+.work-scene .work-edit { top: -30px; }
+@media (max-width: 800px) {
+  .work-surface > .react-flow { left: 0; width: 100%; top: 130px; height: calc(100% - 130px); }
+  .work-requests { top: 4px; left: 15px; width: calc(100% - 30px); max-height: 90px; }
+  .work-requests h2 { margin: 0 0 8px; }
+  .work-requests ol { display: flex; gap: 20px; overflow: auto; border: 0; }
+  .work-requests li { min-width: 180px; max-width: 400px; padding: 0; }
+  .work-request-number, .work-requests li button { display: none; }
+  .work-requests li p { font-size: 13px; }
+  .work-command { left: 50%; width: calc(100% - 16px); }
+  .work-view-tools { left: 10px; top: 100px; }
+  .work-selection-tools { left: 10px; top: 145px; }
+  .work-invitation { left: 50%; width: 90%; top: 24%; }
+}

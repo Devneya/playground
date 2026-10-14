@@ -70,8 +70,14 @@ const credentialsFor = (accountIndex: number) => {
   return { email: account.address, password: account.password };
 };
 
+const startDevneyaConnection = async (page: Page) => {
+  const startDevneya = page.getByRole("button", { name: "Continue with Devneya" });
+  if (await startDevneya.isVisible().catch(() => false)) await startDevneya.click();
+};
+
 const signIn = async (page: Page, email?: string, password?: string, accountIndex = 0) => {
   const credentials = email && password ? { email, password } : credentialsFor(accountIndex);
+  await startDevneyaConnection(page);
   await expect(page.getByLabel("Email")).toBeVisible({ timeout: 60_000 });
   await page.getByLabel("Email").fill(credentials.email);
   await page.getByLabel("Password").fill(credentials.password);
@@ -89,7 +95,7 @@ const waitForWorkspaceLoaded = async (page: Page) => {
 
 const signOut = async (page: Page) => {
   expectedNetworkFailures.get(page)?.add("POST https://api.devneya.com/auth/logout: net::ERR_ABORTED");
-  await page.getByRole("button", { name: "Account" }).click();
+  await page.getByRole("button", { name: "Connection" }).click();
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page.getByLabel("Email")).toBeVisible({ timeout: 60_000 });
 };
@@ -122,7 +128,7 @@ const runAndExpect = async (page: Page, token: string, expectedCount: number, pr
 
 const exportWorkspace = async (page: Page): Promise<string> => {
   const downloadPromise = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Export workspace" }).click();
+  await page.getByRole("button", { name: "Export options", exact: true }).click(); await page.getByRole("button", { name: "Export workspace" }).click();
   const download = await downloadPromise;
   const stream = await download.createReadStream();
   let exported = "";
@@ -156,6 +162,9 @@ test.describe("real-server functional E2E", () => {
     });
     await page.goto("/", { waitUntil: "domcontentloaded" });
     await expect(page).toHaveTitle("Devneya Playground");
+    await startDevneyaConnection(page);
+    await expect(page.getByLabel("Email")).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByRole("button", { name: "Continue with Devneya" })).toHaveCount(0);
     await resetBrowserWorkspace(page);
     await page.reload({ waitUntil: "domcontentloaded" });
   });
@@ -292,18 +301,18 @@ test.describe("real-server functional E2E", () => {
     await signOut(page);
   });
 
-  test("real server: isolates two release-test accounts", async ({ page }) => {
+  test("real server: keeps one browser workspace when the Devneya account changes", async ({ page }) => {
     await signIn(page, undefined, undefined, 0);
     await page.getByLabel("Prompt 1 instruction").fill("REAL_USER_A_MARKER");
     await waitForStoredText(page, "REAL_USER_A_MARKER");
     await signOut(page);
     await signIn(page, undefined, undefined, 1);
-    await expect(page.getByLabel("Prompt 1 instruction")).not.toHaveValue("REAL_USER_A_MARKER");
+    await expect(page.getByLabel("Prompt 1 instruction")).toHaveValue("REAL_USER_A_MARKER");
     await page.getByLabel("Prompt 1 instruction").fill("REAL_USER_B_MARKER");
     await waitForStoredText(page, "REAL_USER_B_MARKER");
     await signOut(page);
     await signIn(page, undefined, undefined, 0);
-    await expect(page.getByLabel("Prompt 1 instruction")).toHaveValue("REAL_USER_A_MARKER");
+    await expect(page.getByLabel("Prompt 1 instruction")).toHaveValue("REAL_USER_B_MARKER");
     await signOut(page);
   });
 

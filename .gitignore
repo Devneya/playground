@@ -20,6 +20,9 @@ playwright.chrome.config.ts
 
 # misc
 .DS_Store
+/.aws
+/.codex
+.env
 .env.local
 .env.development.local
 .env.test.local

@@ -1,6 +1,8 @@
-import { lazy, Suspense, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { ReactFlowProvider, useReactFlow } from "@xyflow/react";
-import { AuthProvider } from "../auth/AuthProvider";
+const AuthProvider = lazy(() => import.meta.env.VITE_USE_MOCKS === "true"
+  ? import("../auth/MockAuthProvider").then(({ MockAuthProvider }) => ({ default: MockAuthProvider }))
+  : import("../auth/AuthProvider").then(({ AuthProvider }) => ({ default: AuthProvider })));
 import type { ComponentType, PropsWithChildren } from "react";
 import { AuthScreen } from "../auth/AuthScreen";
 import { PasswordRecoveryScreen } from "../auth/PasswordRecoveryScreen";
@@ -11,36 +13,49 @@ import { WorkspaceProvider } from "../features/workspace/WorkspaceContext";
 import { nextGenerationIndex, nextManualTextIndex } from "../domain/graph";
 import { randomIdFactory, systemClock } from "../domain/ids";
 import { LAYOUT } from "../domain/resultPlacement";
+import { findFreePosition } from "../domain/freePosition";
+import { cardHeight, cardWidth } from "../domain/spatialLayout";
 import { CardIcon } from "../features/canvas/CardIcon";
-import { panToRevealCard } from "../features/canvas/camera";
 import { config } from "../config";
+import { readCanvasFile } from "../features/canvas/readCanvasFile";
+import { toGoTrueAccessToken } from "../api/credentials";
+import { providerLabel } from "../api/apiKeyProviders";
+import { ConnectionProvider } from "../features/connection/ConnectionProvider";
+import { ConnectionSetup } from "../features/connection/ConnectionSetup";
+import { useConnectionSettings, type InferenceProvider } from "../features/connection/useConnectionSettings";
 import "./styles.css";
 
 const LOCAL_NOTICE = "Stored only in this browser—not backed up or synchronized. Clearing browser data may remove this workspace. Export it to keep a portable copy.";
 
-const AuthGate = () => {
-  const { initializing, user, recovery } = useAuth();
+const DevneyaAuthRoute = () => {
+  const { initializing, user, recovery, session, signOut } = useAuth();
+  const { setDevneyaSession, clearDevneyaSession, changeConnection } = useConnectionSettings();
+  useEffect(() => {
+    if (user && session?.access_token) void setDevneyaSession(toGoTrueAccessToken(session.access_token), user.email ?? null);
+    else clearDevneyaSession();
+    return clearDevneyaSession;
+  }, [clearDevneyaSession, session?.access_token, setDevneyaSession, user]);
   if (initializing) return <main className="loading-screen"><div className="loading-mark">Loading Devneya Playground…</div></main>;
-  if (recovery) return <PasswordRecoveryScreen />;
-  if (!user) return <AuthScreen />;
-  return <WorkspaceProvider key={user.id}><WorkspaceScreen /></WorkspaceProvider>;
+  if (recovery) return <><PasswordRecoveryScreen /><button type="button" className="connection-switch-link" onClick={changeConnection}>Change connection</button></>;
+  if (!user) return <><AuthScreen /><button type="button" className="connection-switch-link" onClick={changeConnection}>Change connection</button></>;
+  return <WorkspaceScreen signOut={signOut} />;
 };
 
-const WorkspaceScreen = () => {
-  const { user, signOut } = useAuth();
-  const { workspace, activeFlow, loading, saving, lastSavedAt, error, storageWarning, modelsStatus, keyStatus, keyError, createFlow, duplicateFlow, deleteFlow, activateFlow, renameFlow, addNode, exportWorkspace, importWorkspace, clearLocalWorkspace, canUndo, canRedo, undo, redo } = useWorkspace();
+const WorkspaceScreen = ({ signOut }: { signOut?: () => Promise<void> }) => {
+  const connectionSettings = useConnectionSettings();
+  const { provider, accountEmail } = connectionSettings;
+  const { workspace, activeFlow, loading, saving, lastSavedAt, error, storageWarning, modelsStatus, keyStatus, keyError, createFlow, duplicateFlow, deleteFlow, activateFlow, renameFlow, addNode, exportWorkspace, importWorkspace, clearLocalWorkspace, canUndo, canRedo, undo, redo, prepareConnectionChange } = useWorkspace();
   const importRef = useRef<HTMLInputElement>(null);
-  const { screenToFlowPosition, getViewport, setViewport } = useReactFlow();
+  const uploadRef = useRef<HTMLInputElement>(null);
+  const { screenToFlowPosition } = useReactFlow();
   const [renameId, setRenameId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [importError, setImportError] = useState<string | null>(null);
   const [controlsContainer, setControlsContainer] = useState<HTMLDivElement | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
 
-  // New nodes appear where the user is looking: flow coordinates of the
-  // current viewport center, then walked down row by row until the full
-  // card rectangle is clear of existing nodes — a free center point is not
-  // enough when the canvas is dense. The camera pans only if the new card
-  // would sit off-screen, so the current thread stays in view.
+  // Find the closest empty card rectangle to the visible center. The canvas
+  // reveals and focuses the new card once its actual size is measured.
   const placeInViewport = () => {
     const rect = document.querySelector(".canvas-shell .react-flow")?.getBoundingClientRect();
     const screen = {
@@ -50,27 +65,17 @@ const WorkspaceScreen = () => {
     const position = screenToFlowPosition(screen);
     position.x -= LAYOUT.nodeWidth / 2;
     position.y -= 95;
-    const overlapsAny = (candidate: { x: number; y: number }) =>
-      activeFlow.nodes.some((node) =>
-        candidate.x < node.position.x + LAYOUT.nodeWidth &&
-        candidate.x + LAYOUT.nodeWidth > node.position.x &&
-        candidate.y < node.position.y + LAYOUT.nodeHeight &&
-        candidate.y + LAYOUT.nodeHeight > node.position.y);
-    while (overlapsAny(position)) position.y += LAYOUT.nodeHeight + 80;
-    const viewport = panToRevealCard(getViewport(), { position, height: LAYOUT.nodeHeight }, { width: rect?.width ?? window.innerWidth, height: rect?.height ?? window.innerHeight });
-    return { position, viewport };
+    return findFreePosition(position, { width: LAYOUT.nodeWidth, height: LAYOUT.nodeHeight }, activeFlow.nodes.map(node => ({ ...node.position, width: cardWidth(node), height: cardHeight(node) })));
   };
   const addNewText = () => {
     const now = systemClock.now().toISOString();
-    const { position, viewport } = placeInViewport();
+    const position = placeInViewport();
     addNode({ id: randomIdFactory(), position, createdAt: now, updatedAt: now, data: { kind: "text", origin: "manual", title: `Note ${nextManualTextIndex(activeFlow)}`, text: "" } });
-    if (viewport) setViewport(viewport, { duration: 300 });
   };
   const addNewGeneration = () => {
     const now = systemClock.now().toISOString();
-    const { position, viewport } = placeInViewport();
+    const position = placeInViewport();
     addNode({ id: randomIdFactory(), position, createdAt: now, updatedAt: now, data: { kind: "generation", title: `Generation ${nextGenerationIndex(activeFlow)}`, instruction: "", modelIds: [] } });
-    if (viewport) setViewport(viewport, { duration: 300 });
   };
 
   const beginRename = (flowId: string, name: string) => { setRenameId(flowId); setRenameValue(name); };
@@ -86,37 +91,89 @@ const WorkspaceScreen = () => {
     try { await importWorkspace(file); } catch (importFailure) { setImportError(importFailure instanceof Error ? importFailure.message : "Unable to import this workspace."); }
     if (importRef.current) importRef.current.value = "";
   };
+  const uploadFile = async (file: File | undefined) => {
+    if (!file) return;
+    setImportError(null);
+    try {
+      const data = await readCanvasFile(file);
+      const position = placeInViewport();
+      const now = systemClock.now().toISOString();
+      addNode({ id: randomIdFactory(), position, createdAt: now, updatedAt: now, data });
+    } catch (failure) { setImportError(failure instanceof Error ? failure.message : "Unable to open this file."); }
+    if (uploadRef.current) uploadRef.current.value = "";
+  };
 
   const [canvasesOpen, setCanvasesOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  const providerName = provider ? providerLabel(provider) : "Devneya";
+  const beginConnectionChange = async () => {
+    setAccountOpen(false);
+    try {
+      await prepareConnectionChange();
+      connectionSettings.changeConnection();
+    } catch (failure) {
+      setImportError(failure instanceof Error ? failure.message : "Unable to change the connection yet.");
+    }
+  };
+  const disconnect = async () => {
+    setAccountOpen(false);
+    try {
+      await prepareConnectionChange();
+      connectionSettings.disconnect();
+    } catch (failure) {
+      setImportError(failure instanceof Error ? failure.message : "Unable to disconnect yet.");
+    }
+  };
+  const clearWorkspace = async () => {
+    try { await clearLocalWorkspace(); }
+    catch (failure) { setImportError(failure instanceof Error ? failure.message : "Unable to clear the local workspace."); }
+  };
+
   return <main className="app-shell canvas-first spatial-chat">
     {loading ? <div className="canvas-loading">Loading this browser's workspace…</div> : <>
-      <div className="canvas-topbar"><span className="brand-dot" /><h1 className="flow-title">{activeFlow.name}</h1><span className={`save-status ${saving ? "saving" : ""}`}>{saving ? "Saving locally…" : lastSavedAt ? "Saved locally" : "Not saved yet"}</span>{modelsStatus === "ready" ? <span className="catalog-dot live" role="img" title="Live model catalog" aria-label="Catalog ready" /> : <span className="catalog-status">{modelsStatus === "loading" ? "Loading models…" : "Model catalog unavailable"}</span>}</div>
+      <div className="canvas-topbar"><span className="brand-dot" /><span className="brand-wordmark">devneya<span> / </span></span><h1 className="flow-title">{activeFlow.name}</h1><span className={`save-status ${saving ? "saving" : ""}`}>{saving ? "Saving locally…" : lastSavedAt ? "Saved locally" : "Not saved yet"}</span>{modelsStatus === "ready" ? <span className="catalog-dot live" role="img" title="Live model catalog" aria-label="Catalog ready" /> : <span className="catalog-status">{modelsStatus === "loading" ? "Loading models…" : "Model catalog unavailable"}</span>}</div>
       <div className="canvas-account">
-        <button type="button" className="avatar-button" aria-label="Account" aria-expanded={accountOpen} onClick={() => { setAccountOpen((value) => !value); setCanvasesOpen(false); }}>{(user?.email ?? "?").slice(0, 1).toUpperCase()}</button>
+        <button type="button" className="avatar-button" aria-label="Connection" title={`Connected to ${providerName}`} aria-expanded={accountOpen} onClick={() => { setAccountOpen((value) => !value); setCanvasesOpen(false); }}>{(accountEmail ?? providerName).slice(0, 1).toUpperCase()}</button>
         {accountOpen && <>
-          <button type="button" className="popover-backdrop" aria-label="Close account" onClick={() => setAccountOpen(false)} />
-          <div className="account-popover" role="dialog" aria-label="Account">
-            <div className="account-email" title={user?.email}>{user?.email}</div>
+          <button type="button" className="popover-backdrop" aria-label="Close connection settings" onClick={() => setAccountOpen(false)} />
+          <div className="account-popover" role="dialog" aria-label="Connection settings">
+            <div className="account-email" title={accountEmail ?? undefined}>{accountEmail ?? `Connected to ${providerName}`}</div>
             <p className="account-notice">{LOCAL_NOTICE}</p>
-            <nav className="account-links" aria-label="Account links">
-              <a className="text-button" href={`${config.appOrigin}/account`} target="_blank" rel="noreferrer">Profile</a>
-              <a className="text-button" href={`${config.appOrigin}/`} target="_blank" rel="noreferrer">Dashboard</a>
-              <button type="button" className="text-button" onClick={() => void signOut()}>Sign out</button>
+            <nav className="account-links" aria-label="Connection actions">
+              {provider === "devneya" && <><a className="text-button" href={`${config.appOrigin}/account`} target="_blank" rel="noreferrer">Profile</a>
+                <a className="text-button" href={`${config.appOrigin}/`} target="_blank" rel="noreferrer">Dashboard</a></>}
+              {provider === "local-codex" && <p className="local-connection-note">Using your local Codex sign-in.<br />Fast requested · effort set per prompt<br />Credentials stay on this computer.</p>}
+              <button type="button" className="text-button" onClick={() => void beginConnectionChange()}>Change connection</button>
+              <button type="button" className="text-button" onClick={() => void disconnect()}>Disconnect</button>
+              {provider === "devneya" && signOut && <button type="button" className="text-button" onClick={() => void signOut()}>Sign out</button>}
             </nav>
           </div>
         </>}
       </div>
       <div className="canvas-toolbar-floating" role="toolbar" aria-label="Canvas">
+        <button type="button" aria-label="+ Prompt" onClick={addNewGeneration}><CardIcon name="message" size={17} /><span className="tool-caption">New prompt</span></button>
+        <button type="button" aria-label="Upload file to canvas" onClick={() => uploadRef.current?.click()}><CardIcon name="upload" size={17} /><span className="tool-caption">Upload</span></button>
         <button type="button" aria-label="+ Text" onClick={addNewText}><CardIcon name="note" size={17} /><span className="tool-caption">Note</span></button>
-        <button type="button" aria-label="+ Prompt" onClick={addNewGeneration}><CardIcon name="message" size={17} /><span className="tool-caption">New chat</span></button>
+        <input ref={uploadRef} className="visually-hidden" type="file" aria-label="Canvas file" accept="text/*,.txt,.md,.csv,.json,.js,.ts,.tsx,.py,.rs,.go,.c,.cpp,.h,.yaml,.yml,.toml,.log,.svg,image/svg+xml,image/png,image/jpeg,image/webp,application/pdf" onChange={event => void uploadFile(event.target.files?.[0])} />
         <button type="button" onClick={undo} disabled={!canUndo} aria-label="Undo last change"><CardIcon name="undo" size={17} /><span className="tool-caption">Undo</span></button>
         <button type="button" onClick={redo} disabled={!canRedo} aria-label="Redo last change"><CardIcon name="redo" size={17} /><span className="tool-caption">Redo</span></button>
+        <div className="toolbar-separator" role="separator" />
         <button type="button" aria-label="Flows" aria-expanded={canvasesOpen} onClick={() => { setCanvasesOpen((value) => !value); setAccountOpen(false); }}><CardIcon name="library" size={17} /><span className="tool-caption">Flows</span></button>
-        <button type="button" aria-label="Export workspace" onClick={exportWorkspace}><CardIcon name="download" size={17} /><span className="tool-caption">Export</span></button>
+        <div className="export-menu-root">
+          <button type="button" aria-label="Export options" aria-expanded={exportOpen} onClick={() => setExportOpen(value => !value)}><CardIcon name="download" size={17} /><span className="tool-caption">Export</span></button>
+          {exportOpen && <div className="export-menu" role="dialog" aria-label="Export options">
+            <button type="button" aria-label="Export workspace" onClick={() => { exportWorkspace(); setExportOpen(false); }}>Workspace JSON <small>All flows, editable boxes and files</small></button>
+            <button type="button" onClick={() => {
+              setExportOpen(false);
+              const preview = window.open("", "_blank");
+              if (!preview) { setImportError("Allow the print preview popup, then try again."); return; }
+              void import("../features/canvas/printFlow").then(({ printFlow }) => printFlow(activeFlow, preview)).catch(failure => { preview.close(); setImportError(failure instanceof Error ? failure.message : "Unable to print this flow."); });
+            }}>Print / Save PDF <small>Current flow, formatted for reading</small></button>
+          </div>}
+        </div>
         <button type="button" aria-label="Import workspace" onClick={() => importRef.current?.click()}><CardIcon name="upload" size={17} /><span className="tool-caption">Import</span></button>
         <input ref={importRef} className="visually-hidden" type="file" aria-label="Workspace JSON file" accept="application/json,.json" onChange={(event) => void handleImport(event.target.files?.[0])} />
-        <button type="button" className="danger-link" aria-label="Clear local workspace" onClick={() => { if (window.confirm("Clear this browser's saved workspace? Export first if you need a copy.")) void clearLocalWorkspace(); }}><CardIcon name="trash" size={17} /><span className="tool-caption">Clear</span></button>
+        <button type="button" className="danger-link" aria-label="Clear local workspace" onClick={() => { if (window.confirm("Clear this browser's saved workspace? Export first if you need a copy.")) void clearWorkspace(); }}><CardIcon name="trash" size={17} /><span className="tool-caption">Clear</span></button>
         <div ref={setControlsContainer} className="canvas-navigation" aria-label="Canvas navigation" role="group" />
       </div>
       {canvasesOpen && <>
@@ -142,4 +199,15 @@ const WorkspaceScreen = () => {
 
 type AuthBoundaryComponent = ComponentType<PropsWithChildren>;
 
-export const App = ({ authBoundary: AuthBoundary = AuthProvider }: { authBoundary?: AuthBoundaryComponent } = {}) => <AuthBoundary><ReactFlowProvider><AuthGate /></ReactFlowProvider></AuthBoundary>;
+const ConnectionRoute = ({ authBoundary }: { authBoundary?: AuthBoundaryComponent }) => {
+  const { connection, changing } = useConnectionSettings();
+  if (!connection || changing) return <ConnectionSetup />;
+  if (connection.provider === "devneya") {
+    if (!config.gotrueAnonKey && !config.useMocks) return <ConnectionSetup serviceError="Devneya sign-in is not configured for this deployment." />;
+    const AuthBoundary = authBoundary ?? AuthProvider;
+    return <Suspense fallback={<main className="loading-screen">Opening Devneya sign-in…</main>}><AuthBoundary><DevneyaAuthRoute /></AuthBoundary></Suspense>;
+  }
+  return <WorkspaceScreen />;
+};
+
+export const App = ({ authBoundary, initialProvider }: { authBoundary?: AuthBoundaryComponent; initialProvider?: InferenceProvider } = {}) => <Suspense fallback={<main className="loading-screen">Opening your workspace…</main>}><ConnectionProvider {...(initialProvider ? { initialProvider } : {})}><WorkspaceProvider><ReactFlowProvider><ConnectionRoute {...(authBoundary ? { authBoundary } : {})} /></ReactFlowProvider></WorkspaceProvider></ConnectionProvider></Suspense>;

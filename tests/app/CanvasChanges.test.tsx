@@ -1,6 +1,6 @@
 import { render } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
-import type { NodeChange } from "@xyflow/react";
+import { ReactFlowProvider, type NodeChange } from "@xyflow/react";
 import { WorkspaceCanvas } from "../../src/features/canvas/WorkspaceCanvas";
 
 const state = vi.hoisted(() => ({ dispatch: vi.fn(), onNodesChange: (_changes: NodeChange[]) => {} }));
@@ -12,7 +12,7 @@ vi.mock("@xyflow/react", async (original) => ({ ...await original<object>(), Rea
   return null;
 } }));
 
-beforeEach(() => { vi.clearAllMocks(); render(<WorkspaceCanvas />); });
+beforeEach(() => { vi.clearAllMocks(); render(<ReactFlowProvider><WorkspaceCanvas /></ReactFlowProvider>); });
 
 it("does not detach automatic placement for measurement-generated positions", () => {
   state.onNodesChange([

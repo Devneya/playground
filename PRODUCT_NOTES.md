@@ -1,163 +1,110 @@
-# Product notes — spatial chat
+# Product notes — spatial prompt boxes
 
-## The product
+## Product direction
 
-One surface: an ordinary-feeling chat assembled from freely movable prompt
-and response cards. There is no Conversation/Map/Editor mode switch. The graph
-is the conversation, not a separate representation to open.
+The product is one freeform React Flow canvas made from prompt, response, note,
+and file boxes. Keep the original box interface and Georgia serif text inside
+the boxes; use neutral styling for notes and files. The panoramic prototype,
+lanes, and chat-card replacements were rejected. Do not treat those layouts as
+the product direction.
 
-The original yellow accent stays. Content has priority: small headers, tight
-spacing, discreet controls, no large frames, welcome panels, or bulky menus.
+Prompts, responses, and notes remain separate movable objects. Automatic
+placement uses measured card dimensions; a person can move each box on its own.
+Cards remain readable as their content grows. A sent prompt keeps its text and
+the same geometry as its editable draft instead of collapsing into a compact
+label. Branching and connections preserve the captured conversation history.
 
-This look is the product, not a sketch. Prompts are cream chat bubbles
-(you, right). Answers are grey (the other person, left). Notes are yellow
-paper stickies. The send control keeps the yellow accent; prompts do not.
-Context is one centered overlay on every card; the overlay scrolls under
-the pointer without panning the board. The model picker is a grouped
-single-select list. Flow chrome stays compact: Default flow in the top
-bar, Flows in the left rail. The top-right avatar menu stays compact:
-Profile opens `https://app.devneya.com/account`, Dashboard opens
-`https://app.devneya.com/`, Sign out stays here. Do not copy the app’s
-profile editor, billing, or key UI into playground.
+## Canvas interactions
 
-## Live API and keys
+- A prompt uses one model. Models come from the active provider’s live catalog. Catalog presence does not
+  guarantee completion compatibility or authorization; API-key model selection
+  stays manual.
+  The picker opens near the upper-left of its box, focuses its search field,
+  and offers compact effort choices directly. Multi-model-per-prompt behavior
+  is not the product default; any later multi-model work needs a separate
+  product decision.
+- Enter sends a prompt; Shift+Enter adds a newline. Border dots on the left,
+  right, and bottom create connected prompts; dragging between boxes makes an
+  explicit connection.
+- The canvas toolbar order is New prompt, Upload, Note, Undo, Redo, then a
+  separator. Export opens choices for workspace JSON and Print / Save PDF.
+- Save as note is beside the response header controls. It creates an editable
+  note nearby to the right of the response, leaving existing boxes in place.
+- Context belongs to each box. While a prompt is still unsent, prior context
+  items can be excluded individually or cleared together. A sent prompt keeps
+  its captured prompt and context for that response; fork it to edit a copy.
 
-Playground signs in with GoTrue, then asks `GET /account/key` (JWT) for a
-Bifrost `sk-bf-` key, and sends completions with that key only. A **403**
-on `/account/key` means the account is not activated or the key is blocked
-— not a CORS failure. CORS already allows `https://playground.devneya.com`.
-Playground has no Subscribe UI; activate the plan on the dashboard, then
-retry the key. Auth storage is not shared with `app.devneya.com`; use the
-same email that has an active plan.
+## Local Codex and production API
 
-`GET /llm/v1/models` is unauthenticated. Production shows whatever that
-endpoint returns, not the mock OpenAI/Claude/DeepSeek/GLM catalog.
+Local Codex development is provided by `src/api/local-codex.mjs`, a Vite
+server-side bridge that uses the machine's existing Codex sign-in and keeps
+credentials out of browser code. It requests the priority service tier and
+defaults to xhigh effort when the selected model supports it; effort is
+selectable per prompt. SVG drawings are passive inline vectors.
 
-## Default interaction
+Hosted setup places **Continue with Devneya** first, followed by **Use an API key**. The API-key form offers OpenAI, Anthropic, Google Gemini, OpenRouter, Groq, Mistral, DeepSeek, and Custom OpenAI-compatible. Setup loads live models without inference; OpenRouter first authenticates against `/key`. Keys are saved only in the browser's connection `localStorage`, never in the workspace or export. API usage has its own billing; ChatGPT subscriptions do not pay for OpenAI API requests.
 
-- Write a prompt and send it. Its response appears directly below. A compact
-  next-prompt card follows, inheriting the responding model.
-- Enter sends; Shift+Enter inserts a newline. The wheel scrolls the surface
-  rather than zooming it; horizontal trackpad movement navigates branches.
-- Prompt and response cards are separate objects, with a small consistent gap.
-  A submitted prompt becomes a compact text block. Answers retain their full
-  readable content instead of being squeezed into a fixed-height preview.
-- Model choice belongs to each prompt. Existing responses keep their actual
-  model identity even when a later prompt changes models.
-- New prompts select the first available model from the live catalog. The
-  picker is single-select; choosing another model replaces the current one.
+Custom connections require HTTPS, a bearer API key, and a live `/models` catalog. Enter the API base URL including its version path; the client appends `/models` and `/chat/completions`. There is no manual catalog fallback, arbitrary authentication headers, or HTTP loopback exception. Catalog access does not prove generation access. Native Anthropic Messages and Gemini generateContent adapters preserve conversation history and supported inline attachments. New providers use their default reasoning behavior; the existing local Codex controls remain.
 
-## Branches and alternatives
+Devneya still signs in through GoTrue, exchanges its JWT for a Bifrost virtual key through `/account/key`, and uses the Devneya OpenAI-compatible endpoints. Keep these credentials separate. Hosted Codex is deferred; historical research and local development support remain.
 
-Branch continues from an answer in a new column to the right, next to the
-existing continuation. It inherits the selected answer's conversation history.
+The GoTrue client rewrites generated OAuth authorization URLs from
+`/auth/v1/authorize` to Devneya's `/auth/authorize` route. The former returned
+404; the corrected route responds with a redirect while preserving the PKCE
+parameters. This checks URL construction, not consent at an external OAuth
+provider.
 
-Model selection stays inside the next prompt, including a branched prompt.
-There is no separate “Try another model” action. Prompt numbers are accessible
-identifiers, not visible headings. Context and models occupy the header;
-Send sits inside the input's trailing edge. Header controls share one vertical
-centerline; the empty input starts at one line and grows with its content.
-The mock catalog lists current chat models from OpenAI, Claude, DeepSeek, and
-GLM. `/llm/v1/models` does not include a provider field, so the picker groups
-by id prefix (`gpt-`/`o`, `claude-`, `deepseek-`, `glm-`, else Other).
-`four-models` remains a compact one-per-provider fixture.
+Signup, recovery, and OAuth return to the full Playground root URL with a
+trailing `/`. Without it, the deployed GoTrue allowlist falls back to
+`app.devneya.com`. The random non-JWT public client value passed real
+prepublication authentication and complete cleanup; authenticated requests
+still use issued user JWTs. The older API's same-second revocation limitation
+is documented in HANDOFF; this release changes no backend service.
 
-Sent prompts are immutable in the interface. “Fork” on a sent prompt
-creates an editable copy beside the original, carrying the captured
-instruction, context, and models without including the original answer.
-There is no “Edit prompt” action. On an answer, “Fork” opens a new column
-with that answer included in history — the card below the answer is the
-linear next turn, not a second reply control. Notes use “Chat” to spark a
-prompt already linked from the note.
+The Connection control is at the upper-right of the canvas. It offers Change
+connection and Disconnect. There is one active inference connection at a time.
+Switching connections keeps the same canvas and waits for active runs to settle
+as cancelled before the screen changes. Disconnect removes the active
+connection and its API key while retaining the workspace; Devneya Sign out
+remains a separate action.
 
-Save as note belongs in the response header as an outward-copy action. It
-ejects an editable copy above-right of the response without moving the original
-or its following prompt, leaving the branch lane clear. Notes look like paper
-stickies, not chat cards. They use the same Context disclosure as every other
-node. Show original returns to the live answer; deleted originals leave Context
-readable. Older notes without source metadata are not assigned guessed origins.
+For historical ChatGPT account linking and plan-funded inference research, see the dated
+feasibility and implementation note in [HANDOFF.md](HANDOFF.md). That is a
+separate integration from the OpenAI API-key connection, local Codex sign-in,
+and Devneya authentication.
 
-The original thread remains intact. Branch provenance and conversational
-connections survive changes to the physical arrangement of cards.
+Text and SVG uploads are limited to 64 KB. Images and PDFs are limited to
+2 MB each, with a 4 MB combined request-file limit.
 
-## Automatic layout and manual freedom
+## Persistence and experiments
 
-Automatic placement is a starting arrangement, not a constraint. New cards
-align using measured card heights and an 8px vertical gap. Parallel columns
-use a 24px gutter: visibly related rather than distant panels.
+Workspaces save locally in IndexedDB, in the `devneya-playground` database's
+`workspaces` object store, under one `browser-workspace` record shared by
+providers and Devneya accounts in this browser. Older per-user records are left
+untouched. Drafts and workspace changes debounce for 800 ms; page-exit handling
+flushes pending saves, and the IndexedDB transaction is explicitly committed so
+reloads retain the latest state. Camera zoom, focus, and manual panning persist.
+Automatic placements use measured box dimensions.
 
-Drag any card by its header. Its text remains selectable, and fields/buttons
-remain usable without moving the card. A manual move changes only placement:
-never the generating model, execution snapshot, source context, or edges.
-Moving a card does not drag its followers along. Manually arranged cards must
-not snap back when a response arrives, a disclosure opens, or the page reloads.
+The retired generated-workspace experiments and their persistence shapes are
+kept for compatibility and history, but are not mounted in the current app and
+are not current acceptance criteria. Their fixtures can replay captured model
+output. They do not make multi-model prompts the current product direction.
 
-Existing saved positions are preserved. Reformatting the surface must not
-destroy a user's previous manual arrangement.
+## Release validation — 2026-10-14
 
-## Context and provenance
-
-Each execution captures its instruction, model, and earlier user/assistant
-turns. Later edits do not silently rewrite the history of an existing answer.
-Sibling responses are excluded unless explicitly selected as context.
-
-Context is a single centered chevron on every card. Opening it overlays the
-thread so the card does not grow or jump. Inside it, turns read like chat: You
-on the right, assistant on the left. Generating context and current visual
-position are independent concepts. Oversized requests fail visibly rather than
-silently dropping earlier conversation. Show original pans to the live answer
-and keeps a highlight until the next click.
-
-Deleting a card removes that card only. Answers stay when a prompt is deleted;
-prompts stay when an answer is deleted. Any content card can feed a prompt.
-
-## Multi-model
-
-Several models are several replies on **one step** of **one thread**: one
-prompt, one next prompt. The selected reply is the one that continues.
-**Branch** is the only way to open another column. Do not spawn a column
-(or a next prompt) per model — that silently forks the graph.
-
-Keep the pure graph domain, browser-local IndexedDB persistence, portable
-exports, live model catalog, and separation between authentication credentials
-and model API credentials.
-
-## Future artifacts and concepts
-
-Note extraction has a visible “Note” label and a yellow folded-paper icon in
-the response header. Canvas navigation belongs in the same compact rail as
-workspace actions, not a separate floating control cluster.
-
-Artifact is the broad category of durable outputs: concepts, summaries, plans,
-and decisions. Concept is the working term for a higher-level abstraction
-supported by observations, examples, and sources, similar to a class organizing
-particular instances. Summary implies compression; synthesis emphasizes
-combining sources.
-
-A concept may draw on several messages or threads; one response may contribute
-to several concepts. Proposed actions are Create concept, Connect concepts,
-and Explore concept. Keep exact source excerpts and links; preview which
-material a new exploration will send. Relationships such as “supports,”
-“contradicts,” and “depends on” are not automatically model-context edges.
-
-These artifacts should eventually live on this same surface. They are a future
-layer, not a reason to introduce separate modes. Start with manual extraction;
-later, offer model-generated concept suggestions for review. Do not claim
-semantic concept extraction is already implemented.
-
-## Acceptance scenarios
-
-1. Two turns read like normal chat without zooming, wiring, or switching views.
-2. Several models stay on one step; the next prompt keeps the selected reply's
-   model. Branch is the only new column.
-3. A branch appears beside its source thread without overlapping either column.
-4. Drag prompt and response cards independently, then keep chatting: manually
-   chosen positions and all provenance remain intact after reload/export.
-5. Long responses and expanded details remain readable without overlapping
-   automatically placed following cards.
-6. Default wheel scrolling does not change zoom; mobile remains usable without
-   overflowing the page itself.
-
-The discarded three-mode redesign was a misunderstanding of this interaction.
-It is not the product direction. The test of success is whether writing,
-branching, moving, and returning to a thought all feel like one activity.
+The final implementation passed 428 unit tests and all 91 Chromium browser checks,
+including all eight API-key journeys, persistence, cancelled runs before
+switching, credential-free export, form accessibility, and real unrouted
+OPTIONS exchanges for native headers and custom paths. Coverage, both audits,
+all builds, and artifact/bundle limits passed. The separate genuine OpenAI
+production CORS probe passed with successful cleanup. This is synthetic and
+deterministic verification. Pages enforces HTTPS. The latest publication uses
+the preferred public Actions variable `PLAYGROUND_GOTRUE_CLIENT_KEY`, mapped
+to the build-time `VITE_GOTRUE_ANON_KEY`, while retaining the existing
+`VITE_SUPABASE_PUBLIC_KEY` secret as fallback. The random-value auth proof is
+passed before publication; deployed browser certification remains pending.
+Do not claim both phases passed until the actual deployed run finishes. The operator
+waived OpenAI credential preflight and paid live certification for this
+publication. Existing paid-runner guards and caps remain unchanged. See
+[HANDOFF.md](HANDOFF.md).

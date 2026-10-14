@@ -13,7 +13,7 @@ export const contextThread = (instruction: string | undefined, entries: Conversa
   ];
 };
 
-export const ContextDisclosure = ({ count, meta, entries, children }: { count: number; meta?: ReactNode; entries: ConversationEntry[]; children?: ReactNode }) => {
+export const ContextDisclosure = ({ count, meta, entries, children, onRemove, onClear }: { count: number; meta?: ReactNode; entries: ConversationEntry[]; children?: ReactNode; onRemove?: ((index: number) => void) | undefined; onClear?: (() => void) | undefined }) => {
   const rootRef = useRef<HTMLDetailsElement>(null);
   useEffect(() => {
     const root = rootRef.current;
@@ -41,10 +41,14 @@ export const ContextDisclosure = ({ count, meta, entries, children }: { count: n
     </summary>
     <div className="context-panel nowheel nodrag nopan" onWheel={(event) => event.stopPropagation()}>
       {meta}
+      {onClear && <div className="context-tools"><span>Included in the next request</span><button type="button" onClick={onClear}>Clear context</button></div>}
       <div className="context-thread">
         {entries.map((entry, index) => <div className={`context-bubble context-bubble-${entry.role}`} key={`${entry.nodeId}-${index}`}>
-          <span className="context-entry-role">{entry.role === "assistant" ? `Assistant${entry.modelId ? ` · ${entry.modelId}` : ""}` : "You"}</span>
+          <div className="context-entry-header"><span className="context-entry-role">{entry.role === "assistant" ? `Assistant${entry.modelId ? ` · ${entry.modelId}` : ""}` : entry.nodeId === "instruction" ? "This prompt" : "You"}</span>
+            {onRemove && entry.nodeId !== "instruction" && <button type="button" className="context-remove" aria-label={`Remove context item ${index + 1}`} title="Exclude this piece from the next request" onClick={() => onRemove(index)}><CardIcon name="close" size={13} /></button>}
+          </div>
           <p>{entry.content}</p>
+          {entry.files?.map((file, fileIndex) => <small key={fileIndex}>{file.name}</small>)}
         </div>)}
         {entries.length === 0 && <p className="muted context-empty">No prior turns.</p>}
       </div>

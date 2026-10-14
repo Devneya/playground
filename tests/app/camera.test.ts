@@ -7,6 +7,6 @@ describe("panToRevealCard", () => {
   });
 
   it("pans only enough to reveal an overflowing card", () => {
-    expect(panToRevealCard({ x: 0, y: 0, zoom: 1 }, { position: { x: 400, y: 500 }, height: 240 }, { width: 800, height: 600 })).toEqual({ x: -104, y: -188, zoom: 1 });
+    expect(panToRevealCard({ x: 0, y: 0, zoom: 1 }, { position: { x: 400, y: 500 }, height: 240 }, { width: 800, height: 600 })).toEqual({ x: -104, y: -260, zoom: 1 });
   });
 });

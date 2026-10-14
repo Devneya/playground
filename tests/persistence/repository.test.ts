@@ -56,4 +56,28 @@ describe("IndexedDbWorkspaceRepository", () => {
     await repository.clearAllBrowserData();
     expect(await repository.load("user-1")).toBeNull();
   });
+
+  it("shares a pending database open between simultaneous loads", async () => {
+    expect(await Promise.all([repository.load("missing-a"), repository.load("missing-b")])).toEqual([null, null]);
+  });
+
+  it("cleans up safely while the initial database open is pending", async () => {
+    await Promise.all([repository.load("missing"), repository.clearAllBrowserData()]);
+    expect(await repository.load("missing")).toBeNull();
+  });
+
+  it("releases its connection when another caller clears the database", async () => {
+    await repository.save("user-1", createStarterWorkspace(() => crypto.randomUUID()));
+    await (await import("idb")).deleteDB("devneya-playground");
+    expect(await repository.load("user-1")).toBeNull();
+  });
+
+  it("can retry after a failed database open", async () => {
+    const idb = await import("idb");
+    const newer = await idb.openDB("devneya-playground", 2);
+    newer.close();
+    await expect(repository.load("user-1")).rejects.toMatchObject({ name: "VersionError" });
+    await idb.deleteDB("devneya-playground");
+    expect(await repository.load("user-1")).toBeNull();
+  });
 });
