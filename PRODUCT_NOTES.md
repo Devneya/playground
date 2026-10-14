@@ -61,6 +61,10 @@ prepublication authentication and complete cleanup; authenticated requests
 still use issued user JWTs. The older API's same-second revocation limitation
 is documented in HANDOFF; this release changes no backend service.
 
+Password-recovery callbacks retain GoTrue's validated recovery state even
+when its event arrives before the React auth screen mounts or initial session
+loading finishes later. Updating the password or signing out clears it.
+
 The Connection control is at the upper-right of the canvas. It offers Change
 connection and Disconnect. There is one active inference connection at a time.
 Switching connections keeps the same canvas and waits for active runs to settle
@@ -93,7 +97,8 @@ output. They do not make multi-model prompts the current product direction.
 
 ## Release validation — 2026-10-14
 
-The final implementation passed 428 unit tests and all 91 Chromium browser checks,
+The corrective implementation passed 434 unit tests; the initial release passed
+all 91 Chromium browser checks, repeated by the corrective PR's CI,
 including all eight API-key journeys, persistence, cancelled runs before
 switching, credential-free export, form accessibility, and real unrouted
 OPTIONS exchanges for native headers and custom paths. Coverage, both audits,

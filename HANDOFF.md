@@ -49,6 +49,21 @@ GoTrue route; the rewrite preserves the PKCE query parameters.
 
 ### Authentication findings and execution steps
 
+- The first deployed browser run exposed a test observer bug: Chromium's
+  HTTP/2 header record includes `:authority`, `:method`, `:path`, and `:scheme`,
+  which Node's `Headers` rejects. Observation now selects only `apikey` and
+  `authorization`, reports failures instead of silently dropping them, and
+  recognizes refresh by the fixed `refresh_token` grant label. It never
+  records credential URL parameters. Synthetic regressions cover this case.
+- The corrected observer then proved browser refresh and credential-free
+  export, and exposed a password-recovery race. GoTrue can emit validated
+  `PASSWORD_RECOVERY` before React mounts; initial session loading could also
+  overwrite it. The singleton now records recovery for that user immediately
+  at creation, and React retains it through initialization/refresh. Password
+  update and logout clear it. This correction has regressions for both event
+  orderings; final deployed confirmation still follows the corrective PR.
+  Both stopped browser runs fully deleted their account/key/mailbox and
+  cleared storage and closed the context/browser. No key fallback was used.
 - Signup, recovery, and OAuth callbacks must use the full root URL
   `https://playground.devneya.com/`, including its trailing slash. The live
   server's `GOTRUE_URI_ALLOW_LIST` is
@@ -69,18 +84,21 @@ GoTrue route; the rewrite preserves the PKCE query parameters.
   service failure only before account creation; it never abandons an account
   to try another service. Both failed attempts were analyzed, and every
   disposable account, inactive key, and mailbox was removed.
-- Final deterministic gates passed: **428 unit tests in 57 files**, typecheck,
-  lint, coverage (96.75% statements / 93.46% branches), both audits (zero
-  vulnerabilities), all **91 Chromium browser tests**, validation/mock builds,
-  artifact checks, and fixed bundle limits. The production build after the
-  callback fix passed inspection: 794,612 JavaScript bytes / 233,845 gzip.
+- Corrective local gates passed: **434 unit tests in 59 files**, typecheck,
+  lint, and checked coverage (96.77% statements / 93.50% branches). Both audits
+  had zero vulnerabilities; dependencies are unchanged. All **91 Chromium
+  browser tests**, validation/mock builds, and artifact checks passed on the
+  initial release; corrective PR CI repeats them. The corrected production
+  build passed inspection: 795,018 JavaScript bytes / 233,995 gzip.
   Genuine unrouted OpenAI CORS passed with OPTIONS and readable synthetic 401s;
   no paid inference ran.
 
 To complete publication: set and fingerprint-verify the preferred Actions
 variable using the exact value from the passing proof; retain the old secret.
 Review and commit the complete PR 6 branch, verify no Cursor co-author trailer,
-push, and wait for checks on that exact head. Record the last successful Pages
+push, and wait for checks on that exact head. PR 6 was merged and deployed;
+the auth correction follows through `fix/auth-smoke-browser-observation` with
+a separate PR and the same value. Record the last successful Pages
 deployment (not a later failed legacy E2E job) as rollback baseline. Verify
 Pages HTTPS enforcement and HTTP redirect; squash-merge with
 `--match-head-commit`. Wait for the exact merged SHA's main-push validation,

@@ -1,6 +1,7 @@
 import type { SupportedStorage } from "@supabase/supabase-js";
 import { apiBaseUrl, config, gotrueAnonKey } from "../config";
 import { AUTH_STORAGE_KEY, createGoTrueClient } from "./createGoTrueClient";
+import { createRecoveryState } from "./recoveryState";
 
 export { AUTH_STORAGE_KEY } from "./createGoTrueClient";
 
@@ -20,8 +21,12 @@ const storage: SupportedStorage = {
 };
 
 export const supabase = createGoTrueClient({ baseUrl: apiBaseUrl, clientKey: gotrueAnonKey, storage });
+export const recoveryState = createRecoveryState();
+// Subscribe at client creation: URL exchange can finish before React's effect mounts.
+supabase.auth.onAuthStateChange((event, session) => recoveryState.observe(event, session));
 
 export const clearAuthStorage = () => {
+  recoveryState.clear();
   const localStorage = globalThis.localStorage;
   if (!localStorage) return;
   const keys = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index)).filter(

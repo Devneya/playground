@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useEffect, useState, type PropsWithChildren, type ReactNode } from "react";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
@@ -35,10 +35,10 @@ const authMocks = vi.hoisted(() => {
     signInWithOAuth: vi.fn(async () => ({ data: { url: "https://api.devneya.com/auth/v1/authorize?provider=google" }, error: null })),
     signOut: vi.fn(async () => ({ error: null })),
   };
-  return { authListener: () => authListener, session, supabaseAuth, clearAuthStorage: vi.fn() };
+  return { authListener: () => authListener, session, supabaseAuth, clearAuthStorage: vi.fn(), recoveryState: { isRecoverySession: vi.fn(() => false), clear: vi.fn() } };
 });
 
-vi.mock("../../src/auth/gotrueClient", () => ({ supabase: { auth: authMocks.supabaseAuth }, clearAuthStorage: authMocks.clearAuthStorage }));
+vi.mock("../../src/auth/gotrueClient", () => ({ supabase: { auth: authMocks.supabaseAuth }, clearAuthStorage: authMocks.clearAuthStorage, recoveryState: authMocks.recoveryState }));
 vi.mock("../../src/api/account", async (importOriginal) => { const actual = await importOriginal() as typeof AccountApi; return { ...actual, revokeSession: vi.fn(async () => {}) }; });
 
 const apiServer = setupServer(
@@ -54,6 +54,7 @@ const AuthProbe = () => {
   const auth = useAuth();
   return <>
     <output data-testid="auth-state">{auth.initializing ? "initializing" : auth.user ? "signed-in" : "signed-out"}</output>
+    <output data-testid="auth-recovery">{auth.recovery ? "recovery" : "normal"}</output>
     <button type="button" onClick={() => void auth.login("person@example.test", "password123")}>login</button>
     <button type="button" onClick={() => void auth.signup("person@example.test", "password123")}>signup</button>
     <button type="button" onClick={() => void auth.sendRecovery("person@example.test")}>recovery</button>
@@ -161,6 +162,27 @@ afterEach(() => { apiServer.resetHandlers(); vi.clearAllMocks(); vi.restoreAllMo
 afterAll(() => apiServer.close());
 
 describe("AuthProvider", () => {
+  it("restores a recovery event captured before React mounts and clears it after password update", async () => {
+    authMocks.supabaseAuth.getSession.mockResolvedValueOnce({ data: { session: authMocks.session }, error: null } as never);
+    authMocks.recoveryState.isRecoverySession.mockReturnValueOnce(true);
+    render(<AuthProvider><AuthProbe /></AuthProvider>);
+    await waitFor(() => expect(screen.getByTestId("auth-recovery")).toHaveTextContent("recovery"));
+    await userEvent.click(screen.getByRole("button", { name: "update" }));
+    await waitFor(() => expect(screen.getByTestId("auth-recovery")).toHaveTextContent("normal"));
+    expect(authMocks.recoveryState.clear).toHaveBeenCalled();
+  });
+
+  it("keeps recovery when initial session loading finishes after the live recovery event", async () => {
+    let resolveSession: (() => void) | undefined;
+    authMocks.supabaseAuth.getSession.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveSession = () => resolve({ data: { session: authMocks.session }, error: null } as never);
+    }));
+    render(<AuthProvider><AuthProbe /></AuthProvider>);
+    await act(async () => { authMocks.authListener()?.("PASSWORD_RECOVERY", authMocks.session); });
+    await act(async () => { resolveSession?.(); });
+    expect(screen.getByTestId("auth-recovery")).toHaveTextContent("recovery");
+  });
+
   it("restores a session, forwards auth actions, enters recovery, and cleans up logout", async () => {
     authMocks.supabaseAuth.getSession.mockResolvedValueOnce({ data: { session: authMocks.session }, error: null } as never);
     const user = userEvent.setup();

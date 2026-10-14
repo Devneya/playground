@@ -5,13 +5,14 @@ import { chromium, test, type Browser, type BrowserContext, type Page } from "@p
 import type { Session } from "@supabase/supabase-js";
 import { AUTH_STORAGE_KEY, createGoTrueClient, rewriteGoTrueAuthUrl } from "../../src/auth/createGoTrueClient";
 import { createDisposableMailbox, deleteDisposableMailbox, waitForAuthEmail, type RealTestAccount } from "../e2e/real-accounts";
+import { authObservationGrantType, authObservationHeaders } from "./browser-observation";
 
 const api = "https://api.devneya.com";
 const origin = "https://playground.devneya.com";
 const redirectUrl = `${origin}/`;
 const digest = (value: string) => createHash("sha256").update(value).digest("hex");
 type Client = ReturnType<typeof createGoTrueClient>;
-type Observation = { endpoint: string; method: string; status: number; clientKeyMatches: boolean | null; bearerHash: string | null; anonymousBearer: boolean };
+type Observation = { endpoint: string; method: string; grantType: ReturnType<typeof authObservationGrantType>; status: number; clientKeyMatches: boolean | null; bearerHash: string | null; anonymousBearer: boolean };
 class SmokeFailure extends Error {
   constructor(public readonly category: string) { super(category); }
 }
@@ -25,6 +26,7 @@ test("real GoTrue lifecycle with a random public client value", async () => {
   const baseline = process.env.PLAYGROUND_BASELINE_CLIENT_KEY ?? "";
   const evidenceDir = process.env.PLAYGROUND_AUTH_EVIDENCE_DIR;
   const observations: Observation[] = [];
+  let browserObservationFailures = 0;
   const issuedTokens = new Set<string>();
   const clients: Client[] = [];
   const memory = new Map<string, string>();
@@ -48,7 +50,7 @@ test("real GoTrue lifecycle with a random public client value", async () => {
   const observe = (url: URL, method: string, headers: Headers, status: number) => {
     if (url.origin !== api) return;
     const bearer = headers.get("authorization")?.replace(/^Bearer /i, "") ?? "";
-    observations.push({ endpoint: url.pathname, method, status, clientKeyMatches: headers.has("apikey") ? headers.get("apikey") === key : null, bearerHash: bearer ? digest(bearer) : null, anonymousBearer: bearer === key });
+    observations.push({ endpoint: url.pathname, method, grantType: authObservationGrantType(url), status, clientKeyMatches: headers.has("apikey") ? headers.get("apikey") === key : null, bearerHash: bearer ? digest(bearer) : null, anonymousBearer: bearer === key });
   };
   const timedFetch: typeof fetch = async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input));
@@ -210,7 +212,7 @@ test("real GoTrue lifecycle with a random public client value", async () => {
         const request = response.request();
         const url = new URL(response.url());
         if (url.origin !== api) return;
-        void request.allHeaders().then((headers) => observe(url, request.method(), new Headers(headers), response.status())).catch(() => undefined);
+        void request.allHeaders().then((headers) => observe(url, request.method(), authObservationHeaders(headers), response.status())).catch(() => { browserObservationFailures += 1; });
       });
       await page.goto(origin, { waitUntil: "domcontentloaded" });
       await page.getByRole("button", { name: "Continue with Devneya", exact: true }).waitFor();
@@ -245,7 +247,7 @@ test("real GoTrue lifecycle with a random public client value", async () => {
       ensure(await prompt.inputValue() === "Auth release workspace persistence probe.", "workspace_restore_failed");
       steps.push("browser_session_workspace_reload");
       stage = "browser_refresh";
-      const refreshCount = observations.filter((item) => item.endpoint === "/auth/token" && item.status === 200).length;
+      const refreshCount = observations.filter((item) => item.endpoint === "/auth/token" && item.grantType === "refresh_token" && item.status === 200).length;
       await page.evaluate((prefix) => {
         for (const name of Object.keys(localStorage)) {
           if (!name.startsWith(prefix)) continue;
@@ -256,7 +258,7 @@ test("real GoTrue lifecycle with a random public client value", async () => {
         }
       }, `${AUTH_STORAGE_KEY}:`);
       await page.reload({ waitUntil: "domcontentloaded" }); await page.locator(".canvas-shell").waitFor();
-      await waitForObservation(() => observations.filter((item) => item.endpoint === "/auth/token" && item.status === 200).length > refreshCount);
+      await waitForObservation(() => observations.filter((item) => item.endpoint === "/auth/token" && item.grantType === "refresh_token" && item.status === 200).length > refreshCount);
       const session = await storedSession();
       const userStatus = await page.evaluate(async ({ apiOrigin, token, clientKey }) => (await fetch(`${apiOrigin}/auth/user`, { headers: { apikey: clientKey, Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(20_000) })).status, { apiOrigin: api, token: session.access_token, clientKey: key });
       ensure(userStatus === 200, "browser_refreshed_user_rejected"); steps.push("browser_refresh_authenticated_user");
@@ -284,6 +286,7 @@ test("real GoTrue lifecycle with a random public client value", async () => {
       steps.push("browser_recovery_password_update", "browser_updated_password_login");
     }
     stage = "header_boundaries";
+    ensure(browserObservationFailures === 0, "browser_auth_observation_failed");
     ensure(observations.some((item) => item.anonymousBearer && item.clientKeyMatches && item.status === 200), "random_client_headers_not_observed");
     ensure(observations.some((item) => item.endpoint === "/auth/user" && item.status === 200 && item.bearerHash && issuedTokens.has(item.bearerHash) && !item.anonymousBearer), "issued_user_bearer_not_observed");
     ensure(!observations.some((item) => /chat\/completions|generateContent|\/messages$|\/subscribe/.test(item.endpoint)), "billing_or_inference_request_forbidden");
@@ -345,7 +348,7 @@ test("real GoTrue lifecycle with a random public client value", async () => {
       cleanupRecoveryFile = join(recoveryDir, `${Date.now()}-${phase === "deployed" ? "deployed" : "prepublish"}.json`);
       writeFileSync(cleanupRecoveryFile, JSON.stringify({ account, currentPassword, accountId, accountDeleted: cleanup.accountDeleted, mailboxDeleted: cleanup.mailboxDeleted }), { mode: 0o600 });
     }
-    const evidence = { phase, releaseSha: process.env.PLAYGROUND_RELEASE_SHA ?? null, fingerprint: digest(key), steps, observations: observations.map(({ bearerHash, anonymousBearer, ...item }) => ({ ...item, bearer: anonymousBearer ? "public-client" : bearerHash && issuedTokens.has(bearerHash) ? "issued-user" : bearerHash ? "other" : "none" })), cleanup, cleanupRecoveryFile, remainingAccountId: cleanup.accountDeleted ? null : accountId ?? null, failure, paidRequests: 0, externalOAuthConsentTested: false };
+    const evidence = { phase, releaseSha: process.env.PLAYGROUND_RELEASE_SHA ?? null, fingerprint: digest(key), steps, browserObservationFailures, observations: observations.map(({ bearerHash, anonymousBearer, ...item }) => ({ ...item, bearer: anonymousBearer ? "public-client" : bearerHash && issuedTokens.has(bearerHash) ? "issued-user" : bearerHash ? "other" : "none" })), cleanup, cleanupRecoveryFile, remainingAccountId: cleanup.accountDeleted ? null : accountId ?? null, failure, paidRequests: 0, externalOAuthConsentTested: false };
     if (evidenceDir) { mkdirSync(evidenceDir, { recursive: true }); writeFileSync(join(evidenceDir, `${phase === "prepublish" || phase === "deployed" ? phase : "invalid"}.json`), JSON.stringify(evidence, null, 2) + "\n"); }
   }
   if (failure) throw new Error(`Auth smoke failed: ${failure}. Publication must stop for analysis. Sanitized evidence retained.`);
