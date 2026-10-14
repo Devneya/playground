@@ -6,6 +6,8 @@ import { join } from "node:path";
 const evidenceDir = process.env.EVIDENCE_DIR;
 const OPENAI_TEST_KEY = "synthetic-openai-browser-key";
 const OPENAI_TEST_CHAT_MODEL = "gpt-mock-chat";
+const ANTHROPIC_TEST_KEY = "synthetic-anthropic-browser-key";
+const ANTHROPIC_TEST_CHAT_MODEL = "claude-mock-chat";
 const browserErrors = new WeakMap<Page, string[]>();
 const networkFailures = new WeakMap<Page, string[]>();
 const expectedCancellation = new WeakSet<Page>();
@@ -41,9 +43,19 @@ const prepare = async (page: Page, scenario: string, options: { setup?: boolean 
 };
 
 const connectOpenAI = async (page: Page, apiKey = OPENAI_TEST_KEY) => {
-  await page.getByRole("button", { name: "Use OpenAI API key", exact: true }).click();
+  await page.getByRole("button", { name: "Use an API key", exact: true }).click();
+  await expect(page.getByLabel("Provider")).toHaveValue("openai");
   await page.getByLabel("OpenAI API key").fill(apiKey);
   await page.getByRole("button", { name: "Connect to OpenAI" }).click();
+  await expect(page.locator(".canvas-shell")).toBeVisible();
+  await expect(page.locator(".catalog-dot.live")).toBeVisible({ timeout: 15_000 });
+};
+
+const connectAnthropic = async (page: Page) => {
+  await page.getByRole("button", { name: "Use an API key", exact: true }).click();
+  await page.getByLabel("Provider").selectOption("anthropic");
+  await page.getByLabel("Anthropic API key").fill(ANTHROPIC_TEST_KEY);
+  await page.getByRole("button", { name: "Connect to Anthropic" }).click();
   await expect(page.locator(".canvas-shell")).toBeVisible();
   await expect(page.locator(".catalog-dot.live")).toBeVisible({ timeout: 15_000 });
 };
@@ -126,7 +138,8 @@ test.beforeEach(async ({ page }) => {
   });
   page.on("requestfailed", (request) => {
     const url = new URL(request.url());
-    if (expectedCancellation.has(page) && request.method() === "POST" && url.pathname.endsWith("/chat/completions") && request.failure()?.errorText === "net::ERR_ABORTED") return;
+    const completionPath = url.pathname === "/v1/chat/completions" || url.pathname === "/llm/v1/chat/completions" || url.pathname === "/v1/messages";
+    if (expectedCancellation.has(page) && request.method() === "POST" && completionPath && request.failure()?.errorText === "net::ERR_ABORTED") return;
     failures.push(`${request.method()} ${url.origin}${url.pathname}: ${request.failure()?.errorText ?? "request failed"}`);
   });
 });
@@ -153,7 +166,7 @@ test.describe("mocked workspace flows", () => {
     page.on("request", (request) => requested.push(request.url()));
     await prepare(page, "default", { setup: true });
     await expect(page.locator(".connection-options button")).toHaveCount(2);
-    await expect(page.getByRole("button", { name: "Use OpenAI API key", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Use an API key", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Continue with Devneya", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: /Codex/i })).toHaveCount(0);
 
@@ -267,7 +280,8 @@ test.describe("mocked workspace flows", () => {
     await prepare(page, "default", { setup: true });
     await connectOpenAI(page);
     await changeConnection(page);
-    await page.getByRole("button", { name: "Use OpenAI API key", exact: true }).click();
+    await page.getByRole("button", { name: "Use an API key", exact: true }).click();
+    await expect(page.getByLabel("Provider")).toHaveValue("openai");
     await page.getByLabel("OpenAI API key").fill("sk-rejected-openai-key");
     await page.getByRole("button", { name: "Connect to OpenAI" }).click();
     await expect(page.getByRole("alert")).toHaveText("OpenAI rejected the API key.");
@@ -365,6 +379,44 @@ test.describe("mocked workspace flows", () => {
     await connectOpenAI(page);
     await expect(page.locator(".generated-node")).toContainText("Cancelled: The run was cancelled.");
     await expect.poll(async () => (await storedWorkspaceJson(page)).includes('"status":"cancelled"')).toBe(true);
+    await page.waitForTimeout(4_500);
+    await expect(page.locator(".generated-node")).toContainText("Cancelled: The run was cancelled.");
+    await expect(page.locator(".generated-content").filter({ hasText: "Mock result" })).toHaveCount(0);
+    await expect.poll(async () => (await storedWorkspaceJson(page)).includes('"status":"cancelled"')).toBe(true);
+  });
+
+  test("cancels a delayed Anthropic run before switching to Devneya", async ({ page }) => {
+    await prepare(page, "slow", { setup: true });
+    await connectAnthropic(page);
+    await selectModel(page, ANTHROPIC_TEST_CHAT_MODEL);
+    await page.getByLabel("Prompt 1 instruction").fill("Wait for this delayed native mock response.");
+    await generation(page).first().getByRole("button", { name: "Send prompt" }).click();
+    await expect(page.getByLabel("Generation in progress").getByRole("button", { name: "Cancel run" })).toBeVisible({ timeout: 15_000 });
+    expectedCancellation.add(page);
+    await changeConnection(page);
+    await expect.poll(async () => (await storedWorkspaceJson(page)).includes('"status":"cancelled"')).toBe(true);
+    await page.getByRole("button", { name: "Continue with Devneya", exact: true }).click();
+    await signIn(page);
+    await expect(page.locator(".generated-node")).toContainText("Cancelled: The run was cancelled.");
+    await page.waitForTimeout(4_500);
+    await expect(page.locator(".generated-node")).toContainText("Cancelled: The run was cancelled.");
+    await expect(page.locator(".generated-content").filter({ hasText: "Anthropic mock result" })).toHaveCount(0);
+    await expect.poll(async () => (await storedWorkspaceJson(page)).includes('"status":"cancelled"')).toBe(true);
+  });
+
+  test("cancels a delayed Devneya run before switching to Anthropic", async ({ page }) => {
+    await prepare(page, "slow", { setup: true });
+    await page.getByRole("button", { name: "Continue with Devneya", exact: true }).click();
+    await signIn(page);
+    await selectModel(page, "claude-sonnet-5");
+    await page.getByLabel("Prompt 1 instruction").fill("Wait for this delayed Devneya response.");
+    await generation(page).first().getByRole("button", { name: "Send prompt" }).click();
+    await expect(page.getByLabel("Generation in progress").getByRole("button", { name: "Cancel run" })).toBeVisible({ timeout: 15_000 });
+    expectedCancellation.add(page);
+    await changeConnection(page);
+    await expect.poll(async () => (await storedWorkspaceJson(page)).includes('"status":"cancelled"')).toBe(true);
+    await connectAnthropic(page);
+    await expect(page.locator(".generated-node")).toContainText("Cancelled: The run was cancelled.");
     await page.waitForTimeout(4_500);
     await expect(page.locator(".generated-node")).toContainText("Cancelled: The run was cancelled.");
     await expect(page.locator(".generated-content").filter({ hasText: "Mock result" })).toHaveCount(0);

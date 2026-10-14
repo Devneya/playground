@@ -1,6 +1,68 @@
 # Playground handoff
 
-## Current release scope — 2026-10-13
+## Current provider-picker implementation — 2026-10-14
+
+Branch: `feature/api-key-provider-picker`, based on the complete prepared
+`release/openai-provider-setup` HEAD `c5e520e78c44de59f015c04b19da1247366be67d`.
+This scope supersedes the previous two-provider setup below. The canvas and
+existing local Codex implementation are retained.
+
+Setup puts **Continue with Devneya** first. **Use an API key** reveals OpenAI,
+Anthropic, Google Gemini, OpenRouter, Groq, Mistral, DeepSeek, and Custom
+OpenAI-compatible. Keys stay in one active browser connection record, outside
+the shared IndexedDB workspace and exports. Existing OpenAI records still
+restore. Provider changes settle active runs as cancelled and retain the canvas.
+API-key model selection is manual. Setup loads live catalogs without inference;
+OpenRouter checks `/api/v1/key` before its public catalog.
+
+Custom requires an HTTPS base URL, bearer key, and live `/models` catalog.
+No manual models, HTTP loopback, arbitrary headers, or inferred version paths.
+Requests use small HTTP adapters: existing OpenAI, compatible Chat Completions,
+Anthropic Messages, and Gemini generateContent. No new SDK dependencies;
+coverage and bundle limits remain fixed. Hosted Codex remains deferred.
+
+The 2026-10-14 synthetic upstream browser research found readable authentication
+responses for the named providers (Anthropic requires the browser-access
+header). This is transport evidence, not real-key validation or live inference.
+Ignored research summary: `release-evidence/provider-research/summary-2026-10-14.json`.
+The local browser suite separately observes actual OPTIONS on different
+loopback ports without routing or service workers, including native headers
+and custom base paths. Keep the existing `--check-cors`, `--preflight`, and
+bounded OpenAI certification commands below; only their UI selectors change.
+
+Final implementation checks passed on Node 22.23.2: typecheck, lint, **412 unit
+checks in 54 files**, coverage, production/full audits (zero vulnerabilities),
+validation/mock/production builds, artifact checks, unchanged bundle budgets,
+and **91 Chromium browser tests** with one worker. This includes all eight
+provider journeys, native delayed cancellation in both directions, expanded
+form accessibility, and actual OPTIONS acceptance/rejection on local ports.
+Checked whole coverage: 96.73% statements / 93.35% branches; API coverage:
+99.69% statements / 96.77% branches. `git diff --check` passed.
+
+Final production artifact: 20 files, 793,996 JavaScript bytes / 233,539 gzip.
+Validation: 794,145 / 233,633. Mock: 1,021,353 / 340,610. No dependencies or
+bundle/coverage limits changed. Production inspection now also rejects the
+new synthetic provider keys. The final `dist/` is the production artifact.
+It has no approved GoTrue configuration and is not a configured release.
+
+The genuine OpenAI CORS command passed with observed upstream OPTIONS 200,
+readable synthetic 401 responses, and successful context/browser cleanup.
+Evidence: `release-evidence/openai-cors/2026-10-14T07-42-29-305Z/cors.json`.
+Local check logs and summary: `release-evidence/api-key-provider-picker/`.
+Credential preflight and `npm run test:e2e` stopped before browser launch or
+network access because the Platform key is missing. Zero paid requests,
+inference tokens, and $0.00 estimated cost for this work and the cumulative
+release. The budget ledger remains absent and was not initialized.
+
+Changes are local and uncommitted. No push, PR, merge, deployment, or Pages
+settings operation was performed. Publication remains outside this local
+feature implementation. GitHub access,
+a Platform API key, approved public GoTrue configuration, and Actions secret
+verification remain external prerequisites. Never substitute the synthetic
+validation configuration for production configuration. Preserve the portable
+zero-usage ledger and existing live-run caps and lock policy.
+
+## Previous two-provider release scope — 2026-10-13
 
 Repository: `Devneya/playground`, branch `release/openai-provider-setup`.
 Publish the complete reviewed branch, including the accepted spatial canvas
@@ -36,7 +98,7 @@ and lock across machines and corrective deployments. At most two live runs,
 four forwarded paid requests, and $0.10 estimated usage are permitted. Never
 reset the ledger or remove a lock belonging to an active process.
 
-## Latest implementation validation — 2026-10-13
+## Previous implementation validation — 2026-10-13
 
 The two-provider implementation is finished locally on the release branch.
 Node 22.23.2 and GitHub CLI 2.102.0 were installed outside the repository with
@@ -106,7 +168,7 @@ remain incomplete.
   transaction commit. Camera zoom, focus, and user panning persist; placement
   uses measured box sizes.
 
-## Current hosted connections
+## Previous hosted connections — 2026-10-13
 
 - Fresh users see `Use OpenAI API key` and
   `Continue with Devneya`. OpenAI setup checks the key with the

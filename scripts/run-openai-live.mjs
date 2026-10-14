@@ -201,7 +201,10 @@ async function main() {
       await page.keyboard.press("Escape");
     };
     const connect = async (candidate) => {
-      await page.getByRole("button", { name: "Use OpenAI API key", exact: true }).click();
+      if (!(await page.getByRole("combobox", { name: "Provider", exact: true }).isVisible())) {
+        await page.getByRole("button", { name: "Use an API key", exact: true }).click();
+      }
+      await page.getByRole("combobox", { name: "Provider", exact: true }).selectOption("openai");
       await page.getByLabel("OpenAI API key", { exact: true }).fill(candidate);
       catalogKey = candidate;
       await page.getByRole("button", { name: "Connect to OpenAI", exact: true }).click();
@@ -235,7 +238,7 @@ async function main() {
     };
     await scenario("fresh production load", async () => {
       await page.goto(`${PRODUCTION_URL}/`, { waitUntil: "networkidle" });
-      await expect(page.getByRole("button", { name: "Use OpenAI API key", exact: true })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Use an API key", exact: true })).toBeVisible();
       await expect(page.getByRole("button", { name: "Continue with Devneya", exact: true })).toBeVisible();
       if (catalogRequests || allowance.runForwarded) throw new LiveTestFailure("application");
     });
@@ -320,7 +323,7 @@ async function main() {
     await scenario("disconnect and reconnect", async () => {
       await openConnection();
       await page.getByRole("button", { name: "Disconnect", exact: true }).click();
-      await expect(page.getByRole("button", { name: "Use OpenAI API key", exact: true })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Use an API key", exact: true })).toBeVisible();
       const removed = await page.evaluate(() => {
         const saved = JSON.parse(localStorage.getItem("devneya-playground-connection") ?? "null");
         return !saved || (saved.provider === null && !saved.apiKey);

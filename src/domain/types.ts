@@ -7,7 +7,8 @@ import type { ReasoningEffort } from "./reasoning";
 import type { StoredFile, UploadInfo } from "./files";
 export type EntityId = string;
 
-export type InferenceProvider = "devneya" | "openai" | "local-codex";
+export type ApiKeyProviderId = "openai" | "anthropic" | "google" | "openrouter" | "groq" | "mistral" | "deepseek" | "custom";
+export type InferenceProvider = "devneya" | ApiKeyProviderId | "local-codex";
 
 export type Position = { x: number; y: number };
 

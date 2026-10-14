@@ -19,6 +19,7 @@ import { CardIcon } from "../features/canvas/CardIcon";
 import { config } from "../config";
 import { readCanvasFile } from "../features/canvas/readCanvasFile";
 import { toGoTrueAccessToken } from "../api/credentials";
+import { providerLabel } from "../api/apiKeyProviders";
 import { ConnectionProvider } from "../features/connection/ConnectionProvider";
 import { ConnectionSetup } from "../features/connection/ConnectionSetup";
 import { useConnectionSettings, type InferenceProvider } from "../features/connection/useConnectionSettings";
@@ -104,7 +105,7 @@ const WorkspaceScreen = ({ signOut }: { signOut?: () => Promise<void> }) => {
 
   const [canvasesOpen, setCanvasesOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
-  const providerName = provider === "openai" ? "OpenAI" : provider === "local-codex" ? "Local Codex" : "Devneya";
+  const providerName = provider ? providerLabel(provider) : "Devneya";
   const beginConnectionChange = async () => {
     setAccountOpen(false);
     try {

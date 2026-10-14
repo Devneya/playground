@@ -16,9 +16,9 @@ label. Branching and connections preserve the captured conversation history.
 
 ## Canvas interactions
 
-- A prompt uses one model. Models come from the active provider’s live `/llm/v1/models` or OpenAI
-  `/v1/models` catalog. Catalog presence does not guarantee Chat Completions
-  compatibility; model selection stays manual.
+- A prompt uses one model. Models come from the active provider’s live catalog. Catalog presence does not
+  guarantee completion compatibility or authorization; API-key model selection
+  stays manual.
   The picker opens near the upper-left of its box, focuses its search field,
   and offers compact effort choices directly. Multi-model-per-prompt behavior
   is not the product default; any later multi-model work needs a separate
@@ -42,23 +42,17 @@ credentials out of browser code. It requests the priority service tier and
 defaults to xhigh effort when the selected model supports it; effort is
 selectable per prompt. SVG drawings are passive inline vectors.
 
-The hosted setup offers exactly **Use OpenAI API key** and **Continue with
-Devneya**. Hosted Codex is deferred; local Codex support and historical
-authentication research are retained. OpenAI users enter an API
-key; setup validates it with the authenticated `/v1/models` catalog request and
-uses the selected model for Chat Completions. The key stays in this browser's
-`localStorage`, never in the workspace document or its export. ChatGPT
-subscription billing is separate from API usage. Devneya users sign in through
-GoTrue, then the client obtains a Bifrost virtual key and calls the Devneya
-OpenAI-compatible Chat Completions endpoint. Keep GoTrue JWTs separate from
-Bifrost keys. Never add secrets, local auth files, or machine credentials to
-source, fixtures, `.env` files, or Git history.
+Hosted setup places **Continue with Devneya** first, followed by **Use an API key**. The API-key form offers OpenAI, Anthropic, Google Gemini, OpenRouter, Groq, Mistral, DeepSeek, and Custom OpenAI-compatible. Setup loads live models without inference; OpenRouter first authenticates against `/key`. Keys are saved only in the browser's connection `localStorage`, never in the workspace or export. API usage has its own billing; ChatGPT subscriptions do not pay for OpenAI API requests.
+
+Custom connections require HTTPS, a bearer API key, and a live `/models` catalog. Enter the API base URL including its version path; the client appends `/models` and `/chat/completions`. There is no manual catalog fallback, arbitrary authentication headers, or HTTP loopback exception. Catalog access does not prove generation access. Native Anthropic Messages and Gemini generateContent adapters preserve conversation history and supported inline attachments. New providers use their default reasoning behavior; the existing local Codex controls remain.
+
+Devneya still signs in through GoTrue, exchanges its JWT for a Bifrost virtual key through `/account/key`, and uses the Devneya OpenAI-compatible endpoints. Keep these credentials separate. Hosted Codex is deferred; historical research and local development support remain.
 
 The Connection control is at the upper-right of the canvas. It offers Change
 connection and Disconnect. There is one active inference connection at a time.
 Switching connections keeps the same canvas and waits for active runs to settle
 as cancelled before the screen changes. Disconnect removes the active
-connection and its OpenAI key while retaining the workspace; Devneya Sign out
+connection and its API key while retaining the workspace; Devneya Sign out
 remains a separate action.
 
 For historical ChatGPT account linking and plan-funded inference research, see the dated
@@ -84,10 +78,13 @@ kept for compatibility and history, but are not mounted in the current app and
 are not current acceptance criteria. Their fixtures can replay captured model
 output. They do not make multi-model prompts the current product direction.
 
-## Release validation — 2026-10-13
+## Release validation — 2026-10-14
 
-The two-provider behavior passed 330 unit tests and all 69 Chromium browser
-checks, including provider persistence, cancellation before switching, and
-credential-free export. The genuine production CORS probe passed for both
-OpenAI endpoints with successful cleanup. Publishing and live inference remain
-blocked by missing release access/configuration; see [HANDOFF.md](HANDOFF.md).
+The provider picker passed 412 unit tests and all 91 Chromium browser checks,
+including all eight API-key journeys, persistence, cancelled runs before
+switching, credential-free export, form accessibility, and real unrouted
+OPTIONS exchanges for native headers and custom paths. Coverage, both audits,
+all builds, and artifact/bundle limits passed. The separate genuine OpenAI
+production CORS probe passed with successful cleanup. This is synthetic and
+deterministic verification; authenticated live inference and publication
+remain blocked by missing access/configuration. See [HANDOFF.md](HANDOFF.md).

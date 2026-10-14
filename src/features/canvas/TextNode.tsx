@@ -1,5 +1,6 @@
 import { Handle, Position, useReactFlow, type Node, type NodeProps } from "@xyflow/react";
 import { useMemo } from "react";
+import { providerLabel } from "../../api/apiKeyProviders";
 import type { GeneratedTextData, TextNodeData } from "../../domain/types";
 import { LAYOUT } from "../../domain/resultPlacement";
 import { useWorkspace } from "../workspace/useWorkspace";
@@ -122,7 +123,7 @@ export const TextNode = ({ id, data: flowData }: NodeProps<TextFlowNode>) => {
     <CardRail
       context={<ContextDisclosure
         count={contextCount}
-        meta={generated ? <div className="context-detail-meta"><span>Source prompt</span><strong>{sourcePrompt ? displayGenerationTitle(sourcePrompt.data.title) : batch?.generationNodeId ?? "Prompt"}</strong><span>Provider</span><strong>{execution?.provider ?? "Unknown"}</strong><span>Following</span><strong>{followingCount}</strong></div> : undefined}
+        meta={generated ? <div className="context-detail-meta"><span>Source prompt</span><strong>{sourcePrompt ? displayGenerationTitle(sourcePrompt.data.title) : batch?.generationNodeId ?? "Prompt"}</strong><span>Provider</span><strong>{execution?.provider ? providerLabel(execution.provider) : "Unknown"}</strong><span>Following</span><strong>{followingCount}</strong></div> : undefined}
         entries={thread}
       />}
       action={generated

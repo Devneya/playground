@@ -2,6 +2,7 @@ import { emptySurface } from "../../domain/surface";
 import { startSurfaceRun } from "../execution/executeSurface";
 import { createContext, useCallback, useEffect, useMemo, useReducer, useRef, useState, type PropsWithChildren } from "react";
 import type { CompletionCredential } from "../../api/credentials";
+import { isApiKeyProvider } from "../../api/apiKeyProviders";
 import { createBlankFlow, createStarterWorkspace, uniqueFlowName } from "../../domain/workspaceFactory";
 import { createWorkspaceExport, parseWorkspaceExport } from "../../domain/exportFormat";
 import { randomIdFactory, systemClock } from "../../domain/ids";
@@ -190,9 +191,9 @@ export const WorkspaceProvider = ({ children, repository: injectedRepository }: 
   }, [loadStatus, workspace, repository]);
 
   useEffect(() => {
-    // The OpenAI catalog contains more than Chat Completions models. Let the
+    // API catalogs can contain models incompatible with the completion endpoint. Let the
     // person choose instead of guessing a compatible model or probing inference.
-    const defaultModel = connectionProvider === "openai" ? undefined : (connectionProvider === "local-codex" ? models.find((model) => model.id === "gpt-6.1-sol") : undefined)?.id ?? models[0]?.id;
+    const defaultModel = isApiKeyProvider(connectionProvider) ? undefined : (connectionProvider === "local-codex" ? models.find((model) => model.id === "gpt-6.1-sol") : undefined)?.id ?? models[0]?.id;
     if (loadStatus !== "ready" || modelsStatus !== "ready" || !defaultModel) return;
     if (workspace.flows.some((flow) => flow.nodes.some((node) => node.data.kind === "generation" && !node.data.modelIds.length && !flow.batches.some((batch) => batch.generationNodeId === node.id)))) {
       dispatch({ type: "workspace/default-model", modelId: defaultModel });

@@ -1,10 +1,11 @@
-import { toOpenAIApiKey, type OpenAIApiKey } from "./credentials";
+import type { ApiKeyConnection } from "./credentials";
+import { isApiKeyProvider, validateApiKeyCandidate } from "./apiKeyProviders";
 
 export const CONNECTION_STORAGE_KEY = "devneya-playground-connection";
 
 export type BrowserConnection =
   | { provider: "devneya" }
-  | { provider: "openai"; apiKey: OpenAIApiKey }
+  | ApiKeyConnection
   | { provider: "local-codex" };
 
 // Connection credentials are separate from GoTrue sessions and workspace exports.
@@ -17,7 +18,13 @@ export const readBrowserConnection = (): BrowserConnection | null | undefined =>
     if (typeof value !== "object" || value === null || !("provider" in value)) return undefined;
     if (value.provider === null) return null;
     if (value.provider === "devneya" || value.provider === "local-codex") return { provider: value.provider };
-    if (value.provider === "openai" && "apiKey" in value) return { provider: "openai", apiKey: toOpenAIApiKey(value.apiKey) };
+    if (isApiKeyProvider(value.provider) && "apiKey" in value && typeof value.apiKey === "string") {
+      if (value.provider === "custom") {
+        if (!("baseURL" in value) || typeof value.baseURL !== "string") return undefined;
+        return validateApiKeyCandidate({ provider: "custom", apiKey: value.apiKey, baseURL: value.baseURL });
+      }
+      return validateApiKeyCandidate({ provider: value.provider, apiKey: value.apiKey });
+    }
   } catch { /* Malformed or unavailable browser storage returns to setup. */ }
   return undefined;
 };

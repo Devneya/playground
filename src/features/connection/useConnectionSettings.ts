@@ -1,5 +1,6 @@
 import { createContext, useContext } from "react";
 import type { BrowserConnection } from "../../api/browserConnection";
+import type { ApiKeyCandidate } from "../../api/apiKeyProviders";
 import type { CompletionCredential, GoTrueAccessToken } from "../../api/credentials";
 import type { InferenceProvider, Model } from "../../domain/types";
 
@@ -18,6 +19,7 @@ export type ConnectionSettings = {
   accountEmail: string | null;
   changing: boolean;
   chooseDevneya(): void;
+  connectApiKeyProvider(candidate: ApiKeyCandidate, signal: AbortSignal): Promise<void>;
   connectOpenAI(key: string, signal: AbortSignal): Promise<void>;
   setDevneyaSession(token: GoTrueAccessToken, email: string | null): Promise<void>;
   clearDevneyaSession(): void;

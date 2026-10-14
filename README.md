@@ -7,8 +7,8 @@ The clean-cutover flow playground for `playground.devneya.com`. It is a React + 
 The spatial-chat look is the product: cream prompts, grey answers, yellow notes, overlay Context, grouped single-select models, and compact flow chrome. See `PRODUCT_NOTES.md`.
 
 The current implementation and cross-machine resume notes are on
-`release/openai-provider-setup`; see [HANDOFF.md](HANDOFF.md) for the current
-two-provider release, historical browser authentication
+`feature/api-key-provider-picker`; see [HANDOFF.md](HANDOFF.md) for the current
+provider-picker implementation, historical browser authentication
 research, and release prerequisites. Hosted Codex is deferred; existing local
 Codex development support is retained.
 
@@ -26,9 +26,13 @@ For the Devneya connection, supply the approved public `VITE_GOTRUE_ANON_KEY`
 through the process environment, with `VITE_API_BASE_URL=https://api.devneya.com`.
 Keep credentials out of `.env` files, source, fixtures, and Git history.
 
-On first launch, choose **Use OpenAI API key** or **Continue with Devneya**. The OpenAI choice requests a standard OpenAI API key, saves it in this browser's `localStorage`, and calls the authenticated `GET https://api.openai.com/v1/models` endpoint to validate it and load the live catalog. It sends no inference request during setup. ChatGPT subscriptions do not pay for API usage. The model picker uses those returned model IDs; choose a model manually because the catalog also contains models that may not support Chat Completions.
+On first launch, **Continue with Devneya** is the primary choice. **Use an API key** opens a provider picker for OpenAI, Anthropic, Google Gemini, OpenRouter, Groq, Mistral, DeepSeek, and Custom OpenAI-compatible. One active key is saved in this browser's `localStorage`, separately from the workspace. Setup loads the provider's live catalog without inference; OpenRouter also checks its protected `/key` endpoint. Choose a model manually: catalog presence does not guarantee generation authorization, protocol compatibility, or attachment support. OpenAI API billing is separate from ChatGPT subscriptions.
 
-The Devneya choice uses GoTrue sign-in, obtains a Bifrost virtual key from `/account/key` with the GoTrue JWT, and sends completions to `/llm/v1/chat/completions` with only the Bifrost key. A 403 on `/account/key` is an inactive or blocked account, not CORS (playground origin is already allowed). Activate the plan on `https://app.devneya.com/`. Its catalog comes from `GET /llm/v1/models`. The top-right Connection menu provides Change connection and Disconnect; it also links to the Devneya Profile and Dashboard when connected there. Both actions retain the workspace and settle active runs as cancelled before changing screens. Disconnect removes the active connection, including the stored OpenAI key; Devneya Sign out is a separate action.
+Custom connections require an HTTPS API base URL and bearer API key. Include the version path when needed, such as `https://example.com/v1`; the client appends `/models` and `/chat/completions` without guessing `/v1`. URLs with credentials, query parameters, fragments, HTTP, or a final models/completions endpoint are rejected. A working live catalog is required; there is no manual-model fallback.
+
+Requests go directly from the browser to the selected provider. OpenAI retains its existing Chat Completions transport; compatible providers use Chat Completions, Anthropic uses Messages, and Gemini uses generateContent. Small HTTP adapters preserve the bundle budgets without adding SDK dependencies. There is no provider proxy or subscription OAuth. Browser CORS support is required; setup never spends inference tokens.
+
+The Devneya choice uses GoTrue sign-in, obtains a Bifrost virtual key from `/account/key` with the GoTrue JWT, and sends completions to `/llm/v1/chat/completions` with only the Bifrost key. A 403 on `/account/key` is an inactive or blocked account, not CORS (playground origin is already allowed). Activate the plan on `https://app.devneya.com/`. Its catalog comes from `GET /llm/v1/models`. The top-right Connection menu provides Change connection and Disconnect; it also links to the Devneya Profile and Dashboard when connected there. Both actions retain the workspace and settle active runs as cancelled before changing screens. Disconnect removes the active connection, including the stored API key; Devneya Sign out is a separate action.
 
 ### Product boundaries
 
@@ -69,17 +73,21 @@ The existing Devneya real-server functional E2E is an explicit local command, `n
 
 Use `npm run test:browser-integration:evidence` for local mock-browser evidence, or `npm run test:e2e:real:evidence` for real-server evidence. Each command creates an ignored `release-evidence/<commit>/<timestamp>/` directory containing unaltered screenshots, isolated Playwright report/trace data when present, sanitized browser/network observations, an evidence summary, test metadata, and `SHA256SUMS`; evidence is local-only and must never be committed or uploaded. Mock browser integration is regression evidence, not functional E2E.
 
-For a production deployment with Devneya sign-in enabled, provide the public GoTrue anonymous key, then run `npm run build:prod`, `npm run verify:artifact`, and `npm run verify:bundle`. A static build can also serve OpenAI connections without that key. The production bundle budget is 350 KB gzip JavaScript; the mock bundle has a separately reported 400 KB gzip allowance for its intentional MSW browser runtime.
+For a production deployment with Devneya sign-in enabled, provide the public GoTrue anonymous key, then run `npm run build:prod`, `npm run verify:artifact`, and `npm run verify:bundle`. A static build can also serve API-key connections without that configuration. The production bundle budget is 350 KB gzip JavaScript; the mock bundle has a separately reported 400 KB gzip allowance for its intentional MSW browser runtime.
 
-The 2026-10-13 implementation checks passed: 330 unit tests, all 69 Chromium
-browser checks, typecheck, lint, coverage, both audits (zero vulnerabilities),
-validation/mock builds, and artifact/bundle inspection. The genuine production
-CORS probe passed with upstream OPTIONS 200 and readable synthetic 401 for
-both OpenAI endpoints; context/browser cleanup succeeded. Production-mode
-compilation and inspection also pass without GoTrue configuration, but the
-configured two-provider release is blocked by missing GitHub access, Platform
-key, and approved public GoTrue configuration. No paid requests or deployment
-occurred. See [HANDOFF.md](HANDOFF.md) for exact evidence and resume gates.
+The 2026-10-14 provider-picker checks passed: **412 unit tests in 54 files**,
+**91 Chromium browser tests**, typecheck, lint, coverage, both audits (zero
+vulnerabilities), all three builds, and artifact/bundle checks. Whole checked
+coverage is 96.73% statements / 93.35% branches. Production JavaScript is
+233,539 gzip bytes; mock is 340,610. Limits and dependencies are unchanged.
+The genuine OpenAI CORS probe passed and its isolated context/browser closed.
+
+Publication and authenticated live inference remain blocked by missing GitHub
+access, an OpenAI Platform key, and approved public GoTrue configuration. The
+production artifact compiles and contains no mocks or synthetic provider keys,
+but it does not configure Devneya sign-in without that public configuration.
+No paid requests or deployment occurred. See [HANDOFF.md](HANDOFF.md) for local
+evidence and the existing release gates.
 
 ### Deployment
 
@@ -134,7 +142,7 @@ Required Actions secret:
 
 ### Local Codex playground
 
-Run `npm run dev:codex` and open `http://127.0.0.1:3002/`. This uses the existing Codex sign-in on this computer. Available models and reasoning levels come from the live catalog; the local default prefers the requested `gpt-6.1-sol` when available. Open the model picker to search the live catalog; search receives focus automatically, and effort choices appear under the selected model. Requests default to xhigh when supported and request Fast service through `priority`; acceleration is not guaranteed. Credentials remain server-side. Hosted builds offer the two API-key and Devneya connections described above.
+Run `npm run dev:codex` and open `http://127.0.0.1:3002/`. This uses the existing Codex sign-in on this computer. Available models and reasoning levels come from the live catalog; the local default prefers the requested `gpt-6.1-sol` when available. Open the model picker to search the live catalog; search receives focus automatically, and effort choices appear under the selected model. Requests default to xhigh when supported and request Fast service through `priority`; acceleration is not guaranteed. Credentials remain server-side. Hosted builds offer the provider picker and Devneya sign-in described above.
 
 The canvas toolbar has neutral New prompt, Upload and Note buttons. New prompts and notes go into nearby free space, receive a brief highlight and focus for editing. Save as note creates an editable copy to the answer’s right, moving into nearby free space when needed. Canvas zoom and focus are saved per flow. New results stay above the bottom fifth of the canvas when space allows. The original prompt, answer and note boxes retain Georgia serif content typography and the Devneya wordmark.
 

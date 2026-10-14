@@ -5,7 +5,7 @@ import { createChatCompletion, type ChatCompletionRequest, type ChatCompletionRe
 export type CompletionProgress = { text: string; characters: number; serviceTier?: string };
 /** Browser receives only output deltas and transport status. No credentials or private reasoning. */
 export const streamCompletion = async (key: CompletionCredential, request: ChatCompletionRequest, signal: AbortSignal, onDelta: (text: string) => void, onProgress: (progress: CompletionProgress) => void) => {
-  if (typeof key !== "object" || key.kind === "openai") {
+  if (typeof key !== "object" || key.kind !== "local-codex") {
     onProgress({ text: "Waiting for the model", characters: 0 });
     const result = await createChatCompletion(key, request, signal);
     if (!signal.aborted) onDelta(result.content);

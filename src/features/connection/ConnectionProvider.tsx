@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PropsWithChildren } from "react";
 import { CONNECTION_STORAGE_KEY, readBrowserConnection, saveBrowserConnection, type BrowserConnection } from "../../api/browserConnection";
 import { getVirtualKey } from "../../api/account";
-import { toOpenAIApiKey, type CompletionCredential, type GoTrueAccessToken } from "../../api/credentials";
+import { connectionCredential, isApiKeyConnection, isApiKeyProvider, validateApiKeyCandidate, type ApiKeyCandidate } from "../../api/apiKeyProviders";
+import type { ApiKeyConnection, CompletionCredential, GoTrueAccessToken } from "../../api/credentials";
 import { normalizeApiError } from "../../api/errors";
 import { listModels } from "../../api/models";
-import { listOpenAIModels } from "../../api/openai";
+import { listProviderModels } from "../../api/providerModels";
 import { config } from "../../config";
 import type { Model } from "../../domain/types";
 import { ConnectionContext, type AsyncStatus, type InferenceProvider } from "./useConnectionSettings";
@@ -16,9 +17,11 @@ type Props = PropsWithChildren<{
 const readInitialConnection = (initialProvider?: InferenceProvider): BrowserConnection | null => {
   if (initialProvider) {
     if (initialProvider === "local-codex" && !config.useLocalCodex) return null;
-    if (initialProvider !== "openai") return { provider: initialProvider };
-    const savedOpenAI = readBrowserConnection();
-    return savedOpenAI?.provider === "openai" ? savedOpenAI : null;
+    if (isApiKeyProvider(initialProvider)) {
+      const saved = readBrowserConnection();
+      return isApiKeyConnection(saved) && saved.provider === initialProvider ? saved : null;
+    }
+    return { provider: initialProvider };
   }
   if (config.useLocalCodex) return { provider: "local-codex" };
   const stored = readBrowserConnection();
@@ -41,7 +44,9 @@ export const ConnectionProvider = ({ children, initialProvider }: Props) => {
   const keyAbortRef = useRef<AbortController | null>(null);
   const catalogVersionRef = useRef(0);
   const keyVersionRef = useRef(0);
-  const validatedOpenAIRef = useRef<{ key: string; models: Model[] } | null>(null);
+  const apiKeyConnectVersionRef = useRef(0);
+  const mountedRef = useRef(true);
+  const validatedApiKeyRef = useRef<{ connection: ApiKeyConnection; models: Model[] } | null>(null);
 
   const provider = connection?.provider ?? null;
 
@@ -59,15 +64,15 @@ export const ConnectionProvider = ({ children, initialProvider }: Props) => {
     catalogAbortRef.current = controller;
     setModelsStatus("loading");
     setModelsError(null);
-    const request = current.provider === "openai"
-      ? listOpenAIModels(current.apiKey, controller.signal)
+    const request = isApiKeyConnection(current)
+      ? listProviderModels(current, controller.signal)
       : listModels(controller.signal, current.provider === "local-codex");
     void request.then((catalog) => {
       if (controller.signal.aborted || version !== catalogVersionRef.current) return;
       setModels(catalog);
       setModelsStatus("ready");
-      if (current.provider === "openai") {
-        setCredential({ kind: "openai", apiKey: current.apiKey });
+      if (isApiKeyConnection(current)) {
+        setCredential(connectionCredential(current));
         setKeyStatus("ready");
         setKeyError(null);
       }
@@ -76,7 +81,7 @@ export const ConnectionProvider = ({ children, initialProvider }: Props) => {
       const message = normalizeApiError(failure).message;
       setModelsStatus("error");
       setModelsError(message);
-      if (current.provider === "openai") {
+      if (isApiKeyConnection(current)) {
         setCredential(null);
         setKeyStatus("error");
         setKeyError(message);
@@ -86,8 +91,8 @@ export const ConnectionProvider = ({ children, initialProvider }: Props) => {
 
   const reloadKey = useCallback(() => {
     keyAbortRef.current?.abort();
-    if (connection?.provider === "openai") {
-      setCredential({ kind: "openai", apiKey: connection.apiKey });
+    if (isApiKeyConnection(connection)) {
+      setCredential(connectionCredential(connection));
       setKeyStatus("ready");
       setKeyError(null);
       return;
@@ -156,10 +161,22 @@ export const ConnectionProvider = ({ children, initialProvider }: Props) => {
   }, []);
 
   useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      apiKeyConnectVersionRef.current += 1;
+      catalogAbortRef.current?.abort();
+      keyAbortRef.current?.abort();
+    };
+  }, []);
+
+  useEffect(() => {
     const onStorage = (event: StorageEvent) => {
       if (event.key !== null && event.key !== CONNECTION_STORAGE_KEY) return;
       const stored = readBrowserConnection();
       const next = stored?.provider === "local-codex" && !config.useLocalCodex ? null : stored ?? null;
+      apiKeyConnectVersionRef.current += 1;
+      validatedApiKeyRef.current = null;
       setConnection(next);
       setChanging(false);
     };
@@ -186,14 +203,16 @@ export const ConnectionProvider = ({ children, initialProvider }: Props) => {
       setKeyStatus("idle");
       return;
     }
-    if (connection.provider === "openai") {
-      const validated = validatedOpenAIRef.current;
-      if (validated?.key === connection.apiKey) {
-        validatedOpenAIRef.current = null;
+    if (isApiKeyConnection(connection)) {
+      const validated = validatedApiKeyRef.current;
+      if (validated?.connection === connection) {
+        validatedApiKeyRef.current = null;
         setModels(validated.models);
         setModelsStatus("ready");
-        setCredential({ kind: "openai", apiKey: connection.apiKey });
+        setModelsError(null);
+        setCredential(connectionCredential(connection));
         setKeyStatus("ready");
+        setKeyError(null);
         return;
       }
       setKeyStatus("loading");
@@ -228,6 +247,8 @@ export const ConnectionProvider = ({ children, initialProvider }: Props) => {
   }, [connection, reloadModels]);
 
   const chooseDevneya = useCallback(() => {
+    apiKeyConnectVersionRef.current += 1;
+    validatedApiKeyRef.current = null;
     if (!config.gotrueAnonKey && !config.useMocks) throw new Error("Devneya sign-in is not configured for this deployment.");
     const next: BrowserConnection = { provider: "devneya" };
     saveBrowserConnection(next);
@@ -235,20 +256,24 @@ export const ConnectionProvider = ({ children, initialProvider }: Props) => {
     setChanging(false);
   }, []);
 
-  const connectOpenAI = useCallback(async (key: string, signal: AbortSignal) => {
-    const apiKey = toOpenAIApiKey(key);
-    const catalog = await listOpenAIModels(apiKey, signal);
-    if (signal.aborted) return;
-    const next: BrowserConnection = { provider: "openai", apiKey };
+  const connectApiKeyProvider = useCallback(async (candidate: ApiKeyCandidate, signal: AbortSignal) => {
+    const version = ++apiKeyConnectVersionRef.current;
+    const next = validateApiKeyCandidate(candidate);
+    const catalog = await listProviderModels(next, signal);
+    if (signal.aborted || version !== apiKeyConnectVersionRef.current || !mountedRef.current) return;
     saveBrowserConnection(next);
-    validatedOpenAIRef.current = { key: apiKey, models: catalog };
+    validatedApiKeyRef.current = { connection: next, models: catalog };
     setConnection(next);
     setChanging(false);
   }, []);
 
+  const connectOpenAI = useCallback((key: string, signal: AbortSignal) =>
+    connectApiKeyProvider({ provider: "openai", apiKey: key }, signal), [connectApiKeyProvider]);
+
   const disconnect = useCallback(() => {
+    apiKeyConnectVersionRef.current += 1;
     saveBrowserConnection(null);
-    validatedOpenAIRef.current = null;
+    validatedApiKeyRef.current = null;
     devneyaTokenRef.current = null;
     catalogAbortRef.current?.abort();
     keyAbortRef.current?.abort();
@@ -268,15 +293,16 @@ export const ConnectionProvider = ({ children, initialProvider }: Props) => {
     accountEmail,
     changing,
     chooseDevneya,
+    connectApiKeyProvider,
     connectOpenAI,
     setDevneyaSession,
     clearDevneyaSession,
     reloadModels,
     reloadKey,
-    changeConnection: () => setChanging(true),
-    cancelChange: () => setChanging(false),
+    changeConnection: () => { apiKeyConnectVersionRef.current += 1; setChanging(true); },
+    cancelChange: () => { apiKeyConnectVersionRef.current += 1; setChanging(false); },
     disconnect,
-  }), [connection, provider, credential, keyStatus, keyError, models, modelsStatus, modelsError, accountEmail, changing, chooseDevneya, connectOpenAI, setDevneyaSession, clearDevneyaSession, reloadModels, reloadKey, disconnect]);
+  }), [connection, provider, credential, keyStatus, keyError, models, modelsStatus, modelsError, accountEmail, changing, chooseDevneya, connectApiKeyProvider, connectOpenAI, setDevneyaSession, clearDevneyaSession, reloadModels, reloadKey, disconnect]);
 
   return <ConnectionContext.Provider value={value}>{children}</ConnectionContext.Provider>;
 };
