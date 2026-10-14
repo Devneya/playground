@@ -84,8 +84,10 @@ coverage is 96.73% statements / 93.35% branches. Production JavaScript is
 The genuine OpenAI CORS probe passed and its isolated context/browser closed.
 
 Existing GitHub access works through Git's credential helper, and the Actions
-secret `VITE_SUPABASE_PUBLIC_KEY` is present. It supplies public browser
-configuration for Devneya sign-in; it is not a user or inference credential.
+secret `VITE_SUPABASE_PUBLIC_KEY` is present. It supplies the public key
+required by the current full Supabase client constructor; it is not a user
+or inference credential. This frontend requirement does not establish that
+standalone GoTrue itself needs a project key; see the handoff findings.
 The configured production build and a read-only Devneya auth check passed.
 Pages now enforces HTTPS. Authenticated OpenAI release certification still
 needs a local Platform key; the static app and users bringing their own keys

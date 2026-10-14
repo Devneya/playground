@@ -81,6 +81,16 @@ validation configuration for production configuration.
   for the GoTrue authentication client, distinct from user JWTs, Bifrost
   virtual keys, and provider inference keys. Existing production already
   publishes it, and its read-only authentication check passed.
+  The current key requirement comes from initializing the full
+  `@supabase/supabase-js` client: its constructor rejects an empty key, and
+  `src/auth/gotrueClient.ts` adds an explicit missing-key guard. Do not infer
+  that standalone GoTrue inherently requires a Supabase project key.
+  A separate `GET https://api.devneya.com/auth/settings` probe returned 200
+  with neither `apikey` nor `Authorization`. That public endpoint does not
+  prove that signup, login, refresh, recovery, and OAuth callbacks all work
+  without the key. An auth-only client could remove the SDK constructor
+  dependency, but that migration and full auth verification are separate
+  work; this release retains the existing client and working configuration.
 - Pages HTTPS enforcement is now enabled. The API reports
   `https_enforced: true`; HTTP returned 301 to the expected HTTPS origin,
   which returned 200 with normal TLS validation. This settings change did
