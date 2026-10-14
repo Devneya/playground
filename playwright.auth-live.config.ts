@@ -1,5 +1,8 @@
 import { defineConfig } from "@playwright/test";
 
+// Failed-test DOM snapshots can include disposable credentials even with tracing off.
+process.env.PLAYWRIGHT_NO_COPY_PROMPT = "1";
+
 export default defineConfig({
   testDir: "./tests/auth-live",
   workers: 1,
