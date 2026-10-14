@@ -103,11 +103,11 @@ so Devneya sign-in can initialize. The production bundle budget is 350 KB gzip
 JavaScript; the mock bundle has a separately reported 400 KB gzip allowance
 for its intentional MSW browser runtime.
 
-The 2026-10-14 final checks passed: **428 unit tests in 57 files**,
+The 2026-10-14 checks passed: **434 unit tests in 59 files**,
 **91 Chromium browser tests**, typecheck, lint, coverage, both audits (zero
 vulnerabilities), all three builds, and artifact/bundle checks. Whole checked
-coverage is 96.75% statements / 93.46% branches. Production JavaScript is
-233,845 gzip bytes with the verified random public client value; mock is
+coverage is 96.77% statements / 93.50% branches. Corrected production JavaScript is
+233,995 gzip bytes with the verified random public client value; mock is
 340,610. Limits and dependency ranges are unchanged.
 The genuine OpenAI CORS probe passed and its isolated context/browser closed.
 
@@ -121,6 +121,9 @@ allowlist; OAuth navigation also rewrites `/auth/v1/authorize` to `/auth/authori
 The older production API has a known same-second revocation limitation; the
 cleanup test deletes in a later second and requires token rejection. Details
 and cleanup evidence are recorded in [HANDOFF.md](HANDOFF.md).
+Recovery events are retained from SDK creation through React initialization
+so an email callback consistently opens the new-password form. The auth
+observer excludes HTTP/2 pseudo-headers and verifies the refresh grant explicitly.
 The operator waived the paid OpenAI certification and credential preflight for
 this publication, so do not run `npm run test:e2e`. See [HANDOFF.md](HANDOFF.md)
 for the current smoke phases and older access findings.

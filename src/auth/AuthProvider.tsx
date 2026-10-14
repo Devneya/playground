@@ -4,7 +4,7 @@ import { revokeSession } from "../api/account";
 import { toGoTrueAccessToken } from "../api/credentials";
 import { normalizeApiError } from "../api/errors";
 import { apiBaseUrl } from "../config";
-import { clearAuthStorage, supabase } from "./gotrueClient";
+import { clearAuthStorage, recoveryState, supabase } from "./gotrueClient";
 import { rewriteGoTrueAuthUrl } from "./createGoTrueClient";
 import { AuthContext, type AuthState } from "./useAuth";
 
@@ -29,11 +29,11 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
         setState({ session: null, user: null, initializing: false, recovery: false });
         return;
       }
-      setState({ session: data.session, user: data.session?.user ?? null, initializing: false, recovery: false });
+      setState((previous) => ({ session: data.session, user: data.session?.user ?? null, initializing: false, recovery: Boolean(data.session) && ((previous.recovery && previous.user?.id === data.session?.user.id) || recoveryState.isRecoverySession(data.session)) }));
     });
     const { data: subscription } = supabase.auth.onAuthStateChange((event: AuthChangeEvent, session: Session | null) => {
       if (!mounted) return;
-      setState((previous) => ({ session, user: session?.user ?? null, initializing: false, recovery: event === "PASSWORD_RECOVERY" || previous.recovery }));
+      setState((previous) => ({ session, user: session?.user ?? null, initializing: false, recovery: Boolean(session) && (event === "PASSWORD_RECOVERY" || recoveryState.isRecoverySession(session) || (previous.recovery && previous.user?.id === session?.user.id)) }));
     });
     return () => {
       mounted = false;
@@ -59,6 +59,7 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
     async updatePassword(password: string) {
       const { error } = await supabase.auth.updateUser({ password });
       if (error) throw new Error(authError(error));
+      recoveryState.clear();
       setState((previous) => ({ ...previous, recovery: false }));
     },
     async signInWithOAuth(provider: "google" | "github") {
