@@ -91,6 +91,13 @@ validation configuration for production configuration.
   without the key. An auth-only client could remove the SDK constructor
   dependency, but that migration and full auth verification are separate
   work; this release retains the existing client and working configuration.
+  Operator instruction: do not ask the user to provision, retrieve, or share
+  this anonymous key again. Reuse the existing Actions configuration or the
+  approved public configuration already served by production, keeping values
+  out of chat and logs. The SDK accepts a nonempty value and forwards it in
+  `apikey` and anonymous `Authorization` headers; that does not prove an
+  arbitrary random value is accepted throughout Devneya authentication.
+  Do not replace the working configuration with a guessed or dummy value.
 - Pages HTTPS enforcement is now enabled. The API reports
   `https_enforced: true`; HTTP returned 301 to the expected HTTPS origin,
   which returned 200 with normal TLS validation. This settings change did
